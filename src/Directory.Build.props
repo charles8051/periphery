@@ -39,27 +39,42 @@
   <!--
     Package icon and licence, shared by every packable project under src/.
 
-    PolyForm Small Business 1.0.0 IS on the SPDX License List as
-    `PolyForm-Small-Business-1.0.0`, and NuGet accepts it as an expression - the
-    SPDX list catalogues licences found in the wild for SBOM purposes, and is not
-    limited to OSI-approved ones. Being listed is not the same as being approved:
-    this licence is OSI=false, FSF=false, and GitHub still reports the repository
-    as "Other" because GitHub detects licences with licensee, a different list.
+    PackageLicenseFile, NOT PackageLicenseExpression, and the reason is a
+    server-side rule that no local check can see.
 
-    The expression is metadata and packs nothing, so the `None Include` below is
-    what puts the terms in the package. Both are deliberate: the expression makes
-    the licence machine-readable for dependency scanners, and the file means a
-    consumer can read what they are agreeing to without following a link.
+    PolyForm Small Business 1.0.0 IS on the SPDX License List as
+    `PolyForm-Small-Business-1.0.0` (OSI=false, FSF=false - the SPDX list
+    catalogues licences found in the wild for SBOM purposes and is not limited to
+    approved ones), and `dotnet pack` accepts it happily. nuget.org does not:
+
+        error: Response status code does not indicate success: 400 (License
+        expression must only contain licenses that are approved by Open Source
+        Initiative or Free Software Foundation. Unsupported licenses:
+        PolyForm-Small-Business-1.0.0.)
+
+    That is from the v4.1.0-alpha.1 release run. The expression form passes every
+    local verification - pack succeeds, the nuspec reads
+    `<license type="expression">` - and is rejected by the server on push. So
+    "verify by packing" is not sufficient for this property; the only real check
+    is a push.
+
+    The file form has no approval requirement. LICENSE.md is already packed by
+    the `None Include` below, so the terms travelled with the package either way;
+    what changes is that the nuspec now points at it.
+
+    Cost, accepted: a scanner reading the nuspec sees `type="file"` and must open
+    the file, where an SPDX id would have classified automatically. That was the
+    argument for the expression, and nuget.org removes the option.
 
     PackageLicenseExpression and PackageLicenseFile are mutually exclusive - a
-    project setting the file property alongside this would fail to pack.
+    project setting the expression alongside this would fail to pack.
 
     Central rather than per-project so a new packable library cannot ship
     unlicensed, which is how Periphery.Bootloader and Periphery.Firmware were.
   -->
   <PropertyGroup>
     <PackageIcon>icon.png</PackageIcon>
-    <PackageLicenseExpression>PolyForm-Small-Business-1.0.0</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
     <Copyright>Copyright 2026 Charles Lee</Copyright>
     <Authors>Charles Lee</Authors>
 
