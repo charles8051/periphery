@@ -634,10 +634,12 @@ SetupAPI enumeration. Run the latter with `dotnet test --filter "Category=Integr
 
 **macOS CI Workflow (`macos-ci.yml`):**
 
-`macos-latest` is a **hosted** runner and bills at a 10× minute multiplier on a private
-repo. Three things keep that affordable, and none should be removed casually: build +
-unit/contract tests only (no device tier on the hosted runner), Markdown-only pushes
-don't trigger a run, and superseded runs are cancelled. It exists because nothing else
+`macos-latest` is a **hosted** runner. It billed at a 10× minute multiplier while this
+repository was private, which is what the restraint below was for; standard hosted
+runners are free on a public repository. Two limits are kept because they were never
+only about cost: build + unit/contract tests only (no device tier on the hosted
+runner), and superseded runs are cancelled. The third — skipping Markdown-only pushes
+— is gone, because a required status check must report on every PR. It exists because nothing else
 exercises `src/Periphery/MacOS/` automatically — `build.yml` is dispatch-only, so the
 IOKit bindings could rot between manual runs. The `MacOS*ContractTests` inherit the
 shared provider-contract invariants (§10.1) and run them against real IOKit here.
@@ -766,8 +768,9 @@ have blocked every merge rather than raising the bar.
 - ✅ Test-result uploads are diagnostic and marked `continue-on-error` — an artifact
   upload failure never blocks a release or fails a green run
 - ✅ Cheap self-hosted Linux verification is automatic; the one hosted leg that runs
-  automatically (macOS) is scoped to build + unit tests and skips Markdown-only pushes.
-  The full cross-OS matrix stays opt-in (`workflow_dispatch`)
+  automatically (macOS) is scoped to build + unit tests and reports on every push and
+  PR, which is what lets it be a required check. The full cross-OS matrix stays opt-in
+  (`workflow_dispatch`)
 - ✅ Dotnet telemetry / first-run experience disabled for faster builds
 
 **Performance:**
