@@ -77,14 +77,23 @@ await foreach (var device in Devices.Enumerate().OfCategory(DeviceCategory.Netwo
 await using var watcher = Devices.Watch()
     .OfCategory(DeviceCategory.Bluetooth);
 
-// Two orthogonal transitions: presence in the OS device tree, and activity.
-watcher.Appeared    += (_, e) => Console.WriteLine($"+ appeared:    {e.Device.Name}");
-watcher.Activated   += (_, e) => Console.WriteLine($"+ activated:   {e.Device.Name}");
-watcher.Deactivated += (_, e) => Console.WriteLine($"- deactivated: {e.Device.Name}");
-watcher.Disappeared += (_, e) => Console.WriteLine($"- disappeared: {e.Device.Name}");
+// Two orthogonal transitions. Presence is whether the OS knows the device at
+// all; activity is whether it is usable right now. For Bluetooth that is
+// exactly the difference between paired and connected.
+watcher.Appeared    += (_, e) => Console.WriteLine($"+ paired:       {e.Device.Name}");
+watcher.Activated   += (_, e) => Console.WriteLine($"+ connected:    {e.Device.Name}");
+watcher.Deactivated += (_, e) => Console.WriteLine($"- disconnected: {e.Device.Name}");
+watcher.Disappeared += (_, e) => Console.WriteLine($"- unpaired:     {e.Device.Name}");
 
 await watcher.StartAsync();
 ```
+
+Most categories collapse the two. A USB device becomes present and active on the same
+plug event, so `Appeared` and `Activated` arrive together and either one will do.
+Bluetooth is where they come apart: a paired speaker that is switched off stays present
+and goes inactive, and a single `IsConnected` flag would either hide it or claim it is
+gone. Network adapters behave the same way when disabled. See
+[ADR-0004](https://github.com/charles8051/periphery/blob/main/docs/adr/0004-two-level-device-state-model.md).
 
 ```csharp
 // Per-device tracking — each tracker has dual state (IsPresent + IsActive)
@@ -100,6 +109,36 @@ await watcher.StartAsync();
 ```
 
 ```csharp
+// Bind a serial device by identity, not by COM number. The OS assigns the port
+// name, and it moves across reboots and re-plugs; the VID/PID and serial number
+// do not. The proxy reopens the port wherever it lands next.
+var scanner = new DeviceProfile(
+    f => f.OfCategory(DeviceCategory.Ports).WithUsbId("0403", "6001"),
+    name: "Scanner");
+
+SerialPort? port = null;   // needs the System.IO.Ports package
+
+await using var handle = await DeviceProxy.OpenAsync(
+    scanner,
+    onActivated: (info, ct) =>
+    {
+        port = new SerialPort(info.PortName!.Value.Value, baudRate: 115_200);
+        port.Open();
+        return Task.CompletedTask;
+    },
+    onDeactivated: _ =>
+    {
+        port?.Dispose();
+        port = null;
+        return Task.CompletedTask;
+    });
+```
+
+`DeviceProxy` also takes `whileOpen` for a read loop, and a retry policy for devices
+that enumerate before they are ready. See
+[`examples/scripts/serial-device-handle.cs`](https://github.com/charles8051/periphery/blob/main/examples/scripts/serial-device-handle.cs).
+
+```csharp
 // Trackers can be created upfront (e.g. from configuration) and attached later
 var tracker = new DeviceTracker(t => t.OfCategory(DeviceCategory.Usb).WithUsbId("046D", "C52B"), name: "Mouse");
 tracker.StateChanged += (_, _) => UpdateDashboard();
@@ -110,9 +149,16 @@ await watcher.StartAsync();
 
 ## Requirements
 
-- [.NET 10](https://dotnet.microsoft.com/) or later (libraries also ship a `net8.0` target, offered best-effort — it is built but not covered by the test suite; see ADR-0069)
+- [.NET 10](https://dotnet.microsoft.com/) or later (libraries also ship a `net8.0` target, offered best-effort — it is built but not covered by the test suite; see [ADR-0069](https://github.com/charles8051/periphery/blob/main/docs/adr/0069-restore-net8-tfm-untested.md))
 - **Windows:** No additional dependencies (uses SetupAPI and cfgmgr32 via P/Invoke)
-- **Linux:** Requires `libudev.so.1` (included in systemd-based distros; install `libudev-dev` or `eudev-dev` on minimal images). `Periphery.Usb` additionally requires `libusb-1.0.so.0` >= 1.0.23 (`libusb-1.0-0` on Debian/Ubuntu); `Periphery.Hid` and `Periphery.Camera` use the kernel ABIs directly (hidraw, V4L2) with no extra libraries. Device-node access typically needs udev rules or group membership (`video` for cameras; hidraw/usbfs rules for HID/USB - see ADR-0057).
+- **Linux:** Requires `libudev.so.1`. Systemd-based distros already have it; on a minimal image install
+  `libudev-dev` or `eudev-dev`.
+  - `Periphery.Usb` also needs `libusb-1.0.so.0` 1.0.23 or newer — `libusb-1.0-0` on Debian and Ubuntu.
+  - `Periphery.Hid` and `Periphery.Camera` need nothing extra. They call the kernel ABIs directly,
+    hidraw and V4L2.
+  - Opening a device node usually takes a udev rule or a group membership: `video` for cameras, hidraw
+    and usbfs rules for HID and USB. See
+    [ADR-0057](https://github.com/charles8051/periphery/blob/main/docs/adr/0057-linux-extension-backends.md).
 - **macOS:** No additional dependencies (uses IOKit.framework and CoreFoundation.framework via P/Invoke)
 
 ## Getting Started
