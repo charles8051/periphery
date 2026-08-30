@@ -18,22 +18,22 @@ The **core library focuses on discovery** — it tells you what's plugged in. Pr
 
 | Package | What it does |
 |---|---|
-| [`Periphery`](src/Periphery) | Core: enumeration, watching, tracking. The only runtime dependency is `Microsoft.Extensions.Logging.Abstractions` |
-| [`Periphery.Camera`](src/Periphery.Camera) | Frame capture (Media Foundation / V4L2) |
-| [`Periphery.Camera.Avalonia`](src/Periphery.Camera.Avalonia) | `CameraPreview` control for Avalonia UI |
-| [`Periphery.Camera.OpenCvSharp`](src/Periphery.Camera.OpenCvSharp) | Captured frames as an OpenCV `Mat`, without `VideoCapture` |
-| [`Periphery.Camera.Testing`](src/Periphery.Camera.Testing) | Hardware-free camera test seam (ADR-0065) |
-| [`Periphery.Hid`](src/Periphery.Hid) | HID reports (e.g. battery levels) |
-| [`Periphery.Monitor`](src/Periphery.Monitor) | DDC/CI brightness / power / input, resolution, orientation |
-| [`Periphery.Usb`](src/Periphery.Usb) | Raw USB I/O via WinUSB / libusb backends |
-| [`Periphery.Treehopper`](src/Periphery.Treehopper) | Treehopper board SDK on a pure core (ADR-0052) |
-| [`Periphery.Firmware`](src/Periphery.Firmware) + [`Periphery.Bootloader`](src/Periphery.Bootloader) | Firmware images and the bootloader contract (ADR-0061) |
-| [`Periphery.Bootloader.Efm8.Usb`](src/Periphery.Bootloader.Efm8.Usb) | EFM8 USB bootloader backend |
-| [`Periphery.Treehopper.Control`](src/Periphery.Treehopper.Control) | Board control surface |
-| [`Periphery.Treehopper.Control.Cli`](src/Periphery.Treehopper.Control.Cli) | Command-line front end for board control |
-| [`Periphery.Treehopper.Firmware`](src/Periphery.Treehopper.Firmware) | Treehopper firmware images |
-| [`Periphery.Treehopper.Libraries`](src/Periphery.Treehopper.Libraries) | Peripheral drivers on the Treehopper board (LED strips, displays) |
-| [`Periphery.Cli`](src/Periphery.Cli) | `periphery` command-line device tooling |
+| [`Periphery`](https://github.com/charles8051/periphery/tree/main/src/Periphery) | Core: enumeration, watching, tracking. The only runtime dependency is `Microsoft.Extensions.Logging.Abstractions` |
+| [`Periphery.Camera`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera) | Frame capture (Media Foundation / V4L2) |
+| [`Periphery.Camera.Avalonia`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.Avalonia) | `CameraPreview` control for Avalonia UI |
+| [`Periphery.Camera.OpenCvSharp`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.OpenCvSharp) | Captured frames as an OpenCV `Mat`, without `VideoCapture` |
+| [`Periphery.Camera.Testing`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.Testing) | Hardware-free camera test seam (ADR-0065) |
+| [`Periphery.Hid`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Hid) | HID reports (e.g. battery levels) |
+| [`Periphery.Monitor`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Monitor) | DDC/CI brightness / power / input, resolution, orientation |
+| [`Periphery.Usb`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Usb) | Raw USB I/O via WinUSB / libusb backends |
+| [`Periphery.Treehopper`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper) | Treehopper board SDK on a pure core (ADR-0052) |
+| [`Periphery.Firmware`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Firmware) + [`Periphery.Bootloader`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Bootloader) | Firmware images and the bootloader contract (ADR-0061) |
+| [`Periphery.Bootloader.Efm8.Usb`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Bootloader.Efm8.Usb) | EFM8 USB bootloader backend |
+| [`Periphery.Treehopper.Control`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper.Control) | Board control surface |
+| [`Periphery.Treehopper.Control.Cli`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper.Control.Cli) | Command-line front end for board control |
+| [`Periphery.Treehopper.Firmware`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper.Firmware) | Treehopper firmware images |
+| [`Periphery.Treehopper.Libraries`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper.Libraries) | Peripheral drivers on the Treehopper board (LED strips, displays) |
+| [`Periphery.Cli`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Cli) | `periphery` command-line device tooling |
 
 > **Extensions are Windows + Linux.** Enumeration works on all three platforms, but the
 > I/O extensions ship Windows and Linux backends only — `CameraDevice`, `HidDevice`,
@@ -153,7 +153,7 @@ A **category** answers *which OS subsystem surfaced this device* — it's single
 
 ## Capability Tags
 
-A **tag** answers a different question — *what can this device do?* Tags are multi-valued, cross-cutting, and added by enrichers during enumeration; query them with `WithTag(...)`. Five identifiers that used to be categories are now tags ([ADR-0051](docs/adr/0051-demote-capability-categories-to-tags.md)), because each describes a capability a device *has* rather than the subsystem that surfaced it:
+A **tag** answers a different question — *what can this device do?* Tags are multi-valued, cross-cutting, and added by enrichers during enumeration; query them with `WithTag(...)`. Five identifiers that used to be categories are now tags ([ADR-0051](https://github.com/charles8051/periphery/blob/main/docs/adr/0051-demote-capability-categories-to-tags.md)), because each describes a capability a device *has* rather than the subsystem that surfaced it:
 
 ```csharp
 // "any scanner / still-image device", whichever subsystem it enumerated under
@@ -174,7 +174,7 @@ var receiptPrinter = await Devices.Enumerate()
 | `Printer` | ✅ | 🟡 | 🟡 | `Printer` / `PnpPrinters` / `PrintQueue` classes / USB class `0x07` |
 | `Biometric` | ✅ | — | — | `Biometric` class (Windows-only — USB biometric readers are vendor-specific) |
 
-> 🟡 **Windows-first.** The Windows class-GUID signals are live now, so each tag works on Windows exactly as the old category did. The Linux/macOS USB-class paths are written and dormant — they light up when cross-platform `DeviceInfo.UsbClassCode` population lands (deferred while Periphery builds out Windows depth first; see [ADR-0051](docs/adr/0051-demote-capability-categories-to-tags.md)). `Hid`, `Audio`, and `Battery` are also available as capability tags emitted by enrichers (e.g. HID battery levels via [`Periphery.Hid`](src/Periphery.Hid)).
+> 🟡 **Windows-first.** The Windows class-GUID signals are live now, so each tag works on Windows exactly as the old category did. The Linux/macOS USB-class paths are written and dormant — they light up when cross-platform `DeviceInfo.UsbClassCode` population lands (deferred while Periphery builds out Windows depth first; see [ADR-0051](https://github.com/charles8051/periphery/blob/main/docs/adr/0051-demote-capability-categories-to-tags.md)). `Hid`, `Audio`, and `Battery` are also available as capability tags emitted by enrichers (e.g. HID battery levels via [`Periphery.Hid`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Hid)).
 
 ## OpenCV without `VideoCapture(0)`
 
@@ -182,12 +182,12 @@ var receiptPrinter = await Devices.Enumerate()
 moves when a device is replugged or a virtual camera installs itself. On a
 machine with two identical cameras, no argument means *the one on the left*.
 Periphery answers that for every category on all three platforms;
-[`Periphery.Camera.OpenCvSharp`](src/Periphery.Camera.OpenCvSharp) hands the
+[`Periphery.Camera.OpenCvSharp`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.OpenCvSharp) hands the
 pixels to OpenCV without a copy.
 
 Worked examples, the three entry points, the native-payload choice and the
 lease-lifetime trap are in
-[that package's README](src/Periphery.Camera.OpenCvSharp/README.md).
+[that package's README](https://github.com/charles8051/periphery/blob/main/src/Periphery.Camera.OpenCvSharp/README.md).
 
 ## Repository Layout
 
@@ -245,37 +245,37 @@ src/Periphery/
 1. **Discovery in the core, interaction in extensions.** The core tells you what's connected; protocol-level communication (camera capture, HID reports, raw USB, DDC/CI, …) lives in companion extension libraries layered on the core's device model.
 2. **Platform parity.** Every device category exposed in the public API must be supportable on all target platforms, even if implementations ship incrementally.
 3. **LINQ-native.** Device queries compose naturally with `Where`, `Select`, `OrderBy`, and friends.
-4. **No third-party dependencies in the core or the I/O extensions.** Platform back-ends use only built-in OS APIs (SetupAPI/cfgmgr32, udev, IOKit) via P/Invoke or native interop. `Microsoft.Extensions.Logging.Abstractions` is the one exception. An opt-in integration package is where a third-party dependency belongs: `Periphery.Camera.Avalonia` references `Avalonia` and `Periphery.Camera.OpenCvSharp` references `OpenCvSharp4`, and you take either package only if you want it. See [`docs/patterns/integration-package-placement.md`](docs/patterns/integration-package-placement.md).
+4. **No third-party dependencies in the core or the I/O extensions.** Platform back-ends use only built-in OS APIs (SetupAPI/cfgmgr32, udev, IOKit) via P/Invoke or native interop. `Microsoft.Extensions.Logging.Abstractions` is the one exception. An opt-in integration package is where a third-party dependency belongs: `Periphery.Camera.Avalonia` references `Avalonia` and `Periphery.Camera.OpenCvSharp` references `OpenCvSharp4`, and you take either package only if you want it. See [`docs/patterns/integration-package-placement.md`](https://github.com/charles8051/periphery/blob/main/docs/patterns/integration-package-placement.md).
 5. **Async-first.** Hardware enumeration can be slow; all public entry points return `Task` or `IAsyncEnumerable`.
 
 ## Contributing
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for how to
-build, test and format, and [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deeper look
+Contributions are welcome. Start with [CONTRIBUTING.md](https://github.com/charles8051/periphery/blob/main/CONTRIBUTING.md) for how to
+build, test and format, and [ARCHITECTURE.md](https://github.com/charles8051/periphery/blob/main/docs/ARCHITECTURE.md) for a deeper look
 at the design before opening a PR.
 
-Security reports go through [SECURITY.md](SECURITY.md), not the issue tracker.
+Security reports go through [SECURITY.md](https://github.com/charles8051/periphery/blob/main/SECURITY.md), not the issue tracker.
 
 Deferred work, bugs and design questions are tracked as
 [GitHub issues](https://github.com/charles8051/periphery/issues) — that is the
-only backlog. Architectural decisions live in [docs/adr/](docs/adr/); an issue
+only backlog. Architectural decisions live in [docs/adr/](https://github.com/charles8051/periphery/tree/main/docs/adr); an issue
 that needs one references it by number.
 
 ### Formatting
 
 CSharpier, pinned as a local tool. The tree is not formatted yet, so format only
-the files you touch — see [CONTRIBUTING.md](CONTRIBUTING.md#formatting) for the
+the files you touch — see [CONTRIBUTING.md](https://github.com/charles8051/periphery/blob/main/CONTRIBUTING.md#formatting) for the
 commands and why a repo-wide pass is its own change.
 
 ## License
 
 [PolyForm Small Business 1.0.0](https://polyformproject.org/licenses/small-business/1.0.0) -
-see [LICENSE.md](LICENSE.md).
+see [LICENSE.md](https://github.com/charles8051/periphery/blob/main/LICENSE.md).
 
 Source-available, not open source. Every right the licence grants - including
 making changes and redistributing - is granted only for a *permitted purpose*, and
 use for the benefit of a company is a permitted purpose only below the
 employee-count and revenue thresholds the licence sets.
 
-[LICENSE.md](LICENSE.md) is the authoritative statement of the terms. This paragraph
+[LICENSE.md](https://github.com/charles8051/periphery/blob/main/LICENSE.md) is the authoritative statement of the terms. This paragraph
 points at it and is not a summary of it.

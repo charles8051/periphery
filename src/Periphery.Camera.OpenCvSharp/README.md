@@ -16,6 +16,11 @@ device category, on all three platforms. The half that was missing was handing
 the pixels to OpenCV, and `Periphery.Camera.OpenCvSharp`
 is that half.
 
+> **Capture is Windows and Linux.** Periphery enumerates cameras on all three
+> platforms, but `CameraDevice` and `CameraSession` ship Windows and Linux
+> backends only and throw `PlatformNotSupportedException` on macOS. The
+> AVFoundation backend is planned, not written.
+
 ```csharp
 using OpenCvSharp;
 using Periphery;
@@ -72,6 +77,13 @@ var cameras = await Devices.Enumerate()
 var left  = cameras.Single(c => c.SerialNumber == "A1B2C3D4");
 var right = cameras.Single(c => c.SerialNumber == "E5F6A7B8");
 
+// Both are the same model, so one format selection describes both.
+var format = (await CameraDevice.ReadSnapshotAsync(left)).Formats
+    .WithinBox(1280, 720)
+    .PreferPixelFormat(CameraPixelFormat.Yuy2)
+    .ThenByHighestFrameRate()
+    .First();
+
 await using var leftSession  = await CameraSession.OpenAsync(left,  new CameraConfiguration(format));
 await using var rightSession = await CameraSession.OpenAsync(right, new CameraConfiguration(format));
 
@@ -104,11 +116,9 @@ the call-site syntax.
 `Periphery.Camera.OpenCvSharp` references `OpenCvSharp4` — the managed binding —
 and no `OpenCvSharp4.runtime.*` package. Install the payload for the platform
 you deploy to: `OpenCvSharp4.runtime.win` on Windows,
-`OpenCvSharp4.official.runtime.linux-x64` on Linux. **macOS has no current
-first-party package** — the newest is 4.6.0.20230105 against a 4.13 binding — so
-a macOS deployment needs a third-party build. Without a payload the package
-restores and compiles, and the first OpenCV call throws
-`DllNotFoundException`.
+`OpenCvSharp4.official.runtime.linux-x64` on Linux. Those are the two platforms
+this package captures on. Without a payload the package restores and compiles,
+and the first OpenCV call throws `DllNotFoundException`.
 
 The package is named after the binding rather than the library, because
 `OpenCvSharp4` and `Emgu.CV` are incompatible bindings of the same OpenCV and a
