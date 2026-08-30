@@ -78,11 +78,13 @@ release, not the last thing merged into it.
 ## Consuming the Package
 
 ```sh
-dotnet add package Periphery
+dotnet add package Periphery --prerelease
 ```
 
-That is the whole procedure. The packages are public on nuget.org, so there is no
-token, no `nuget.config`, and nothing to configure in CI.
+`--prerelease` is required while every published version is one; without it NuGet
+reports *"There are no stable versions available"* and adds nothing. Beyond that
+there is no token, no `nuget.config`, and nothing to configure in CI — the
+packages are public.
 
 ## Testing a Package Locally (Before Publishing)
 
