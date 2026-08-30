@@ -77,15 +77,19 @@ var cameras = await Devices.Enumerate()
 var left  = cameras.Single(c => c.SerialNumber == "A1B2C3D4");
 var right = cameras.Single(c => c.SerialNumber == "E5F6A7B8");
 
-// Both are the same model, so one format selection describes both.
-var format = (await CameraDevice.ReadSnapshotAsync(left)).Formats
+// Ask each camera what it offers. Two units of one model can still differ,
+// by firmware revision or by how they negotiated the connection.
+static CameraFormat Pick(CameraSnapshot snapshot) => snapshot.Formats
     .WithinBox(1280, 720)
     .PreferPixelFormat(CameraPixelFormat.Yuy2)
     .ThenByHighestFrameRate()
     .First();
 
-await using var leftSession  = await CameraSession.OpenAsync(left,  new CameraConfiguration(format));
-await using var rightSession = await CameraSession.OpenAsync(right, new CameraConfiguration(format));
+var leftFormat  = Pick(await CameraDevice.ReadSnapshotAsync(left));
+var rightFormat = Pick(await CameraDevice.ReadSnapshotAsync(right));
+
+await using var leftSession  = await CameraSession.OpenAsync(left,  new CameraConfiguration(leftFormat));
+await using var rightSession = await CameraSession.OpenAsync(right, new CameraConfiguration(rightFormat));
 
 // Two sessions, two independent capture loops, each pinned to a known lens.
 ```
