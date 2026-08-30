@@ -4,13 +4,15 @@ name: macOS CI
 # which nothing else exercises: build.yml is dispatch-only, so the bindings could
 # rot against IOKit.framework unnoticed between manual runs.
 #
-# macos-latest is a HOSTED runner and bills at a 10x minute multiplier on a private
-# repo — an order of magnitude more than the free self-hosted Linux tier. Three
-# things keep that honest, and none of them should be removed casually:
+# macos-latest is a HOSTED runner. On a private repo it billed at a 10x minute
+# multiplier, which drove the restraint below; this repository is public, so
+# standard hosted runners cost nothing and that pressure is gone. Two of the three
+# original limits are kept anyway, because they were never only about cost:
 #   1. Build + unit/contract tests only. No device tier on the hosted runner: it has
 #      no USB, no camera, nothing for the Integration suite to reach.
-#   2. Markdown-only pushes don't trigger a run.
-#   3. Superseded runs are cancelled (see the concurrency block).
+#   2. Superseded runs are cancelled (see the concurrency block).
+# The third - skipping Markdown-only changes - is dropped, so this workflow reports
+# on every PR and can therefore be a required status check.
 # build.yml's full windows/linux/macos matrix stays manual — this is the cheapest
 # leg of it, promoted to run on its own.
 #
@@ -27,12 +29,15 @@ name: macOS CI
 #                   all throw PlatformNotSupportedException — so this tier is the
 #                   inherited cross-enumeration comparisons until those backends
 #                   exist.
+# No paths-ignore. It used to skip Markdown-only changes to save the 10x
+# multiplier, which stopped applying when this repository went public - standard
+# hosted runners are free here. It also made this workflow unusable as a required
+# status check: a Markdown-only PR would never report the context, and a required
+# context that never arrives blocks the PR forever.
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md']
   pull_request:
-    paths-ignore: ['**.md']
   workflow_dispatch:
 
 # Least privilege: nothing here writes to the repo. Both jobs only check out and
@@ -54,7 +59,7 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
-  build-test:
+  build-test-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
