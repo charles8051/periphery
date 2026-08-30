@@ -25,7 +25,7 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
-  build-test:
+  build-test-linux:
     # Trusted events only: pushes to main, and pull requests whose head branch is
     # in this repository. A fork PR goes to the hosted twin below instead.
     #
@@ -63,7 +63,7 @@ jobs:
           path: "**/test-*.trx"
           retention-days: 14
 
-  build-test-fork:
+  build-test-linux-fork:
     # Fork pull requests. Same checks on a GitHub-hosted runner, so an outside
     # contributor gets a real result instead of a check that never clears.
     if: >-

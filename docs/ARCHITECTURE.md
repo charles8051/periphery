@@ -625,7 +625,7 @@ SetupAPI enumeration. Run the latter with `dotnet test --filter "Category=Integr
 | Workflow | Trigger | Runners | Purpose |
 |----------|---------|---------|---------|
 | **linux-ci.yml** | Push to `main`, PRs, manual dispatch | Self-hosted Linux (SDK container); the Linux device rig | Everyday build + unit tests; device-backed integration tests on manual dispatch |
-| **macos-ci.yml** | Push to `main`, PRs (both skip Markdown-only changes), manual dispatch | Hosted `macos-latest`; the macOS device rig (not yet provisioned) | Automatic macOS coverage for the IOKit P/Invoke surface |
+| **macos-ci.yml** | Push to `main`, PRs, manual dispatch | Hosted `macos-latest`; the macOS device rig (not yet provisioned) | Automatic macOS coverage for the IOKit P/Invoke surface |
 | **adr-lint.yml** | Push / PR touching `docs/adr/**` or the validator | Self-hosted Linux (SDK container) | `scripts/validate-adrs.sh` — frontmatter shape, status vocabulary, cross-reference resolution |
 | **build.yml** | Manual dispatch only (boolean inputs pick the OSes) | Hosted `windows-latest` / `ubuntu-latest` / `macos-latest` | Cross-platform build verification + unit tests |
 | **publish.yml** | Tags (`v*.*.*`) | Hosted `ubuntu-latest` for the publish job; self-hosted Linux + Windows for the test gate and release binaries | Test gate, NuGet publish to nuget.org (Trusted Publishing), self-contained release binaries |
@@ -667,7 +667,7 @@ hardware so provisioning is a runner registration and nothing else.
 This is the workflow that actually gates day-to-day work — self-hosted runner-minutes
 are free, so it runs on every push to `main` and every PR.
 
-- `build-test` — an ephemeral container runner (`mcr.microsoft.com/dotnet/sdk:10.0`);
+- `build-test-linux` — an ephemeral container runner (`mcr.microsoft.com/dotnet/sdk:10.0`);
   restore, build, unit tests (`Category!=Integration`), `.trx` artifact (14-day retention)
 - `device-tests` — the dedicated Linux device rig (v4l2loopback test
   pattern, uhid virtual Megatec UPS, QEMU-emulated USB HID). Runs the
@@ -678,7 +678,7 @@ are free, so it runs on every push to `main` and every PR.
 **Test Execution:**
 
 ```bash
-# Unit tests — what build.yml and linux-ci.yml's build-test job run
+# Unit tests — what build.yml and linux-ci.yml's build-test-linux job run
 dotnet test --filter "Category!=Integration"
 
 # Integration tests — only ever run on the Linux device rig
@@ -723,39 +723,35 @@ main:
   required_status_checks:
     strict: true
     contexts:
-      # build.yml is dispatch-only and cannot be a required check. adr-lint only
-      # runs on docs/adr/** changes, so it cannot be required either — it would
-      # never report on a code PR.
+      # Only workflows with NO path filter can be required: a required context
+      # that never reports blocks the PR forever. That rules out adr-lint
+      # (paths: docs/adr/**) and build.yml (dispatch-only). It is also why
+      # macos-ci.yml no longer carries paths-ignore.
       #
-      # NOT USABLE AS WRITTEN - see the two paragraphs below. `build-test` is
-      # reported by BOTH linux-ci.yml and macos-ci.yml, and GitHub matches
-      # required contexts by name, so this line cannot say which one must pass.
-      - build-test
-      - build-test-fork
+      # REQUIRE BOTH HALVES OF THE LINUX SPLIT. `build-test-linux` is gated to
+      # same-repo heads and SKIPS on a fork PR; `build-test-linux-fork` is its
+      # hosted twin and is the only Linux job a fork runs. GitHub counts a
+      # skipped job as satisfying a required check, so requiring one half gates
+      # nothing on the other path. Exactly one of the pair runs per event.
+      #
+      # `review` is deliberately absent: it skips for forks by design (it needs a
+      # secret a fork never receives), so requiring it would gate nothing there.
+      - build-test-linux
+      - build-test-linux-fork
+      - build-test-macos
   required_pull_request_reviews:
     required_approving_review_count: 1
 ```
 
-**This configuration cannot currently be made correct, and the reason is a name
-collision.** linux-ci.yml and macos-ci.yml both name their job `build-test`, and
-GitHub matches required contexts by name rather than by workflow. The two collapse
-into one context that *either* can satisfy. Two concrete holes follow:
+**The job names were the reason this could not be set before.** linux-ci.yml and
+macos-ci.yml both named their job `build-test`, and GitHub matches required
+contexts by name rather than by workflow, so the two collapsed into one context
+that *either* could satisfy — a failing Linux run could be masked by a passing
+macOS one. The jobs are now `build-test-linux`, `build-test-linux-fork` and
+`build-test-macos`, so each context names exactly one job.
 
-- On a same-repository PR, a **failing Linux `build-test` can be masked by a passing
-  macOS `build-test`**, because only the name is matched.
-- On a fork PR the Linux `build-test` is skipped, and GitHub counts a skipped job as
-  satisfying its requirement — so the context is satisfied whatever macOS did.
-
-Requiring `build-test-fork` alongside it closes the fork half on Linux and nothing
-else. **Do not read this snippet as enforcing Linux and macOS; it enforces neither
-specifically.** The fix is to give the two jobs distinct names
-(`build-test-linux` / `build-test-macos`) and require the distinct contexts; that is
-a workflow change rather than a docs change, and there is no branch protection
-configured on this repository today, so nothing is depending on the current names.
-
-What the workflows actually *run* on a PR is Linux and macOS build + unit sweeps
-(since `#284`), which covers the IOKit P/Invoke surface but still leaves Windows
-unverified on merge. That is what runs — not what is enforced. Windows verification is deliberately
+Requiring all three gates Linux on whichever half actually ran and gates macOS
+outright. Windows is still not enforced: it has no automatic PR leg. Windows verification is deliberately
 opt-in, so **dispatch `build.yml` by hand before merging anything Windows-sensitive**
 (SetupAPI/cfgmgr32 P/Invoke, `MfInterop`, DisplayConfig, WinUSB, anything under an
 `OperatingSystem.IsWindows()` guard). The earlier version of this section listed
