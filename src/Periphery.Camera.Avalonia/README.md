@@ -1,6 +1,6 @@
 # Periphery.Camera.Avalonia
 
-Avalonia controls for [`Periphery.Camera`](../Periphery.Camera/). Drop
+Avalonia controls for [`Periphery.Camera`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera). Drop
 `<CameraPreview>` into a window, bind it to a `DeviceInfo`, and a live
 camera feed appears — no capture loop, no UI-thread plumbing, no
 session-host wiring.
@@ -112,7 +112,7 @@ output and there is nothing to write into.
 that:
 
 - **Implements `ICameraFrameSink`** from
-  [`Periphery.Camera`](../Periphery.Camera/) — the same shape as
+  [`Periphery.Camera`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera) — the same shape as
   frame-flow's `IVideoSink`. The pipeline runtime that contract names as
   the caller was never built (ADR-0045), so the control drives its own
   capture loop and calls its own `OnFormatChangedAsync` before the first
@@ -157,12 +157,12 @@ own frame, overlay status text, etc.
 
 ## Cross-references
 
-- [`docs/plans/periphery-camera-avalonia-preview.md`](../../docs/plans/periphery-camera-avalonia-preview.md)
+- [`docs/plans/periphery-camera-avalonia-preview.md`](https://github.com/charles8051/periphery/blob/main/docs/plans/periphery-camera-avalonia-preview.md)
   — the three-stage roadmap, all three of them now delivered.
-- [`docs/adr/0081-a-delivered-frame-has-tight-rows.md`](../../docs/adr/0081-a-delivered-frame-has-tight-rows.md)
+- [`docs/adr/0081-a-delivered-frame-has-tight-rows.md`](https://github.com/charles8051/periphery/blob/main/docs/adr/0081-a-delivered-frame-has-tight-rows.md)
   — why the row copy can trust the frame's stride.
-- [`Periphery.Camera`](../Periphery.Camera/) — the underlying camera
+- [`Periphery.Camera`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera) — the underlying camera
   primitive (`CameraSession`, the fluent builder).
-- [`Periphery`](../Periphery/) — `DeviceSessionHost<T>` and friends.
-- [`docs/adr/0035-periphery-camera.md`](../../docs/adr/0035-periphery-camera.md)
+- [`Periphery`](https://github.com/charles8051/periphery/tree/main/src/Periphery) — `DeviceSessionHost<T>` and friends.
+- [`docs/adr/0035-periphery-camera.md`](https://github.com/charles8051/periphery/blob/main/docs/adr/0035-periphery-camera.md)
   — ADR-0035 §1a explains the Windows-only v1 scope.
