@@ -1,7 +1,7 @@
 # Publishing Guide
 
 Pushing a `v*.*.*` tag publishes every packable project to
-[nuget.org](https://www.nuget.org/profiles/charles8051). Nothing else publishes:
+[nuget.org](https://www.nuget.org/profiles/clee781). Nothing else publishes:
 there is no manual path, and no API key stored anywhere.
 
 ## Quick Publish Workflow
@@ -78,11 +78,13 @@ release, not the last thing merged into it.
 ## Consuming the Package
 
 ```sh
-dotnet add package Periphery
+dotnet add package Periphery --prerelease
 ```
 
-That is the whole procedure. The packages are public on nuget.org, so there is no
-token, no `nuget.config`, and nothing to configure in CI.
+`--prerelease` is required while every published version is one; without it NuGet
+reports *"There are no stable versions available"* and adds nothing. Beyond that
+there is no token, no `nuget.config`, and nothing to configure in CI — the
+packages are public.
 
 ## Testing a Package Locally (Before Publishing)
 
@@ -183,7 +185,7 @@ repository at the same name satisfies it.
 
 ## Viewing Published Packages
 
-https://www.nuget.org/profiles/charles8051
+https://www.nuget.org/profiles/clee781
 
 ---
 

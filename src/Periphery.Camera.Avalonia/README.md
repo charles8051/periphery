@@ -10,7 +10,7 @@ session-host wiring.
 Add the package alongside `Periphery.Camera`:
 
 ```bash
-dotnet add package Periphery.Camera.Avalonia
+dotnet add package Periphery.Camera.Avalonia --prerelease
 ```
 
 ## Use it
