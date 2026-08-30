@@ -1,7 +1,7 @@
 # Publishing Guide
 
 Pushing a `v*.*.*` tag publishes every packable project to
-[nuget.org](https://www.nuget.org/profiles/charles8051). Nothing else publishes:
+[nuget.org](https://www.nuget.org/profiles/clee781). Nothing else publishes:
 there is no manual path, and no API key stored anywhere.
 
 ## Quick Publish Workflow
@@ -183,7 +183,7 @@ repository at the same name satisfies it.
 
 ## Viewing Published Packages
 
-https://www.nuget.org/profiles/charles8051
+https://www.nuget.org/profiles/clee781
 
 ---
 

@@ -82,7 +82,7 @@ git push origin v1.0.0
 
 - Go to https://github.com/charles8051/periphery/actions
 - Wait for the "Release" workflow
-- Check the packages at https://www.nuget.org/profiles/charles8051
+- Check the packages at https://www.nuget.org/profiles/clee781
 
 ---
 

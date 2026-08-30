@@ -320,10 +320,12 @@ cd periphery
 dotnet build
 ```
 
-Packages are published to [nuget.org](https://www.nuget.org/profiles/charles8051):
+Packages are published to [nuget.org](https://www.nuget.org/profiles/clee781).
+Every release so far is a prerelease, so the flag is required — without it NuGet
+reports *"There are no stable versions available"* and adds nothing:
 
 ```bash
-dotnet add package Periphery
+dotnet add package Periphery --prerelease
 ```
 
 ## Repository Layout
