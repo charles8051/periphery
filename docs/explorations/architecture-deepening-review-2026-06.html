@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — periphery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:9999px;letter-spacing:.02em;white-space:nowrap}
+      .b-strong{background:#d1fae5;color:#065f46}
+      .b-worth{background:#fef3c7;color:#92400e}
+      .b-spec{background:#e2e8f0;color:#334155}
+      .b-arch{background:#e0e7ff;color:#3730a3}
+      .b-std{background:#ccfbf1;color:#115e59}
+      .b-tag{background:#f1f5f9;color:#475569;font-weight:500}
+      .files{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#475569;word-break:break-all}
+      .win{display:inline-block;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;font-size:11px;padding:2px 8px;margin:2px 4px 2px 0}
+      .adr{background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px;border-radius:8px;padding:8px 12px;margin-top:10px}
+      .ba{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+      .ba-col{flex:1;min-width:120px}
+      .ba-cap{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:4px}
+      .stack{border-radius:8px;overflow:hidden;border:1px solid #e2e8f0}
+      .if{background:#cbd5e1;color:#0f172a;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;display:flex;align-items:center;justify-content:center}
+      .impl{background:#f8fafc;color:#64748b;text-align:center;font-size:10px;padding:6px;display:flex;align-items:center;justify-content:center}
+      .impl.deep{background:linear-gradient(135deg,#0f172a,#1e293b);color:#e2e8f0}
+      .arrow{font-size:22px;color:#94a3b8;line-height:1}
+      .dupe{display:flex;flex-direction:column;gap:4px}
+      .dbox{border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;font-size:11px;border-radius:6px;padding:5px 8px;text-align:center}
+      .gbox{border:1px solid #6ee7b7;background:#ecfdf5;color:#065f46;font-size:11px;border-radius:6px;padding:5px 8px;text-align:center}
+      .mod{border:1px solid #cbd5e1;border-radius:8px;padding:7px 10px;font-size:11px;text-align:center;background:#fff;min-width:78px}
+      .mod.deepbox{background:linear-gradient(135deg,#0f172a,#1e293b);color:#e2e8f0;border:none}
+      .leak{color:#dc2626;font-weight:700}
+      .seam{color:#6366f1;font-weight:700}
+      .dead{border:1px dashed #cbd5e1;color:#94a3b8;background:#f8fafc;text-decoration:line-through;font-size:11px;border-radius:6px;padding:4px 8px;text-align:center}
+      .card{break-inside:avoid}
+      .legend span{display:inline-flex;align-items:center;gap:6px;margin-right:18px;font-size:12px;color:#475569}
+      .swatch{width:26px;height:14px;border-radius:3px;display:inline-block}
+      pre.mermaid{background:#fff}
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+      <header class="space-y-4">
+        <div>
+          <p class="text-xs uppercase tracking-widest text-slate-400">Deepening review · Matt Pocock <em>improve-codebase-architecture</em> + <em>codebase-design</em></p>
+          <h1 class="text-4xl font-serif font-semibold mt-1">periphery</h1>
+          <p class="text-slate-500 mt-1">Whole-codebase sweep · 2026-06-20 · 6 parallel reviewers · ~42.5k LOC · 25 src projects + examples/tests/benchmarks</p>
+        </div>
+        <p class="text-sm text-slate-600 max-w-3xl">Two axes, reported together per finding: <strong>architecture</strong> (turn shallow modules into deep ones — leverage for callers, locality for maintainers, a real test surface) and <strong>standards</strong> (functional core / imperative shell, strongly-typed IDs, ADR conformance). Judged against the repo's own exemplar, the Treehopper pure core (ADR-0052). The diagrams carry the weight; prose stays in glossary terms.</p>
+        <div class="bg-slate-900 text-slate-100 rounded-xl px-5 py-4 text-sm max-w-3xl">
+          <strong>Verdict up front.</strong> Periphery is a <em>healthy</em> codebase that already knows the functional-core/imperative-shell ideal and applies it well in its newest subsystems (Treehopper, the firmware-flashing platform). The friction is <strong>concentrated, not pervasive</strong>: two older state machines at the centre of the device model — <code>DeviceTracker</code>'s latch resolution and <code>DeviceProxyBase</code>'s recovery loop — are pure logic fused with their lock/clock/IO shell and tested <em>past</em> the interface, plus a handful of un-deepened seams and duplicated boilerplate.
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-5 py-4 text-sm max-w-3xl">
+          <strong>Outcome (2026-06-20).</strong> This review has been actioned. All 10 <strong>Strong</strong> findings — plus 1.4 (typed <code>DeviceId</code>) and 6.3 (benchmark pixel-math) — were implemented and merged to <code>main</code> (PRs #27, #28, #29, #30, #31, #32, #33, #35). The remaining Worth-exploring / Speculative findings were filed individually as GitHub issues, one per finding, in the range <a href="https://github.com/charles8051/periphery/issues/112">#112</a>-<a href="https://github.com/charles8051/periphery/issues/131">#131</a>; the Markdown companion links each finding to its own. The cards below are preserved as the original point-in-time survey.
+        </div>
+        <div class="legend bg-white border border-slate-200 rounded-lg px-4 py-3">
+          <span><span class="swatch" style="background:#cbd5e1"></span>interface surface</span>
+          <span><span class="swatch" style="background:linear-gradient(135deg,#0f172a,#1e293b)"></span>deep implementation</span>
+          <span><span class="leak">↯</span> leakage across a seam</span>
+          <span><span class="seam">┄┄</span> seam (where the interface lives)</span>
+          <span><span class="badge b-strong">Strong</span><span class="badge b-worth">Worth exploring</span><span class="badge b-spec">Speculative</span></span>
+        </div>
+      </header>
+
+      <!-- THEMES -->
+      <section class="bg-white border border-slate-200 rounded-xl p-6 space-y-3">
+        <h2 class="text-lg font-serif font-semibold">Cross-cutting patterns</h2>
+        <p class="text-sm text-slate-600">Six reviewers, independent lanes, converged on the same handful of shapes:</p>
+        <ul class="grid md:grid-cols-2 gap-3 text-sm">
+          <li class="border border-slate-100 rounded-lg p-3"><span class="badge b-std">central</span> <strong>Pure state machines fused with their lock/notify/Task shell, tested <em>past</em> the interface.</strong> The repo extracted pure <em>decision values</em> (<code>RecoveryDirective</code>, <code>ResetStrategy</code>, <code>DeviceWaitState</code>, <code>AppReducer</code>) but left its two biggest <em>state machines</em> fused — <code>DeviceTracker</code> is driven by 208 direct calls to its <code>internal On*</code> methods; <code>DeviceProxyBase</code> tangles decide/delay with reset IO.</li>
+          <li class="border border-slate-100 rounded-lg p-3"><span class="badge b-std">recurring</span> <strong>Buried clocks beside clock-injectable siblings.</strong> <code>DeviceProxyBase</code> reads <code>Environment.TickCount64</code> and forces a pure backoff into an <code>async</code> signature it never awaits; <code>CameraSession</code> hard-wires <code>Stopwatch</code>/<code>new CancellationTokenSource(timeout)</code>/<code>Task.Delay</code> — while <code>I2cDdcMonitorBackend</code>, <code>DeviceWaitState</code> and the DFU poll do it right.</li>
+          <li class="border border-slate-100 rounded-lg p-3"><span class="badge b-arch">recurring</span> <strong>Pure codec/parse fused into the IO shell.</strong> USB device-descriptor decode lives inside both backends with no pure parser (HID's <code>HidReportDescriptor.Parse</code> is the model); <code>MegatecWire</code> welds reassembly to its read loop; <code>DeviceInfoTreeBuilder</code> fuses presentation to Spectre.</li>
+          <li class="border border-slate-100 rounded-lg p-3"><span class="badge b-std">recurring</span> <strong>One unfinished typed ID at the centre.</strong> <code>DeviceInfo.Id</code> (and <code>ParentId</code>, <code>SerialNumber</code>) is a raw <code>string</code> while <code>HardwareId</code>/<code>SerialPortName</code>/<code>UsbClassCode</code> are typed record structs. Two reviewers flagged it from different clusters — it's the entity key threaded through every subsystem.</li>
+          <li class="border border-slate-100 rounded-lg p-3"><span class="badge b-arch">recurring</span> <strong>Duplicated shallow boilerplate.</strong> Five identical per-enricher <code>EnrichAsync</code> shells, three structurally-identical <code>DeviceProxy</code> leaves, the CLI resolve+HID-error epilogue (×5-6), per-command parsers, <code>FileLoggerProvider</code> (×3), three first-match registries — and the pixel-format dimension math (×4, already <em>drifted</em>).</li>
+          <li class="border border-slate-100 rounded-lg p-3"><span class="badge b-std">notable</span> <strong>One purity leak in the exemplar itself.</strong> <code>TreehopperWire.SpiClockByte</code> reads <code>Environment.GetEnvironmentVariable("TREEHOPPER_SPI_DANGER_BAND")</code> on the pure SPI encode path — precisely the boundary ADR-0052 says "CI/code-review enforce."</li>
+        </ul>
+        <p class="text-sm text-slate-600 border-t border-slate-100 pt-3"><strong>The healthy grain to defend:</strong> the Treehopper pure core (ADR-0052); the firmware-flashing platform (<code>DeviceWaitState</code>, <code>Stm32DfuPlan</code>, <code>Efm8BootRecordGenerator</code>, <code>AppReducer</code>, <code>ElfImage</code>/<code>IntelHexImage</code>); Monitor's four pure cores and HID's <code>Codecs/</code>; the core value layer (immutable <code>DeviceInfo</code>, the typed IDs, <code>DeviceFilter.Matches</code>, <code>DeviceInfoDiff</code>); <code>UsbDevice.RunTransferAsync</code>; and the FlashAnything dual-mode host triad + the provider contract-test bases. New work should match these, not the two older state machines.</p>
+      </section>
+
+      <!-- ============ CLUSTER 1 ============ -->
+      <section class="space-y-6">
+        <div class="border-l-4 border-indigo-300 pl-4">
+          <h2 class="text-2xl font-serif font-semibold">1 · Core device discovery, tracking &amp; reconnect</h2>
+          <p class="text-sm text-slate-500"><code>src/Periphery/</code> — the value layer is exemplary; the two big state machines (tracker resolution, proxy recovery) are the outliers.</p>
+        </div>
+
+        <article class="card bg-white border border-slate-200 rounded-xl p-6 space-y-4 ring-1 ring-emerald-100">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h3 class="text-lg font-semibold">1.1 · Extract <code>DeviceTracker</code>'s latch resolution into a pure transition core</h3>
+            <div class="flex gap-1.5 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-std">standards</span><span class="badge b-tag">in-process</span></div>
+          </div>
+          <p class="files">src/Periphery/DeviceTracker.cs · src/Periphery/MultiDeviceTracker.cs · tests/Periphery.Tests/Tracker/DeviceTrackerTests.cs</p>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <pre class="mermaid">
+flowchart LR
+  subgraph BEFORE["before — latch fused with lock + notify, tested past the interface"]
+    direction TB
+    T["tests"] -.208 direct internal calls.-> ON["On* methods (internal)"]
+    ON --> F["mutable latch maps + dicts under _lock"]
+    F --> N["Resolve + NotifyChanges"]
+  end
+  subgraph AFTER["after — pure resolution core + thin shell"]
+    direction TB
+    R["ProfileResolution.Apply/Resolve (state,event)→(state,view)"]:::deep
+    SH["shell: lock + one swap + notify"] --> R
+    R --> SH
+  end
+  BEFORE --> AFTER
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+  class T,ON leak
+            </pre>
+          </div>
+          <p class="text-sm"><strong>Problem.</strong> The per-profile latch logic (<code>_presentLatch</code>/<code>_connectedLatch</code> mutations across <code>OnDeviceAppeared/Connected/…</code> + <code>Resolve</code>) is the load-bearing core, but it is fused with the lock, the mutable fields, and the <code>StateChanged</code>/<code>IObserver</code> notification shell. The interface is not the test surface: <code>DeviceTrackerTests</code> drives the machine through <strong>208 direct calls</strong> to the <code>internal On*</code> methods, and <code>MultiDeviceTracker</code> re-invokes those same methods rather than reusing a value transform.</p>
+          <p class="text-sm"><strong>Solution.</strong> Lift the latch+resolve logic into an immutable <code>ProfileResolution</code> value with total functions <code>Apply*</code>/<code>Resolve : (state, event) → (state, view)</code>; the class shell shrinks to lock + one swap + notify, and the children reuse the transform.</p>
+          <div><span class="win">interface is the test surface</span><span class="win">locality of resolution logic</span><span class="win">races unrepresentable</span><span class="win">matches the ADR-0052 exemplar</span></div>
+          <div class="adr">✓ <strong>No conflict.</strong> ADR-0052 sanctions exactly this split; ADR-0049/0029 govern the observer/edge-event shell, which stays.</div>
+        </article>
+
+        <div class="grid md:grid-cols-2 gap-5">
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">1.2 · Make the recovery decide+delay a pure schedule the shell awaits</h3><div class="flex gap-1 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery/DeviceProxyBase.cs · ExponentialBackoffRecoveryPolicy.cs · IRecoveryPolicy.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before</div><div class="mod" style="border-color:#fca5a5;background:#fef2f2;color:#991b1b">async <code>DecideAsync</code> (never awaits) + <span class="leak">TickCount64</span> reopen poll</div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="mod deepbox">pure <code>Decide(ctx)</code>; shell owns <code>Task.Delay</code> + the clock</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> The pure <code>attempt → TimeSpan</code> backoff is forced into a <code>ValueTask</code> signature that never awaits and ignores its <code>ct</code>, and the reopen poll reads <code>Environment.TickCount64</code> (<code>DeviceProxyBase.cs:805</code>) — a clock buried in the decision path.</p>
+            <p class="text-sm"><strong>Solution.</strong> Give the policy <code>RecoveryDirective Decide(RecoveryContext)</code>; the shell owns the single <code>Task.Delay(directive.Delay)</code> and the monotonic clock.</p>
+            <div><span class="win">pure core, no buried clock</span><span class="win">total function, fully testable</span><span class="win">ct only in the shell</span></div>
+            <div class="adr">✓ ADR-0055 already says the policy must be pure — the async signature contradicts its own intent.</div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">1.3 · Untangle reset escalation: split the decision from gate+reset+reopen IO</h3><div class="flex gap-1 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-std">standards</span><span class="badge b-tag">ports &amp; adapters</span></div></div>
+            <p class="files">src/Periphery/DeviceProxyBase.cs · IResetSafetyGate.cs · IDeviceReset.cs · ResetStrategyMap.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before — one method</div><div class="dupe"><div class="dbox">gate consult</div><div class="dbox">reset IO</div><div class="dbox">clock reopen poll</div><div class="dbox">transitions</div></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="gbox">pure escalation step (strategy/give-up)</div><div class="gbox" style="margin-top:6px">thin <code>ExecuteResetAsync</code> owns gate+reset+reopen</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> <code>TryResetAndReopenAsync</code> fuses the gate consult, reset IO, a clock-driven reopen poll, and the transitions; the escalation <em>decision</em> can only be tested through the full async proxy — while <code>ResetStrategyMap</code> is already pure.</p>
+            <p class="text-sm"><strong>Solution.</strong> Let the policy pick the strategy from the pure <code>RecoveryContext</code>; move gate+reset+reopen into a thin shell. The gate stays a real async port.</p>
+            <div><span class="win">decision split from IO</span><span class="win">escalation testable as values</span><span class="win">gate stays a real port</span></div>
+            <div class="adr">✓ ADR-0060 sanctions the escalation; this only relocates the pure decision out of the IO body.</div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">1.4 · Promote <code>DeviceInfo.Id</code> to a strongly-typed <code>DeviceId</code> struct</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery/DeviceId.cs · DeviceInfo.cs · DeviceTracker.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before</div><div class="mod" style="border-color:#fca5a5;font-family:ui-monospace,monospace">required <strong>string</strong> Id<br>+ static DeviceId.Comparer<br>(invariant by convention)</div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="mod deepbox" style="font-family:ui-monospace,monospace">readonly record struct DeviceId<br>(case-insensitive <code>==</code>)</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> <code>Id</code>/<code>ParentId</code>/<code>SerialNumber</code> are raw strings while <code>HardwareId</code>/<code>SerialPortName</code>/<code>UsbClassCode</code> are typed; the case-insensitive identity invariant rides on every keyer remembering the static comparer. The entity key for every subsystem.</p>
+            <p class="text-sm"><strong>Solution.</strong> Make <code>DeviceId</code> a <code>readonly record struct</code> carrying the invariant in the value (mirroring <code>HardwareId</code>).</p>
+            <div><span class="win">invariant carried by the type</span><span class="win">raw strings can't leak as ids</span><span class="win">consistency with other typed IDs</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">1.5 · Collapse the five identical per-enricher <code>EnrichAsync</code> shells</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">src/Periphery/{Sensor,Imaging,Printer,Biometric,SmartCard}Enricher.cs · ITagEmittingEnricher.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before — 5×</div><div class="dupe"><div class="dbox"><code>Task.FromResult(device with{Tags…})</code></div><div class="dbox">…four more identical…</div></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="gbox">pure <code>CanEnrich</code> per enricher</div><div class="gbox" style="margin-top:6px">pipeline owns the one tag-apply</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> Each enricher's real content is a pure <code>CanEnrich</code>, but every one repeats a byte-identical 5-line <code>EnrichAsync</code> over <code>Task.FromResult</code> — a pass-through that fails the deletion test five times.</p>
+            <p class="text-sm"><strong>Solution.</strong> <code>ITagEmittingEnricher</code> carries only the pure pieces; the pipeline applies the tag for every <code>CanEnrich</code>-true tagger.</p>
+            <div><span class="win">passes the deletion test</span><span class="win">no Task in core</span><span class="win">one tag-apply site</span></div>
+          </article>
+        </div>
+
+        <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3 md:w-2/3">
+          <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">1.6 · Lift the native property read out of <code>LinuxCategoryMap</code>'s pure mapping</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-std">standards</span></div></div>
+          <p class="files">src/Periphery/Linux/LinuxCategoryMap.cs · LinuxDeviceProvider.cs</p>
+          <div class="ba">
+            <div class="ba-col"><div class="ba-cap">before</div><div class="mod" style="border-color:#fca5a5"><code>ResolveCategory(subsystem, <span class="leak">IntPtr device</span>)</code> → <code>UdevInterop.GetPropertyValue</code> inside the map</div></div>
+            <div class="arrow">→</div>
+            <div class="ba-col"><div class="ba-cap">after</div><div class="mod deepbox"><code>ResolveCategory(subsystem, isKeyboard, isMouse)</code> — total over values</div></div>
+          </div>
+          <p class="text-sm"><strong>Problem.</strong> The one category map that takes a native udev handle and P/Invokes inside what should be the pure core — so, unlike its Windows/macOS siblings, it has no category-map test.</p>
+          <p class="text-sm"><strong>Solution.</strong> Read the two input hints in the provider shell and pass booleans into a pure <code>ResolveCategory</code>.</p>
+          <div><span class="win">category map is pure</span><span class="win">testable through its interface</span><span class="win">parity with Win/macOS maps</span></div>
+        </article>
+      </section>
+
+      <!-- ============ CLUSTER 2 ============ -->
+      <section class="space-y-6">
+        <div class="border-l-4 border-indigo-300 pl-4">
+          <h2 class="text-2xl font-serif font-semibold">2 · Camera capture</h2>
+          <p class="text-sm text-slate-500"><code>src/Periphery.Camera/</code> — among the strongest clusters: <code>ICameraBackend</code> is a deep two-adapter seam and the value/lease layer is exemplary. Friction is duplicated dimension math and a non-injectable producer clock.</p>
+        </div>
+
+        <article class="card bg-white border border-slate-200 rounded-xl p-6 space-y-4 ring-1 ring-emerald-100">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h3 class="text-lg font-semibold">2.1 · Hang pixel-format dimension math on <code>CameraPixelFormat</code> (4 copies, drifted)</h3>
+            <div class="flex gap-1.5 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-arch">architecture</span><span class="badge b-tag">in-process</span></div>
+          </div>
+          <p class="files">src/Periphery.Camera/CameraPixelFormat.cs · CameraSession.cs · Internal/CameraFramePool.cs · Windows/MfCameraBackend.cs · Internal/PlaneLayout.cs</p>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <pre class="mermaid">
+flowchart LR
+  subgraph BEFORE["before — 5+ private switch copies, already drifted"]
+    direction TB
+    S1["CameraSession: NV12→3 bpp (wrong, 2x over-alloc)"]:::leak
+    S2["CameraFramePool: planar→width"]:::leak
+    S3["MfCameraBackend: planar→default width"]:::leak
+    S4["TestBackend + BenchmarkBackend: own bpp tables"]:::leak
+  end
+  subgraph AFTER["after — one pure source of truth"]
+    direction TB
+    P["CameraPixelFormat.FrameSize/BytesPerRow/PlaneCount (pure, tested once)"]:::deep
+    C1["CameraSession"] --> P
+    C2["CameraFramePool"] --> P
+    C3["both backends + fakes"] --> P
+  end
+  BEFORE --> AFTER
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+            </pre>
+          </div>
+          <p class="text-sm"><strong>Problem.</strong> Bytes-per-pixel, stride, frame-size and plane-count are each computed by ad-hoc per-format <code>switch</code> expressions copy-pasted across 5+ sites — and they have <strong>already drifted</strong>: <code>CameraSession.EstimateFrameSize</code> maps NV12 → <code>3</code> bpp (<code>CameraSession.cs:584</code>) when the true cost is 1.5, double-allocating the pool seed; the stride copies disagree on the planar formats.</p>
+          <p class="text-sm"><strong>Solution.</strong> Hang the math on <code>CameraPixelFormat</code> (or extend the already-pure, already-tested <code>PlaneLayout</code>) as pure static functions every call site delegates to; delete the four private switch copies.</p>
+          <div><span class="win">single source of truth</span><span class="win">kills the NV12 drift</span><span class="win">pure + tested once</span><span class="win">deep module</span></div>
+        </article>
+
+        <div class="grid md:grid-cols-2 gap-5">
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">2.2 · Make <code>CameraSession</code>'s producer-loop clock injectable</h3><div class="flex gap-1 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery.Camera/CameraSession.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before — buried timing</div><div class="dupe"><div class="dbox"><code>new CancellationTokenSource(timeout)</code></div><div class="dbox"><code>Stopwatch.StartNew()</code></div><div class="dbox"><code>Task.Delay(2s/3s)</code> literals</div></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="gbox">inject <code>TimeProvider</code>; <code>FakeTimeProvider.Advance</code> drives the expiry branch</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> The session rightly owns the channel + producer thread, but it fuses the timing policy into the shell — so tests <code>await Task.Delay(200)</code> real ms and the timeout-vs-cancellation branch (which must surface <code>CameraTimeoutException</code> only on expiry) is effectively untested.</p>
+            <p class="text-sm"><strong>Solution.</strong> Inject <code>TimeProvider</code>; keep the timeout-vs-cancelled decision a pure helper a <code>FakeTimeProvider</code> drives — the Treehopper cadence split.</p>
+            <div><span class="win">shell-owned clock</span><span class="win">deterministic timeout test</span><span class="win">core/shell split</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">2.3 · <code>DropLateFrames</code> is a dead seam — wire it or delete it</h3><div class="flex gap-1 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-arch">architecture</span><span class="badge b-tag">cleanup</span></div></div>
+            <p class="files">src/Periphery.Camera/CameraConfiguration.cs · CameraSessionBuilder.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before — advertised, never read</div><div class="stack"><div class="if" style="height:18px">DropLateFrames(bool)</div><div class="impl" style="height:40px;background:#fef2f2;color:#991b1b">declared + set + asserted to round-trip; <span class="leak">no producer reads it</span></div></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="gbox">resolve to a <code>BufferExhaustionPolicy</code> (effect tested)</div><div class="gbox" style="margin-top:6px">or delete the flag + plumbing-only test</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> The builder doc promises back-pressure, but nothing in <code>CameraSession</code> or the producer reads the flag — drops are governed entirely by <code>BufferExhaustionPolicy</code>. A leaky seam whose test checks plumbing, not effect; deletion changes zero behaviour.</p>
+            <p class="text-sm"><strong>Solution.</strong> Wire it into the producer (<code>false ⇒ BlockProducer</code>, <code>true ⇒ DropIncoming</code>) and test the effect, or delete it and let <code>BufferExhaustionPolicy</code> be the single knob.</p>
+            <div><span class="win">deletion test</span><span class="win">kills a leaky seam</span><span class="win">test the effect</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">2.4 · Give <code>MfFormatMap</code> the direct test its V4L2 twin already has</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">src/Periphery.Camera/Windows/MfFormatMap.cs · tests/Periphery.Camera.Tests/V4l2FormatMapTests.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> <code>MfFormatMap</code> is pure bidirectional GUID↔format logic, but unlike <code>V4l2FormatMap</code> it has no direct test — it's exercised only through <code>MfCameraBackend</code> on real Windows hardware, so its round-trip/asymmetry/no-collision invariants are unverified on CI.</p>
+            <p class="text-sm"><strong>Solution.</strong> Add <code>MfFormatMapTests</code> mirroring the V4L2 suite; the map touches no MF API, so it runs everywhere.</p>
+            <div><span class="win">interface is the test surface</span><span class="win">pure + tested</span><span class="win">symmetry with V4L2</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">2.5 · Share the bounded-cleanup shell primitive</h3><div class="flex gap-1 flex-wrap"><span class="badge b-spec">Speculative</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery.Camera/CameraSession.cs · Windows/MfCameraBackend.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> "Run a wedge-prone native cleanup on a background task with a hard timeout, warn-and-abandon" appears three times with three literals (2s/2s/3s) and near-identical <code>Console.Error</code> warnings — shell timing copy-implemented rather than factored.</p>
+            <p class="text-sm"><strong>Solution.</strong> One <code>BoundedShellOp.RunOrAbandon(work, budget, label, clock)</code> (folding in 2.2's <code>TimeProvider</code>), routing warnings through the structured logger.</p>
+            <div><span class="win">shell primitive</span><span class="win">timing in one place</span><span class="win">structured logging</span></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ CLUSTER 3 ============ -->
+      <section class="space-y-6">
+        <div class="border-l-4 border-indigo-300 pl-4">
+          <h2 class="text-2xl font-serif font-semibold">3 · Device IO extensions — HID / Monitor / USB</h2>
+          <p class="text-sm text-slate-500">Each is a clean two-adapter (Windows+Linux) backend seam. Monitor and HID match the Treehopper pure-core bar; USB has the one real codec-in-the-shell divergence.</p>
+        </div>
+
+        <article class="card bg-white border border-slate-200 rounded-xl p-6 space-y-4 ring-1 ring-emerald-100">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h3 class="text-lg font-semibold">3.1 · Extract a pure USB descriptor parser out of both backends</h3>
+            <div class="flex gap-1.5 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-std">standards</span><span class="badge b-tag">in-process</span></div>
+          </div>
+          <p class="files">src/Periphery.Usb/Windows/WinUsbBackend.cs · Linux/LibUsbBackend.cs · UsbDeviceDescriptor.cs</p>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <pre class="mermaid">
+flowchart LR
+  subgraph BEFORE["before — decode fused into both IO shells"]
+    direction TB
+    W["WinUsbBackend.ReadDeviceDescriptor(handle)"]:::leak --> WB["inline BinaryPrimitives on raw bytes"]
+    L["LibUsbBackend.ToDeviceDescriptor(struct)"]:::leak --> LB["inline field mapping"]
+  end
+  subgraph AFTER["after — one pure parser, golden-tested (HID's model)"]
+    direction TB
+    P["UsbDescriptors.ParseDeviceDescriptor(bytes) — pure"]:::deep
+    WS["WinUsbBackend: fetch bytes only"] --> P
+    LS["LibUsbBackend: fetch bytes only"] --> P
+  end
+  BEFORE --> AFTER
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+            </pre>
+          </div>
+          <p class="text-sm"><strong>Problem.</strong> The 18-byte standard descriptor layout is spec-fixed and platform-independent, yet <code>WinUsbBackend.ReadDeviceDescriptor</code> byte-decodes it inline (<code>WinUsbBackend.cs:321</code>) and <code>LibUsbBackend</code> maps libusb structs inline — pure decode wedged into the IO shell, reachable only on real hardware. HID already solved this the right way with the pure <code>HidReportDescriptor.Parse</code>.</p>
+          <p class="text-sm"><strong>Solution.</strong> Extract a pure <code>UsbDescriptors.ParseDeviceDescriptor(ReadOnlySpan&lt;byte&gt;)</code> / <code>ParseConfiguration(...)</code> (the latter also unblocks multi-interface parsing); the backends fetch raw bytes and call it; golden-vector tests follow <code>HidReportDescriptorTests</code>.</p>
+          <div><span class="win">pure core</span><span class="win">interface is the test surface</span><span class="win">matches the HID exemplar</span></div>
+        </article>
+
+        <div class="grid md:grid-cols-2 gap-5">
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">3.2 · Make <code>MegatecWire</code>'s reassembly a pure incremental parser</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery.Hid/Codecs/MegatecWire.cs · MegatecQxCodec.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before</div><div class="mod" style="border-color:#fca5a5">prefix/CR reassembly welded to <code>while{await ReadReportAsync}</code></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="mod deepbox">pure <code>MegatecFrame.Feed(ref state, span)</code>; shell just reads</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> The doc calls <code>MegatecWire</code> the pure layer, but <code>RequestAsync</code> holds the <code>HidDevice</code> + a <code>CancelAfter</code> deadline — it's the IO shell. The pure noise-skip + reassembly is welded to the read loop, untestable on a byte buffer the way <code>DdcCiWire</code> is.</p>
+            <p class="text-sm"><strong>Solution.</strong> Extract the reassembly as a pure <code>MegatecFrame.Feed</code> the shell drives (or at least rename <code>MegatecWire</code> as the transport shell it is).</p>
+            <div><span class="win">pure core</span><span class="win">interface is the test surface</span><span class="win">honest doc</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">3.3 · Move DDC/CI timing constants out of the pure codec into the shell</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery.Monitor/DdcCiWire.cs · Linux/I2cDdcMonitorBackend.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> <code>DdcCiWire</code> is an otherwise-textbook pure frame codec, but it declares <code>CommandSpacing = 50ms</code> / <code>ReplyDelay = 40ms</code> — shell timing policy the codec never uses, blurring the boundary the file's own doc claims ("the backend owns the delays").</p>
+            <p class="text-sm"><strong>Solution.</strong> Move the two <code>TimeSpan</code> delays onto the backend that owns the clock; <code>DdcCiWire</code> stays <code>Encode*</code>/<code>TryDecode*</code>/<code>Checksum</code> + address constants.</p>
+            <div><span class="win">pure core</span><span class="win">locality</span><span class="win">doc matches code</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">3.4 · Hoist the three identical <code>DeviceProxy</code> factory bodies into the base</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">src/Periphery.Usb/UsbDeviceProxy.cs · Periphery.Hid/HidDeviceProxy.cs · Periphery.Monitor/MonitorDeviceProxy.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before — 3×</div><div class="dupe"><div class="dbox">~40-line <code>OpenAsync</code>/<code>Create</code> plumbing</div><div class="dbox">…copy 2…</div><div class="dbox">…copy 3 (+ a 4th coming: Serial)…</div></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="gbox">generic <code>StartAsync&lt;TProxy&gt;</code> in <code>DeviceProxyBase</code></div><div class="gbox" style="margin-top:6px">leaf = its <code>OpenDeviceAsync</code> + shim</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> The three leaves each pass the deletion test (the override is real), but the ~40 lines of factory plumbing are identical — a fix to the start-or-dispose handshake is three edits, and ADR-0062's serial backend will paste a fourth.</p>
+            <p class="text-sm"><strong>Solution.</strong> Lift the two factory bodies into <code>DeviceProxyBase</code> as generic statics; coordinate as a core change.</p>
+            <div><span class="win">locality</span><span class="win">deep base seam</span><span class="win">less boilerplate</span></div>
+            <div class="adr">⚠ ADR-0062 (serial-backend) is the next leaf — fixing now avoids a 4th copy.</div>
+          </article>
+
+          <article class="card bg-white border border-emerald-200 rounded-xl p-5 space-y-3 bg-emerald-50/40">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">✓ 3.6 · Reference grain — Monitor's pure cores + <code>UsbDevice</code>'s transfer funnel</h3><div class="flex gap-1 flex-wrap"><span class="badge b-spec">Speculative</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery.Monitor/{DdcCiWire,OrientationMath,MonitorLayout}.cs · src/Periphery.Usb/UsbDevice.cs</p>
+            <p class="text-sm"><strong>Not a defect.</strong> Monitor carries four pure cores (<code>DdcCiWire</code>, <code>OrientationMath</code>, <code>LayoutDiff</code>, <code>MccsCapabilities.Parse</code>) tested directly <em>and</em> consumed at real call sites — the closest match to the Treehopper bar in the IO tier. <code>UsbDevice.RunTransferAsync</code> is the positive control for a deep <em>shell</em>: one funnel fusing metering + structured logging + a deadline that becomes a typed <code>UsbTimeoutException</code>, caller-cancel kept distinct. <strong>Defend both.</strong> (3.5 — <code>WinUsbBackend.ClaimInterface</code> throws for interface ≠ 0 while Linux claims any: an honest-seam <span class="badge b-spec">Speculative</span> note for when a multi-interface consumer appears.)</p>
+            <div><span class="win">exemplar to defend</span><span class="win">pure codecs tested directly</span><span class="win">one timing/metering site</span></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ CLUSTER 4 ============ -->
+      <section class="space-y-6">
+        <div class="border-l-4 border-emerald-400 pl-4">
+          <h2 class="text-2xl font-serif font-semibold">4 · Treehopper — the pure-core exemplar (ADR-0052)</h2>
+          <p class="text-sm text-slate-500">The healthiest cluster, and the reference grain for everything above. The core honours ADR-0052's hard rules with exactly one leak; the leases are deep handles; the LED library is the immutable-frame model; the satellites match.</p>
+        </div>
+
+        <article class="card bg-white border border-slate-200 rounded-xl p-6 space-y-4 ring-1 ring-amber-100">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h3 class="text-lg font-semibold">4.1 · Move the SPI danger-band env read out of the pure codec into the shell</h3>
+            <div class="flex gap-1.5 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-std">standards</span><span class="badge b-tag">in-process</span></div>
+          </div>
+          <p class="files">src/Periphery.Treehopper/Wire/TreehopperWire.cs</p>
+          <div class="ba">
+            <div class="ba-col"><div class="ba-cap">before — the one purity leak</div><div class="mod" style="border-color:#fca5a5;font-family:ui-monospace,monospace">SpiClockByte() reads<br><span class="leak">Environment.GetEnvironmentVariable(…)</span><br>on the pure Encode path</div></div>
+            <div class="arrow">→</div>
+            <div class="ba-col"><div class="ba-cap">after</div><div class="mod deepbox" style="font-family:ui-monospace,monospace">SpiClockByte(mhz, allowDangerBand)<br>shell reads the env var once</div></div>
+          </div>
+          <p class="text-sm"><strong>Problem.</strong> <code>SpiClockByte</code> reads <code>Environment.GetEnvironmentVariable("TREEHOPPER_SPI_DANGER_BAND")</code> (<code>TreehopperWire.cs:455</code>), and it's on <code>Encode</code>'s path for every <code>SpiTransaction</code>. So <code>Encode</code> — which DEC-001 declares "Pure: same input, same bytes, no side effects … CI/code-review enforce this boundary" — is non-deterministic and does a syscall per SPI transfer. The debug bypass is legitimate; its placement in the pure core is the exact leak the ADR's enforcement clause exists to prevent.</p>
+          <p class="text-sm"><strong>Solution.</strong> Thread a <code>bool allowDangerBand</code> through the SPI encode path; <code>TreehopperBoard</code> reads the env var once at construction. <code>SpiClockByte</code> stays total; the bypass becomes a shell concern.</p>
+          <div><span class="win">restores the deterministic pure core</span><span class="win">ambient state to the shell</span><span class="win">honours DEC-001's hard rule</span></div>
+          <div class="adr">⚠ ADR-0052's "What we constrain" forbids exactly this — note it in the SPI-lockup investigation rather than reopening the ADR.</div>
+        </article>
+
+        <div class="grid md:grid-cols-2 gap-5">
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">4.2 · Make <code>BoardReport</code> self-describing (Adc noise on digital pins)</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">src/Periphery.Treehopper/Wire/TreehopperWire.cs · BoardReport.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> <code>DecodeReport</code> sets every <code>PinSnapshot</code> to <em>both</em> <code>Digital</code> and <code>Adc = (high&lt;&lt;8)|low</code> for all pins regardless of mode — but the snapshot carries no mode, so a caller of the standalone <code>Reports</code> stream can't tell which projection is valid, and <code>PinSnapshot.Adc</code>'s "0 for other modes" doc is not honoured (digital pins decode to bogus ADC).</p>
+            <p class="text-sm"><strong>Solution.</strong> Either doc <code>Adc</code> as the raw analog-only field, or fold the per-pin mode into the snapshot at publish (the shell knows <code>_applied</code>) so the report is self-describing.</p>
+            <div><span class="win">report is self-describing</span><span class="win">no bogus ADC on digital pins</span><span class="win">matches the contract</span></div>
+          </article>
+
+          <article class="card bg-white border border-emerald-200 rounded-xl p-5 space-y-3 bg-emerald-50/40">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">✓ 4.3 · Reference grain — pure core, deep leases, immutable LED frame</h3><div class="flex gap-1 flex-wrap"><span class="badge b-spec">Speculative</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">Wire/Command.cs · Wire/TreehopperWire.cs · TreehopperBoard.cs · I2cLease.cs · Libraries/LedFrame.cs</p>
+            <p class="text-sm"><strong>This <em>is</em> ADR-0052, implemented.</strong> Verified: <code>Command</code> a closed union; <code>Encode</code>/<code>DecodeReport</code>/<code>Plan</code> pure total functions (no clock/Task/ct — the one exception is 4.1); <code>TreehopperBoard</code> a thin+deep shell (reconcile = update→Plan→Encode→ship; producer = read→decode→publish, no shared mutable pin field); leases are <em>deep handles</em> (I²C status-decode + typed throw, OneWire MATCH-ROM framing); <code>LedFrame</code> immutable + <code>Apa102Strip</code> snapshots-then-transfers (torn-frame race unrepresentable); DEC-004 holds (PWM cadence is firmware-driven). The board is tested through its interface against a real <code>FakeUsbBackend</code>. <strong>Defend all of it.</strong></p>
+            <div><span class="win">the reference grain</span><span class="win">interface is the test surface</span><span class="win">cadence in the shell</span><span class="win">immutable frames</span></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ CLUSTER 5 ============ -->
+      <section class="space-y-6">
+        <div class="border-l-4 border-emerald-400 pl-4">
+          <h2 class="text-2xl font-serif font-semibold">5 · Firmware flashing &amp; bootloaders (ADR-0061)</h2>
+          <p class="text-sm text-slate-500">The strongest FCIS subsystem after Treehopper: pure plans/parsers/reducers, transports as real two-adapter seams, clock-injectable waits. Findings are refinements, not violations.</p>
+        </div>
+
+        <article class="card bg-white border border-emerald-200 rounded-xl p-6 space-y-3 bg-emerald-50/40">
+          <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="text-lg font-semibold">✓ Healthy grain — the subsystem honours the FCIS split faithfully</h3><div class="flex gap-1 flex-wrap"><span class="badge b-spec">defend</span><span class="badge b-std">standards</span></div></div>
+          <p class="files">Periphery.Bootloader/DeviceWaitState.cs · Stm32.Usb/Stm32DfuPlan.cs · Efm8.Usb/Efm8BootRecordGenerator.cs · Periphery.Firmware/{ElfImage,IntelHexImage}.cs · FlashAnything/{AppReducer,AutoflashPolicy}.cs</p>
+          <p class="text-sm">Every protocol/image core is pure (no <code>Task</code>/<code>ct</code>/<code>Stopwatch</code>/<code>DateTime.Now</code>), and the one place timing legitimately lives (the DFU GETSTATUS <code>bwPollTimeout</code> wait) is a <code>Task.Delay</code> in the shell with the device dictating the value. <code>DeviceWaitState</code> is a <em>better</em> FCIS demo than even Treehopper's <code>Plan</code> — it cores a stateful event-driven wait whose <em>timeout</em> is a pure signal. Every transport is a real two-adapter seam (production + fake: <code>HidEfm8Transport</code>+<code>FakeEfm8Transport</code>, <code>UsbStm32DfuTransport</code>+<code>FakeStm32DfuTransport</code>, plus three <code>IDeviceWaitSource</code> adapters). The findings below are depth/locality refinements, not re-fusions of logic+IO.</p>
+        </article>
+
+        <div class="grid md:grid-cols-2 gap-5">
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">5.1 · Core the DFU GETSTATUS poll as a pure reaction the shell interprets</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-std">standards</span></div></div>
+            <p class="files">src/Periphery.Bootloader.Stm32.Usb/Stm32DfuProgrammer.cs · DfuStatus.cs · Stm32DfuPlan.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> The <code>DNLOAD → GETSTATUS(dfuDNBUSY) → wait → GETSTATUS</code> handshake (AN3156's load-bearing sequence) lives as imperative control flow. The <em>timing</em> is correctly in the shell, but the <em>decision</em> (busy? error? recover-attempt?) is fused into the async body, so the errTARGET/recovery-ladder table is reachable only through a real <code>Task.Delay</code>.</p>
+            <p class="text-sm"><strong>Solution.</strong> Extract <code>DfuPoll.Next(status, attempt) → {WaitThenRecheck|Done|Recover|Fail}</code> (mirroring <code>DeviceWaitState</code>); the shell stays a trivial loop.</p>
+            <div><span class="win">deeper pure core</span><span class="win">cadence as pure state</span><span class="win">synchronous test surface</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">5.2 · Model DFU verify read-back in the pure plan, like the write path</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">src/Periphery.Bootloader.Stm32.Usb/Stm32DfuProgrammer.cs · Stm32DfuPlan.cs · DfuStep.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> <code>Plan</code> emits one opaque <code>DfuStep.Verify</code> per segment, but <code>VerifySegmentAsync</code> re-derives the block/address arithmetic imperatively — duplicating the write path's chunking the plan <em>does</em> model. The read-back addressing isn't byte-exact testable.</p>
+            <p class="text-sm"><strong>Solution.</strong> Emit per-block <code>ReadBlock</code> verify steps so read-back addressing sits in the same pure plan as writes; the shell's verify = transport call + pure compare.</p>
+            <div><span class="win">plan models read-back</span><span class="win">symmetric write/verify</span><span class="win">addressing testable as values</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">5.3 · Collapse the second Treehopper flash path the ADR flags for deletion</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span><span class="badge b-tag">cleanup</span></div></div>
+            <p class="files">src/Periphery.Treehopper.Firmware/TreehopperFirmwareUpdate.cs · Periphery.Treehopper.Flasher/TreehopperFlasher.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> Two ways to reflash a Treehopper: the <code>FlashAnythingService</code> composition (platform path) and the standalone <code>TreehopperFirmwareUpdate</code> facade, which re-assembles the same entry+orchestrator+EFM8 callback. Its own doc says removal is "tracked but deferred" — the reboot/correlate/gate spine is maintained twice.</p>
+            <p class="text-sm"><strong>Solution.</strong> Collapse the facade to file-load + brick-verify + delegate to the same orchestrator callback, or delete it per the ADR note.</p>
+            <div><span class="win">deletion test</span><span class="win">one flash spine</span><span class="win">kills duplicate orchestration</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">5.4-5.6 · Three smaller value/seam refinements</h3><div class="flex gap-1 flex-wrap"><span class="badge b-spec">Speculative</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">Bootloader/DeviceIdentity.cs · Efm8.Usb/Efm8BootRecordGenerator.cs · Bootloader/{Bootloader,BootloaderEntry}Registry.cs</p>
+            <p class="text-sm"><strong>5.4 —</strong> trim <code>DeviceIdentity</code>'s always-null <code>Chip</code>/<code>Regions</code> fields no adapter populates (reintroduce with phase-2 DfuSe parsing). <strong>5.5 —</strong> make the EFM8 flash-map a typed region <em>value</em>, not a <code>switch</code>, ready to lift into the shared family core (DEC-002) for the UART/SMBus siblings. <strong>5.6 —</strong> fold the three near-identical first-match registries into one generic <code>FirstMatchRegistry&lt;T&gt;</code> when a fourth appears.</p>
+            <div><span class="win">no dead interface fields</span><span class="win">data over control flow</span><span class="win">locality</span></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ CLUSTER 6 ============ -->
+      <section class="space-y-6">
+        <div class="border-l-4 border-indigo-300 pl-4">
+          <h2 class="text-2xl font-serif font-semibold">6 · CLI, dual-mode hosts, examples &amp; test architecture</h2>
+          <p class="text-sm text-slate-500">The dual-mode host triad and the provider contract-tests are exemplary; the friction is un-factored CLI boilerplate and a presentation transform fused to the console.</p>
+        </div>
+
+        <article class="card bg-white border border-slate-200 rounded-xl p-6 space-y-4 ring-1 ring-emerald-100">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h3 class="text-lg font-semibold">6.1 · Factor the CLI device-resolve + HID-error epilogue behind one helper</h3>
+            <div class="flex gap-1.5 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-arch">architecture</span><span class="badge b-tag">in-process</span></div>
+          </div>
+          <p class="files">src/Periphery.Cli/Commands/Hid{Feature,Report}{Read,Write}Command.cs · ResetCommand.cs · MonitorCommandHelpers.cs</p>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <pre class="mermaid">
+flowchart LR
+  subgraph BEFORE["before — resolve+error copied across 5-6 commands"]
+    direction TB
+    C1["HidFeatureRead"]:::leak --> R["Enumerate.Where(Id) + raw fallback + catch(HidException)"]
+    C2["HidFeatureWrite / ReportRead / ReportWrite / Reset"]:::leak --> R
+  end
+  subgraph AFTER["after — one HidCommandHelpers seam (mirrors MonitorCommandHelpers)"]
+    direction TB
+    H["HidCommandHelpers.ResolveDeviceAsync + Fail"]:::deep
+    K1["each command: resolve → open → one op → Fail-on-catch"] --> H
+  end
+  BEFORE --> AFTER
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+            </pre>
+          </div>
+          <p class="text-sm"><strong>Problem.</strong> Five commands hand-roll the same <code>Enumerate().Where(d =&gt; d.Id == …)</code> + "no enumeration match" raw fallback; six hand-roll the same <code>catch (HidException)</code> epilogue. The monitor group already factors exactly this (<code>MonitorCommandHelpers</code>), and ADR-0043 mandates the extraction — the HID/reset commands never got it.</p>
+          <p class="text-sm"><strong>Solution.</strong> Add <code>HidCommandHelpers.ResolveDeviceAsync</code> + <code>Fail(HidException)</code>; each command shrinks to resolve → open → one op → <code>Fail</code>-on-catch.</p>
+          <div><span class="win">one seam</span><span class="win">locality</span><span class="win">ADR-0043 alignment</span></div>
+          <div class="adr">⚠ ADR-0043's "extract once, reuse" — the HID commands violate it where the monitor group honours it.</div>
+        </article>
+
+        <div class="grid md:grid-cols-2 gap-5">
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">6.2 · Split <code>DeviceInfoTreeBuilder</code> into a pure projection + a thin Spectre shell</h3><div class="flex gap-1 flex-wrap"><span class="badge b-strong">Strong</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">src/Periphery.Cli/Rendering/DeviceInfoTreeBuilder.cs · Commands/ListCommand.cs</p>
+            <div class="ba">
+              <div class="ba-col"><div class="ba-cap">before</div><div class="mod" style="border-color:#fca5a5"><code>Build()→Spectre.Tree</code>: elision + FormatValue inline, <span class="leak">untested</span></div></div>
+              <div class="arrow">→</div>
+              <div class="ba-col"><div class="ba-cap">after</div><div class="mod deepbox">pure <code>Project(DeviceInfo)→DeviceField[]</code> + thin Tree shell</div></div>
+            </div>
+            <p class="text-sm"><strong>Problem.</strong> The verbose-list presentation (property elision, per-type <code>FormatValue</code>, escaping) is a value→view transform fused to <code>Spectre.Console.Tree</code> with zero tests — the regression-prone logic is assertable only by rendering to a console.</p>
+            <p class="text-sm"><strong>Solution.</strong> A pure <code>Project(DeviceInfo) → DeviceField[]</code> (unit-tested) + a trivial shell that walks it into a <code>Tree</code>.</p>
+            <div><span class="win">pure transform</span><span class="win">interface is the test surface</span><span class="win">functional core</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">6.3 · One source of truth for per-format frame size (benchmark copy drifts)</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span><span class="badge b-tag">cleanup</span></div></div>
+            <p class="files">benchmarks/Periphery.Camera.Benchmarks/Backends/BenchmarkCameraBackend.cs · src/Periphery.Camera/Windows/MfCameraBackend.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> The benchmark backend re-implements the library's per-format frame-size switch (the same family as 2.1) and pre-allocates its synthetic frame from its own copy — a new/changed format would have the harness measure against a wrongly-sized buffer with no test catching it.</p>
+            <p class="text-sm"><strong>Solution.</strong> Resolve with 2.1: one <code>CameraFrameLayout.SizeBytes(w,h,format)</code> via <code>InternalsVisibleTo</code>, shared by the backend and the benchmark.</p>
+            <div><span class="win">one source of truth</span><span class="win">no drift</span><span class="win">honest benchmark</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">6.4 · Give the duplicated File/Console logger providers one home</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span><span class="badge b-tag">cleanup</span></div></div>
+            <p class="files">src/Periphery.FlashAnything.Gui.Core/FileLoggerProvider.cs · examples/Periphery.Examples.TreehopperLed/FileLoggerProvider.cs · Cli.Core/ConsoleLoggerProvider.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> <code>FileLoggerProvider</code> is duplicated near byte-for-byte between a production host and an example (~89 lines each), and <code>ConsoleLoggerProvider</code> is the same shape against a different sink — the diagnostics module maintained in triplicate.</p>
+            <p class="text-sm"><strong>Solution.</strong> One <code>ILoggerProvider</code> behind an <code>ILogSink (File|Console|Tee)</code>; hosts pick a sink. Keep it AOT-clean.</p>
+            <div><span class="win">one module</span><span class="win">no triplication</span><span class="win">locality</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">6.5 · Pull library-worthy logic out of the USB / LED examples</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span></div></div>
+            <p class="files">examples/Periphery.Examples.Usb/Program.cs · Periphery.Examples.TreehopperLed/Program.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> The USB example hand-packs Treehopper config-protocol bytes (the library's depth leaking out — its own comment admits it); the LED example runs a per-frame <code>Stopwatch</code>+min/max/FPS loop a real consumer would want. (The camera examples, by contrast, are honest and thin.)</p>
+            <p class="text-sm"><strong>Solution.</strong> Move the LED-config command onto a board method (or pair the raw "before" with a board "after"); lift the FPS metrics into a reusable instrumented-strip wrapper, or mark it example-only.</p>
+            <div><span class="win">depth in the module</span><span class="win">thin example</span><span class="win">no leaked protocol</span></div>
+          </article>
+
+          <article class="card bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div class="flex items-start justify-between gap-2 flex-wrap"><h3 class="font-semibold">6.6 · Extend the provider contract-test pattern to the other backend seams</h3><div class="flex gap-1 flex-wrap"><span class="badge b-worth">Worth exploring</span><span class="badge b-arch">architecture</span><span class="badge b-tag">mock</span></div></div>
+            <p class="files">tests/Periphery.Tests/Contracts/DeviceProviderContractTests.cs · {Camera,Usb,Treehopper}.Tests/Fakes/*Backend.cs</p>
+            <p class="text-sm"><strong>Problem.</strong> Two seams (<code>IDeviceProvider</code>/<code>IDeviceMonitorProvider</code>) have abstract contract suites every adapter + fake inherit — a real shared-contract pattern. The other five backend seams each have a bespoke fake and ad-hoc per-test assertions, with no template a future second implementation could inherit ("one adapter = hypothetical seam").</p>
+            <p class="text-sm"><strong>Solution.</strong> For plausibly multi-implementation seams (USB, camera), add <code>&lt;Seam&gt;BackendContractTests</code> with an abstract factory; run the fake now and each real backend under its platform guard. Document single-implementation transports as the deliberate cutoff.</p>
+            <div><span class="win">shared contract</span><span class="win">two adapters proven through one interface</span></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- TOP RECOMMENDATION -->
+      <section id="top-recommendation" class="space-y-4">
+        <h2 class="text-2xl font-serif font-semibold">Top recommendations</h2>
+        <div class="grid md:grid-cols-3 gap-5">
+          <div class="bg-slate-900 text-slate-100 rounded-xl p-6 space-y-2">
+            <p class="text-xs uppercase tracking-widest text-slate-400">Highest leverage — the deepening</p>
+            <h3 class="text-lg font-semibold">Bring the two core state machines up to the bar the repo already hits</h3>
+            <p class="text-sm text-slate-300"><code>DeviceTracker</code>'s latch resolution and <code>DeviceProxyBase</code>'s recovery loop (1.1 + 1.2 + 1.3, with <code>CameraSession</code> at 2.2) are the centre of gravity — <em>every</em> device handle sits on them, both are pure state machines fused with their lock/clock/IO shell and tested past the interface. The repo already proved the pattern with <code>DeviceWaitState</code> and the Treehopper <code>Plan</code> — this is unblocking latent intent.</p>
+          </div>
+          <div class="bg-teal-50 border border-teal-200 rounded-xl p-6 space-y-2">
+            <p class="text-xs uppercase tracking-widest text-teal-600">Finish the convention</p>
+            <h3 class="text-lg font-semibold">Type <code>DeviceInfo.Id</code></h3>
+            <p class="text-sm text-slate-700">The entity key threaded through every subsystem (1.4) — and <code>HardwareId</code>/<code>SerialPortName</code>/<code>UsbClassCode</code> already show the pattern. One core change closes a standards gap two reviewers flagged independently, and the case-insensitive identity invariant stops riding on caller discipline.</p>
+          </div>
+          <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 space-y-2">
+            <p class="text-xs uppercase tracking-widest text-emerald-600">Cheapest correctness win — do first</p>
+            <h3 class="text-lg font-semibold">Fix the pixel-format math drift</h3>
+            <p class="text-sm text-slate-700">Lowest risk, a concrete bug (NV12 over-allocates 2×; the stride copies disagree). Collapse 4+ scattered copies + the benchmark copy into one tested source of truth (2.1 + 6.3). Pairs with restoring the exemplar's own purity (4.1) — both make the codebase's stated invariants true.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="text-xs text-slate-400 border-t border-slate-200 pt-6">Generated from 6 parallel reviewers · vocabulary per the <em>codebase-design</em> skill · all cited paths verified against source · static report (Tailwind + Mermaid via CDN, requires network to render styling). The diffable source of record is <code>architecture-deepening-review-2026-06.md</code> alongside this file.</footer>
+    </main>
+  </body>
+</html>

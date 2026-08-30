@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.FlashAnything.Gui</RootNamespace>
+    <AssemblyName>Periphery.FlashAnything.Gui</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- The generic "flash anything" GUI: a thin Main over the shared GUI toolkit, composing only
+         bootloader-mode flashers. App-mode device flashers are siblings over the same toolkit + engine. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>..\Periphery.FlashAnything.Gui.Core\app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The shared GUI view-toolkit + the bootloader-mode flashers this generic app composes. -->
+    <ProjectReference Include="..\Periphery.FlashAnything.Gui.Core\Periphery.FlashAnything.Gui.Core.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader.Stm32.Usb\Periphery.Bootloader.Stm32.Usb.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader.Efm8.Usb\Periphery.Bootloader.Efm8.Usb.csproj" />
+  </ItemGroup>
+
+</Project>

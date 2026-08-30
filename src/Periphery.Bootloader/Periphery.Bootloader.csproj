@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Packable: this contract has graduated (ADR-0061 DEC-003, ADR-0063 DEC-007).
+         Periphery.Bootloader.Efm8.Usb implements it and Periphery.Treehopper.Firmware
+         depends on it, so it must publish to the feed or those packages 404 on a clean
+         restore (periphery#134). -->
+    <IsPackable>true</IsPackable>
+    <Description>The firmware-bootloader contract every Periphery.Bootloader.* flasher implements and the FlashAnything app consumes: IFirmwareProgrammer, IBootloaderProvider, BootloaderRegistry, FlashOptions/Progress/Result, DeviceIdentity.</Description>
+    <PackageTags>firmware;bootloader;flashing;embedded;device-programming;contract</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Firmware\Periphery.Firmware.csproj" />
+  </ItemGroup>
+
+</Project>

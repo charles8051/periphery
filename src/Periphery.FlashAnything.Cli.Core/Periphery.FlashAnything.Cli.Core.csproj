@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.FlashAnything.Cli</RootNamespace>
+    <AssemblyName>Periphery.FlashAnything.Cli.Core</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>false</IsPackable>
+
+    <!-- The reusable FlashAnything CLI view-toolkit: arg parsing + the parse->dispatch run loop
+         (Cli.RunAsync), composition-agnostic. Shared by the generic flashany CLI and any
+         device-specific flasher CLI (ADR-0063 DEC-006); knows the engine, not any device. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+    <ProjectReference Include="..\Periphery.Diagnostics\Periphery.Diagnostics.csproj" />
+    <ProjectReference Include="..\Periphery.FlashAnything\Periphery.FlashAnything.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.FlashAnything.Cli.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <PackageId>Periphery.Camera.Testing</PackageId>
+    <Description>Hardware-free test support for Periphery.Camera. Provides InMemoryCameraBackend (a scriptable, faultable fake capture backend) plus CameraTestScope and CameraTestHarness so consumers can unit-test code that wraps CameraSession/CameraDevice without a real camera.</Description>
+    <PackageTags>hardware;camera;testing;test-fake;in-memory;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery.Camera\Periphery.Camera.csproj" />
+  </ItemGroup>
+
+  <!--
+    This package binds to Periphery.Camera's *internals* (ICameraBackend,
+    RawCameraFrame, CameraDevice.BackendFactory, the internal CameraDevice /
+    CameraSession constructors) via InternalsVisibleTo, and that contract is
+    explicitly free to evolve (ADR-0065). A default ProjectReference packs as
+    version="x.y.z", which NuGet reads as ">= x.y.z" — so a consumer that floats
+    Periphery.Camera ahead of Periphery.Camera.Testing restores cleanly and then
+    fails at *test runtime* with TypeLoadException / MissingMethodException.
+    Emit an exact range "[x.y.z]" instead, so the mismatch is a restore error.
+  -->
+  <Target Name="PinExactCameraDependency" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'Periphery.Camera'">
+        <ProjectVersion>[$(PackageVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
+
+</Project>

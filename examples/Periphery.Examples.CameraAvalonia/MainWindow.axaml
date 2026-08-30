@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:cam="https://periphery.dev/camera-avalonia"
+        x:Class="Periphery.Examples.CameraAvalonia.MainWindow"
+        Width="1024" Height="640"
+        Title="Periphery.Camera — Avalonia preview"
+        Background="#1e1e1e">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="12">
+
+    <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,12">
+      <Button Name="RefreshButton"
+              Content="↻ Refresh"
+              DockPanel.Dock="Right"
+              Margin="8,0,0,0"
+              Click="OnRefreshClick"/>
+      <Button Name="DisconnectButton"
+              Content="Disconnect"
+              DockPanel.Dock="Right"
+              Margin="8,0,0,0"
+              Click="OnDisconnectClick"/>
+      <ComboBox Name="DevicePicker"
+                PlaceholderText="Select a camera…"
+                HorizontalAlignment="Stretch">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Name}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+    </DockPanel>
+
+    <Border Grid.Row="1" Background="Black" CornerRadius="4">
+      <!-- The control owns session + capture loop + dispose. The
+           Device binding is the entire wiring. -->
+      <cam:CameraPreview Name="Preview"
+                         Device="{Binding ElementName=DevicePicker, Path=SelectedItem}"
+                         MaxResolution="1280,720"/>
+    </Border>
+
+    <TextBlock Grid.Row="2"
+               Margin="0,12,0,0"
+               Foreground="#999"
+               Text="{Binding ElementName=Preview, Path=StatusDescription}"/>
+
+  </Grid>
+</Window>

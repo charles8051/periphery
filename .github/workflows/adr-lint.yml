@@ -1,0 +1,87 @@
+name: ADR Lint
+
+# Keeps docs/adr/ in one shape (periphery#297).
+#
+# The corpus had drifted into two mutually exclusive header formats — 57 files
+# with YAML frontmatter, 21 with a `**Status:**` body line, one with a `## Status`
+# section, one empty — so any grep, script, or agent that checked one form
+# silently saw a subset. `status` had also grown eight free-text variants no enum
+# covered, which is why several ADRs read `Proposed` while their code shipped.
+#
+# This is the cheap part that stops it recurring: every ADR opens with
+# frontmatter at byte 0, declares a status from a fixed vocabulary, and
+# cross-references a file that exists.
+#
+# Runs only when the corpus or the validator changes — the check is a couple of
+# seconds of bash and has nothing to say about a code-only PR.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/adr/**'
+      - 'scripts/validate-adrs.sh'
+      - '.github/workflows/adr-lint.yml'
+  pull_request:
+    paths:
+      - 'docs/adr/**'
+      - 'scripts/validate-adrs.sh'
+      - '.github/workflows/adr-lint.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: adr-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    # Trusted events only: pushes to main, and pull requests whose head branch is
+    # in this repository. A fork PR goes to the hosted twin below instead.
+    #
+    # This is availability and hygiene, not a security boundary: on a
+    # pull_request event GitHub runs the workflow from the PR's merge ref, so a
+    # hostile fork can edit this condition away. The boundary is the repository
+    # setting "Require approval for all outside collaborators" under
+    # Settings -> Actions. What this genuinely fixes is the honest case: without
+    # a hosted twin, a fork PR queues forever against a runner it cannot reach.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    # Inside the SDK container, like every other self-hosted job — NOT on the
+    # host. The check itself needs only bash, awk and coreutils, so the container
+    # buys nothing functionally; it is here because a `pull_request` job checks
+    # out PR-controlled content and then runs a script from that same checkout.
+    # On the host that executes with the runner's ambient access; the ephemeral
+    # container is the isolation boundary the rest of this repo already relies on
+    # (see linux-ci.yml's build-test), and opting out of it for a docs lint would
+    # be a hole for no benefit. The image is already warm on this runner.
+    runs-on: [self-hosted, linux, x64, docker]
+    container: mcr.microsoft.com/dotnet/sdk:10.0
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate ADR corpus
+        run: bash scripts/validate-adrs.sh
+
+  validate-fork:
+    # Fork pull requests. Same checks on a GitHub-hosted runner, so an outside
+    # contributor gets a real result instead of a check that never clears.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    # No container: a hosted runner is already a throwaway VM, which is the same
+    # isolation the container provides on the self-hosted runner. The check needs only bash
+    # and coreutils, both present on ubuntu-latest.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate ADR corpus
+        run: bash scripts/validate-adrs.sh

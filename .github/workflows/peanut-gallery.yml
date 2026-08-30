@@ -1,0 +1,71 @@
+name: Peanut Gallery Review
+
+# Dogfood the persona-driven reviewer (charles8051/peanut-gallery) on this repo's PRs.
+# Runs on push to a PR AND on new PR comments, so reviewers can respond to the author
+# (e.g. withdraw a finding called out as intentional). Stateful; the bot-author guard
+# below prevents a comment loop. Runs on a self-hosted ephemeral runner.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# cancel-in-progress: false (peanut-gallery#32; action-side stale-run skip in
+# peanut-gallery#33) — serialize review runs in the group instead of killing the older
+# one. A kill recorded a CANCELLED conclusion that turned the PR check rollup UNSTABLE
+# even though the review posted fine. With false, a push-vs-comment collision queues
+# (A completes, then B runs) — both green; serialization keeps the persona-comment
+# writes single-writer, so B updates A's comment in place (CommentSync marker upsert),
+# never a duplicate. A genuinely stale run (head moved on) clean-exits inside the
+# action (Supersession), which a workflow-level head-SHA `if:` could not do correctly —
+# an issue_comment run has github.sha=main and carries no head SHA.
+concurrency:
+  group: peanut-gallery-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # Efficiency filter only: skip our own bot comment events so they don't spawn no-op
+    # jobs. SECURITY (fork refusal + comment-author trust) is enforced inside the action.
+    # issue_comment fires on ALL issue comments, but the action resolves the PR by
+    # github.event.issue.number and GET /pulls/<n> 404s when <n> is a plain issue.
+    # github.event.issue.pull_request is populated ONLY for PR comments, so gate on it --
+    # run on PR comments, skip issue comments. (Bot guard unchanged; SECURITY still
+    # enforced inside the action.)
+    #
+    # Fork gate (pull_request only). A pull_request event runs this workflow from the
+    # PR's merge ref and checks the fork's tree out onto the self-hosted runner.
+    # The action itself comes from charles8051/peanut-gallery@main rather than the
+    # checkout, so no fork-authored action code runs - but the fork's files land
+    # on the runner,
+    # and the fork's copy of THIS FILE is what executes, so an edited job here runs
+    # whatever it likes. Keep fork PRs off the self-hosted runner.
+    #
+    # No hosted twin: a fork pull_request receives no secrets, so
+    # OPENROUTER_API_KEY is empty and there is no review to run. A skipped job
+    # reports neutral, so nothing hangs waiting on it.
+    #
+    # Availability and hygiene, not a security boundary, for the reason above: the
+    # fork controls this condition. The boundary is "Require approval for all
+    # outside collaborators" under Settings -> Actions, which cannot be set while
+    # the repo is private.
+    #
+    # issue_comment needs no fork gate: that event checks out the base repo.
+    if: >-
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.comment.user.type != 'Bot' && github.event.issue.pull_request))
+    runs-on: [self-hosted, linux, x64, docker]
+    timeout-minutes: 15   # backstop: kill a wedged review instead of holding the runner for hours
+    steps:
+      - uses: actions/checkout@v6
+      - uses: charles8051/peanut-gallery@main
+        with:
+          config: .github/peanut-gallery.json   # seed: bug-hunter + general; orchestrator adds diff-specific reviewers
+          pr-number: ${{ github.event.pull_request.number || github.event.issue.number }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}

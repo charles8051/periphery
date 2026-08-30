@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Periphery.Treehopper.Control.Gui.ViewModels"
+        xmlns:conv="using:Avalonia.Data.Converters"
+        x:Class="Periphery.Treehopper.Control.Gui.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Width="900" Height="600"
+        Title="Treehopper Control">
+
+  <Grid ColumnDefinitions="300,*" Margin="10">
+
+    <!-- Board list -->
+    <DockPanel Grid.Column="0" Margin="0,0,10,0">
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8" Spacing="8">
+        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontWeight="Bold"/>
+        <Button Content="↻ Refresh" Command="{Binding RefreshCommand}"/>
+      </StackPanel>
+      <ListBox ItemsSource="{Binding Boards}" SelectedItem="{Binding SelectedBoard}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:BoardViewModel">
+            <StackPanel Margin="0,4">
+              <TextBlock Text="{Binding Label}" FontWeight="Bold"/>
+              <TextBlock Text="{Binding VersionText}" Opacity="0.7" FontSize="11"/>
+              <TextBlock Text="{Binding FirmwareText}" Opacity="0.7" FontSize="11"/>
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+
+    <!-- Detail -->
+    <Border Grid.Column="1" BorderBrush="#333" BorderThickness="1" CornerRadius="4" Padding="12">
+      <Panel>
+        <TextBlock Text="Select a board to view its state."
+                   HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6"
+                   IsVisible="{Binding SelectedBoard, Converter={x:Static conv:ObjectConverters.IsNull}}"/>
+
+        <DockPanel IsVisible="{Binding SelectedBoard, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+
+          <!-- Header -->
+          <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
+            <TextBlock Text="{Binding SelectedBoard.Label}" FontSize="18" FontWeight="Bold"/>
+            <TextBlock Opacity="0.8">
+              <Run Text="{Binding SelectedBoard.VersionText}"/>
+              <Run Text="  ·  "/>
+              <Run Text="{Binding SelectedBoard.FirmwareText}"/>
+              <Run Text="  ·  ["/>
+              <Run Text="{Binding SelectedBoard.ConnectionText}"/>
+              <Run Text="]"/>
+            </TextBlock>
+            <TextBlock Text="{Binding SelectedBoard.I2cText}" Opacity="0.7"
+                       IsVisible="{Binding SelectedBoard.I2cText, Converter={x:Static conv:ObjectConverters.IsNotNull}}"/>
+            <TextBlock Text="{Binding SelectedBoard.LastError}" Foreground="#e06c75"
+                       IsVisible="{Binding SelectedBoard.LastError, Converter={x:Static conv:ObjectConverters.IsNotNull}}"/>
+          </StackPanel>
+
+          <!-- Actions -->
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
+            <Button Content="Scan I2C" Command="{Binding ScanI2cCommand}"/>
+            <Button Name="FlashButton" Content="Flash firmware…" Click="OnFlashClick"/>
+            <TextBlock Text="(erases &amp; rewrites firmware)" Opacity="0.5" VerticalAlignment="Center" FontSize="11"/>
+          </StackPanel>
+
+          <!-- Pin grid -->
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding SelectedBoard.Pins}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PinViewModel">
+                  <Grid ColumnDefinitions="44,150,60,Auto,Auto" Margin="0,2">
+                    <TextBlock Grid.Column="0" Text="{Binding Number}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Mode}" VerticalAlignment="Center" Opacity="0.85"/>
+                    <TextBlock Grid.Column="2" Text="{Binding LevelText}" VerticalAlignment="Center" FontWeight="Bold"/>
+                    <Button Grid.Column="3" Content="Toggle" Command="{Binding ToggleCommand}" Margin="0,0,6,0"/>
+                    <Button Grid.Column="4" Content="Input" Command="{Binding MakeInputCommand}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+
+        </DockPanel>
+      </Panel>
+    </Border>
+  </Grid>
+</Window>

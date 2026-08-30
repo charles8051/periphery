@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.Treehopper.Control.Cli</RootNamespace>
+    <AssemblyName>Periphery.Treehopper.Control.Cli</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- dotnet tool: `treehopper`. Self-contained publish for kiosks also supported. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>treehopper</ToolCommandName>
+
+    <PackageId>Periphery.Treehopper.Control.Cli</PackageId>
+    <Description>CLI front-end for the Treehopper control app: list boards and their state, toggle GPIO, scan I2C, and update firmware (fleet scan-and-flash). Built on the shared Periphery.Treehopper.Control core. Subsumes the standalone treehopper-update tool.</Description>
+    <PackageTags>treehopper;cli;gpio;firmware;fleet;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery.Treehopper\Periphery.Treehopper.csproj" />
+    <ProjectReference Include="..\Periphery.Treehopper.Control\Periphery.Treehopper.Control.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Treehopper.Control.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Fleet build embeds the known-good firmware image so the binary is the unit of
+       deployment (no firmware blob committed). A release build supplies both:
+         dotnet publish ... -p:TreehopperFirmwareImage=(abs path to .tfi)
+                            -p:TreehopperFirmwareVersion=(bcdDevice code)
+       The file-override flag points at a .tfi instead of the embedded image. -->
+  <ItemGroup Condition="'$(TreehopperFirmwareImage)' != ''">
+    <EmbeddedResource Include="$(TreehopperFirmwareImage)" LogicalName="firmware.tfi" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TreehopperFirmwareVersion)' != ''">
+    <AssemblyMetadata Include="TreehopperFirmwareVersion" Value="$(TreehopperFirmwareVersion)" />
+  </ItemGroup>
+
+</Project>

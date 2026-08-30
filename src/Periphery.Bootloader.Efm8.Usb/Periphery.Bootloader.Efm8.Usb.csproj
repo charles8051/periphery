@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;SYSLIB1051</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Bootloader.Efm8.Usb</PackageId>
+    <Description>EFM8 USB-HID bootloader flasher (SiLabs AN945): a pure boot-record protocol + record-replay uploader over an HID transport, an in-house Intel HEX -> boot-record generator (with the reset-vector-written-last brick-safety preserved), and an IFirmwareProgrammer / IBootloaderProvider shell for the Periphery.Bootloader platform. Generic across EFM8 parts. ADR-0061 / ADR-0063.</Description>
+    <PackageTags>hardware;hid;efm8;bootloader;firmware;silabs;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Hid\Periphery.Hid.csproj" />
+    <ProjectReference Include="..\Periphery.Firmware\Periphery.Firmware.csproj" />
+    <!-- The flasher contract this package implements (IFirmwareProgrammer / IBootloaderProvider). -->
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Bootloader.Efm8.Usb.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>

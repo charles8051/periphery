@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- An examples/ scratch project, not a shipped library. Every sibling under
+         examples/ sets this; without it IsPackable defaults to true and the
+         release workflow pushed Periphery.Examples.Sandbox.<version>.nupkg to the
+         private feed on every tag (issue #173). -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- One block, in PreviewSurface.Write: ILockedFramebuffer hands out an
+         nint, and turning it into the Span<byte> the pure pixel code takes
+         needs a pointer conversion. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <PackageId>Periphery.Camera.Avalonia</PackageId>
+    <Description>Avalonia controls for Periphery.Camera. Drop CameraPreview into your XAML and bind it to a DeviceInfo to get a live camera feed with reconnect resilience and zero capture-loop plumbing. Renders BGRA32 and RGBA32 straight into a reused WriteableBitmap, decodes MJPEG through Skia, and converts YUY2 and NV12 in-process.</Description>
+    <PackageTags>camera;avalonia;preview;mjpeg;yuy2;nv12;periphery;ui;control</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Camera.Avalonia.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Camera\Periphery.Camera.csproj" />
+  </ItemGroup>
+
+</Project>

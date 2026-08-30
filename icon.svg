@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Periphery">
+  <title>Periphery</title>
+  <rect width="128" height="128" rx="26" fill="#163A29"/>
+  <!-- trident: stem plus two branches -->
+  <g stroke="#40916C" stroke-width="5" stroke-linecap="round">
+    <line x1="64" y1="102" x2="64" y2="24"/>
+    <line x1="64" y1="60" x2="35" y2="39"/>
+    <line x1="64" y1="72" x2="93" y2="51"/>
+  </g>
+  <!-- terminals: one shape per device class -->
+  <g fill="#D8F3DC" stroke="#163A29" stroke-width="2.5">
+    <circle cx="64" cy="102" r="8.5"/>
+    <circle cx="64" cy="24" r="8"/>
+    <rect x="27.5" y="31.5" width="15" height="15" rx="2"/>
+    <path d="M93 43 L101.5 57 L84.5 57 Z" stroke-linejoin="round"/>
+  </g>
+</svg>

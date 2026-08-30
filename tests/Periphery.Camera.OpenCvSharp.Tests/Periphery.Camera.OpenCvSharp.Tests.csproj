@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!--
+    No OpenCvSharp4.runtime.* package here, deliberately. The omission is what
+    keeps the mapping table covered everywhere. CameraMatLayout describes a
+    frame with MatType (a managed struct) and ColorConversionCodes (a managed
+    enum) and calls nothing native, so every row of the table is assertable on a
+    machine with no OpenCV payload installed. Keeping the payload out of this
+    project is what proves that claim rather than asserting it: if a Describe arm
+    ever reached for Cv2, these tests would fail with DllNotFoundException
+    instead of passing quietly on the one CI leg that happens to have natives.
+    It also keeps the table covered on macOS, where no current first-party
+    runtime package exists. The tests that do call OpenCV live next door in
+    Periphery.Camera.OpenCvSharp.Interop.Tests.
+  -->
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery.Camera\Periphery.Camera.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera.OpenCvSharp\Periphery.Camera.OpenCvSharp.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera.Testing\Periphery.Camera.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,106 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    ============================================================================
+    Local NuGet feed packaging.
+    ============================================================================
+
+    Every build of a packable src/ project emits a .nupkg into a shared
+    user-level local feed (`%USERPROFILE%\.nuget\local-feed` on Windows,
+    `$HOME/.nuget/local-feed` on Linux/macOS). Downstream projects developed
+    alongside Periphery reference it via PackageReference against
+    that feed using a floating version range — e.g. `Version="4.0.1-alpha.*"`
+    against the current 4.x line — so each Periphery rebuild is automatically
+    picked up on the next `dotnet restore` without any cross-repo
+    ProjectReference plumbing.
+
+    Versioning is owned by MinVer (configured in the root Directory.Build.props
+    above). A clean build N commits past `v4.0.0` produces `4.0.1-alpha.0.N`;
+    each new commit advances N so the version is naturally unique per build.
+    Bump the floating range in consumers when Periphery crosses a version line.
+    Local iterative builds on the SAME commit produce the same version, which
+    NuGet caches — if you need cache-busting between rebuilds without a
+    commit, either commit, or clear the NuGet caches.
+
+    Test, benchmark, and example projects live OUTSIDE src/ and so do not pick
+    up this file — no local-feed pack on build for them. They are NOT unpackable
+    by default, though: MSBuild's default is `IsPackable=true`, so every project
+    outside src/ must set `<IsPackable>false</IsPackable>` explicitly or it ends
+    up in the release feed. Anything inside src/ that should opt out sets the
+    same property.
+
+    Override knobs:
+      $(PeripheryLocalFeedDisable)=true skips the on-build pack (use when
+        producing release artifacts via a separate `dotnet pack` invocation,
+        e.g. CI/CD pushing a tagged version to a published feed).
+      $(PeripheryLocalFeedPath)=... redirects the output folder.
+  -->
+  <!--
+    Package icon and licence, shared by every packable project under src/.
+
+    PolyForm Small Business 1.0.0 IS on the SPDX License List as
+    `PolyForm-Small-Business-1.0.0`, and NuGet accepts it as an expression - the
+    SPDX list catalogues licences found in the wild for SBOM purposes, and is not
+    limited to OSI-approved ones. Being listed is not the same as being approved:
+    this licence is OSI=false, FSF=false, and GitHub still reports the repository
+    as "Other" because GitHub detects licences with licensee, a different list.
+
+    The expression is metadata and packs nothing, so the `None Include` below is
+    what puts the terms in the package. Both are deliberate: the expression makes
+    the licence machine-readable for dependency scanners, and the file means a
+    consumer can read what they are agreeing to without following a link.
+
+    PackageLicenseExpression and PackageLicenseFile are mutually exclusive - a
+    project setting the file property alongside this would fail to pack.
+
+    Central rather than per-project so a new packable library cannot ship
+    unlicensed, which is how Periphery.Bootloader and Periphery.Firmware were.
+  -->
+  <PropertyGroup>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageLicenseExpression>PolyForm-Small-Business-1.0.0</PackageLicenseExpression>
+    <Copyright>Copyright 2026 Charles Lee</Copyright>
+    <Authors>Charles Lee</Authors>
+
+    <!-- Lower-case `periphery` is the canonical repository name; the capitalised
+         form these carried only worked because GitHub redirects, and these URLs
+         are what nuget.org shows on every package page. -->
+    <PackageProjectUrl>https://github.com/charles8051/periphery</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/charles8051/periphery</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+
+    <!-- Every package gets a readme: its own where one exists, the repository's
+         otherwise. Without this only Periphery had one, so the other sixteen
+         would have rendered an empty page on the feed. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../icon.png" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)../LICENSE.md" Pack="true" PackagePath="\" />
+    <!-- Include, not Update, and the ordering is why. Directory.Build.props is
+         imported before the SDK computes its default None glob, so at this point
+         no item exists for a project-local README and an Update would match
+         nothing - pack then fails the project with NU5039, "the readme file
+         does not exist in the package". Include declares it; the SDK glob then
+         skips the file as already present, so exactly one None item results.
+         Verified with -getItem:None on a project that has its own README and one
+         that does not: one item each. -->
+    <None Include="$(MSBuildProjectDirectory)/README.md" Pack="true" PackagePath="\"
+          Condition="Exists('$(MSBuildProjectDirectory)/README.md')" />
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\"
+          Condition="!Exists('$(MSBuildProjectDirectory)/README.md')" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <PeripheryLocalFeedPath Condition="'$(PeripheryLocalFeedPath)' == ''">$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.nuget', 'local-feed'))</PeripheryLocalFeedPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PeripheryLocalFeedDisable)' != 'true'">
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageOutputPath>$(PeripheryLocalFeedPath)</PackageOutputPath>
+  </PropertyGroup>
+
+</Project>

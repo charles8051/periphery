@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.FlashAnything.Cli</RootNamespace>
+    <AssemblyName>Periphery.FlashAnything.Cli</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- The generic "flash anything" CLI (ADR-0061 north star): a thin Main over the shared CLI
+         toolkit, composing only bootloader-mode flashers. App-mode device flashers are siblings. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>flashany</ToolCommandName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The shared CLI view-toolkit + the bootloader-mode flashers this generic app composes. -->
+    <ProjectReference Include="..\Periphery.FlashAnything.Cli.Core\Periphery.FlashAnything.Cli.Core.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader.Stm32.Usb\Periphery.Bootloader.Stm32.Usb.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader.Efm8.Usb\Periphery.Bootloader.Efm8.Usb.csproj" />
+  </ItemGroup>
+
+</Project>

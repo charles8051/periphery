@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.Treehopper.Flasher.Gui</RootNamespace>
+    <AssemblyName>Periphery.Treehopper.Flasher.Gui</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- Branded "Treehopper Flasher" GUI (ADR-0063 DEC-006): a sibling of the generic flashany GUI
+         over the same Gui toolkit + engine, with a curated composition + title. No UI duplicated. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>..\Periphery.FlashAnything.Gui.Core\app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery.FlashAnything.Gui.Core\Periphery.FlashAnything.Gui.Core.csproj" />
+    <ProjectReference Include="..\Periphery.Treehopper.Flasher\Periphery.Treehopper.Flasher.csproj" />
+  </ItemGroup>
+
+</Project>

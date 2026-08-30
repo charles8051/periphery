@@ -1,0 +1,4 @@
+halt
+mem X:0x0336,0x10
+go
+exit

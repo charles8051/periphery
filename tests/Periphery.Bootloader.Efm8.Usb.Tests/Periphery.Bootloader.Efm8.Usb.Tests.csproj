@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <!-- FakeTimeProvider drives the uploader's per-reply deadline in the timeout tests (no real wait). -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Periphery.Bootloader.Efm8.Usb" />
+    <Using Include="Periphery.Firmware" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Hid\Periphery.Hid.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Bootloader.Efm8.Usb\Periphery.Bootloader.Efm8.Usb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Real .efm8 produced by hex2boot.py from a synthetic Intel HEX (synthetic.hex);
+         see Assets/README.md. The matched pair is the golden fixture for the in-house
+         HEX->boot-record generator (byte-for-byte == hex2boot). -->
+    <None Include="Assets\synthetic.efm8" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\synthetic.hex" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

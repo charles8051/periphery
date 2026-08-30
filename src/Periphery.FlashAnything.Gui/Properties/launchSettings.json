@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "FlashAnything": {
+      "commandName": "Project"
+    },
+    "FlashAnything (logged)": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)",
+      "commandLineArgs": "--log-file obj/flashanything-debug.log --exit-after 12"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+halt
+regs
+mem D:0xA7,1
+mem X:0x0000,0x10
+go
+exit

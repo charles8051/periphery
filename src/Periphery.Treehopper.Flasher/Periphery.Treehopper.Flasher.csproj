@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <IsPackable>false</IsPackable>
+    <Description>The Treehopper Flasher composition (ADR-0063 DEC-006): a device-specific flasher is a thin curated FlashAnything composition - { TreehopperBootloaderEntry, Efm8UsbBootloaderProvider } + the EFM8UB1 HEX converter - reused by the branded Treehopper Flasher CLI and GUI.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery.FlashAnything\Periphery.FlashAnything.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader.Efm8.Usb\Periphery.Bootloader.Efm8.Usb.csproj" />
+    <!-- TreehopperBootloaderEntry (the app-mode entry) now lives in the Firmware package; it brings
+         Periphery.Treehopper transitively. -->
+    <ProjectReference Include="..\Periphery.Treehopper.Firmware\Periphery.Treehopper.Firmware.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

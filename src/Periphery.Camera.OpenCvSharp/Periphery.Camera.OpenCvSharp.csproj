@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <PackageId>Periphery.Camera.OpenCvSharp</PackageId>
+    <Description>OpenCvSharp4 bindings for Periphery.Camera. AsMat() wraps a captured frame as a cv::Mat with no copy, ToMat() hands back an owned one, and ToBgr() converts any capture format to CV_8UC3 BGR — so an OpenCV pipeline can open a specific camera by identity instead of guessing at VideoCapture(0).</Description>
+    <PackageTags>camera;opencv;opencvsharp;mat;frame;interop;periphery;computer-vision</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      OpenCvSharp4 is the managed binding only: its nuspec declares one dependency
+      (System.Memory) and the package carries no runtimes/ folder. The native
+      payload ships separately as OpenCvSharp4.runtime.*, and this package
+      deliberately does not reference one — the consumer picks the payload for the
+      platform they deploy to (docs/patterns/integration-package-placement.md,
+      "Managed binding only"). Referencing a runtime here would push win-x64
+      natives into a Linux consumer's output and take a side in a choice that is
+      theirs. It also means a missing payload surfaces as a DllNotFoundException
+      on the first native call, not at restore.
+    -->
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Camera\Periphery.Camera.csproj" />
+  </ItemGroup>
+
+  <!--
+    No InternalsVisibleTo, and therefore no PinExactCameraDependency target.
+    Everything this package touches is public: ICameraFrame, CameraPixelFormat,
+    CameraFrameLayout, CameraFramePin and CameraFramePinning. ADR-0065's exact
+    "[x.y.z]" pin exists because Periphery.Camera.Testing binds internals whose
+    shape is free to change between versions; a package that sits on the public
+    surface wants NuGet's default ">= x.y.z" range, which is both correct and
+    less brittle. Add the pin if a later revision reaches for an internal.
+  -->
+
+</Project>

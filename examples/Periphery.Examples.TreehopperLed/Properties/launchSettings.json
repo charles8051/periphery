@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "TreehopperLed": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)",
+      "commandLineArgs": "rainbow --leds 30 --seconds 6 --log-file obj/treehopper-led-debug.log"
+    }
+  }
+}

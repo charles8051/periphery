@@ -1,0 +1,100 @@
+name: Build and Test
+
+# Manual dispatch only — pick which OSes to run. This is the only place the
+# full three-OS matrix runs together, and hosted runner-minutes are expensive
+# (windows-latest bills at 2x, macos-latest at 10x on a private repo), so it
+# doesn't auto-trigger on push or PR.
+#
+# The two legs that carry a platform-specific backend are covered automatically
+# elsewhere, so this workflow is for a deliberate full sweep rather than the
+# everyday gate:
+#   linux-ci.yml  — every push/PR on the free self-hosted tier, plus the device rig.
+#   macos-ci.yml  — every push/PR on macos-latest, build + unit tests only, so the
+#                   IOKit P/Invokes can't rot between manual runs.
+# Windows has no automatic leg — day-to-day development happens on Windows, so
+# the Windows backends get exercised locally; tick it here for a release sweep.
+#
+# The dispatched run still validates the full build + unit-test pipeline on
+# whichever subset of OSes you tick.
+on:
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: 'Run on windows-latest'
+        type: boolean
+        default: true
+      linux:
+        description: 'Run on ubuntu-latest'
+        type: boolean
+        default: true
+      macos:
+        description: 'Run on macos-latest'
+        type: boolean
+        default: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  # Build the OS matrix from the dispatch inputs. Fails fast if no OS
+  # was selected — the job log shows the error so the user knows why.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.os.outputs.matrix }}
+    steps:
+      - id: os
+        shell: bash
+        run: |
+          OSES=()
+          [ "${{ inputs.windows }}" = "true" ] && OSES+=('"windows-latest"')
+          [ "${{ inputs.linux }}" = "true" ] && OSES+=('"ubuntu-latest"')
+          [ "${{ inputs.macos }}" = "true" ] && OSES+=('"macos-latest"')
+          if [ ${#OSES[@]} -eq 0 ]; then
+            echo "::error::No OS selected — tick at least one of windows / linux / macos."
+            exit 1
+          fi
+          ( IFS=,; echo "matrix={\"os\":[${OSES[*]}]}" >> "$GITHUB_OUTPUT" )
+
+  test:
+    needs: setup
+    strategy:
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history to derive version from tags.
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Periphery.slnx
+
+      - name: Build
+        # PeripheryLocalFeedDisable suppresses the on-build local-feed write
+        # (the runner shouldn't scribble into ~/.nuget/local-feed).
+        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
+
+      - name: Test
+        shell: bash
+        # Integration tests are filtered out (Category=Integration); they
+        # require live hardware (cameras, HID devices) and are not suitable
+        # for hosted runners.
+        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category!=Integration" --logger "trx;LogFileName=test-${{ matrix.os }}.trx"
+
+      - name: Upload test results
+        if: always()
+        # Diagnostic only — an upload failure (e.g. the account-wide artifact
+        # storage quota) must not fail the job and red-X an otherwise green run.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.os }}
+          path: "**/test-*.trx"
+          retention-days: 14

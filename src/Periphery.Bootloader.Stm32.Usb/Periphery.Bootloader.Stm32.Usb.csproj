@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- First real Periphery.Bootloader flasher (ADR-0061 phase 1). IsPackable=false
+         while the platform / contract is still in-progress. -->
+    <IsPackable>false</IsPackable>
+    <Description>STM32 USB DFU bootloader flasher (ST AN3156): pure DFU 1.1 + ST-command core, a control-transfer transport over Periphery.Usb, and an IFirmwareProgrammer / IBootloaderProvider shell. ADR-0061.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Usb\Periphery.Usb.csproj" />
+    <ProjectReference Include="..\Periphery.Firmware\Periphery.Firmware.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Bootloader.Stm32.Usb.Tests" />
+  </ItemGroup>
+
+</Project>

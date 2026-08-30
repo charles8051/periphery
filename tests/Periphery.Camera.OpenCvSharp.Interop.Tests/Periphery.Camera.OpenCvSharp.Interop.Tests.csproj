@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!--
+    Every test here calls into OpenCV, so every test here needs a native payload.
+    That is why the whole assembly is Category=Integration: the default CI filter
+    is "Category!=Integration", and macOS has no current first-party
+    OpenCvSharp4.runtime package (the newest is 4.6.0.20230105 against the
+    4.13 managed binding), so an ungated native test would redden the macOS leg
+    with a DllNotFoundException that has no clean fix. Run them on Windows or
+    Linux by passing dotnet test a "Category=Integration" filter.
+
+    The macOS device rig's job runs Category=Integration unconditionally, so the
+    trait alone is not enough there; OpenCvFact / OpenCvTheory skip when the
+    native library will not load. See OpenCvNative.
+  -->
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <!--
+      Both payloads, unconditionally, so restore produces the same graph on every
+      machine and the RID-specific assets sort themselves out at publish. These
+      belong to the test project and never to the shipped package, which
+      deliberately leaves the choice to the consumer.
+    -->
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+    <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.13.0.20260627" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery.Camera\Periphery.Camera.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera.OpenCvSharp\Periphery.Camera.OpenCvSharp.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera.Testing\Periphery.Camera.Testing.csproj" />
+  </ItemGroup>
+
+  <!--
+    Shared with the sibling suite rather than copied. Both projects need a frame
+    that came through the pool, and two copies of that helper would be two
+    chances to disagree about how a test frame is made.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Periphery.Camera.OpenCvSharp.Tests\FrameCapture.cs" Link="FrameCapture.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!--
+    No Avalonia.Headless, and no Avalonia app of any kind. The default headless
+    render interface answers IsSupportedBitmapPixelFormat(format) => true for
+    every format and hands Lock() a throwaway Rgba8888 buffer at width * 4
+    whatever it was asked for, so a headless pixel or format test passes for
+    NV12 without converting anything. Every assertion here runs against the pure
+    classes instead — PreviewPixels, PreviewPixelFormats, PreviewFormatChoice —
+    which is the same code CameraPreview calls, with no platform in the process.
+    See PreviewPixels' class remarks.
+  -->
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery.Camera.Avalonia\Periphery.Camera.Avalonia.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera\Periphery.Camera.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera.Testing\Periphery.Camera.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

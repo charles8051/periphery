@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <PackageId>Periphery.Camera</PackageId>
+    <Description>Native camera I/O extension for Periphery. Provides CameraDevice (one-shot open), CameraSession (configured capture runtime), and DeviceSessionHost integration for reconnect-resilient camera applications on Windows, Linux, and macOS.</Description>
+    <PackageTags>hardware;camera;webcam;video;capture;media-foundation;v4l2;avfoundation;cross-platform;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Camera.Tests" />
+    <InternalsVisibleTo Include="Periphery.Camera.Benchmarks" />
+    <!-- The supported hardware-free test-support package (ADR-0065). It
+         implements the internal ICameraBackend so consumers get a fake without
+         the platform I/O contract becoming public/frozen. -->
+    <InternalsVisibleTo Include="Periphery.Camera.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <!-- Periphery.Camera is substrate-independent as of ADR-0045
+         (2026-05-22): the external graph-substrate PackageReference is gone
+         and ICameraFrame inherits nothing from one. A consumer that wants
+         pipeline integration supplies its own adapter, which is why this
+         list is two packages long. -->
+  </ItemGroup>
+
+</Project>

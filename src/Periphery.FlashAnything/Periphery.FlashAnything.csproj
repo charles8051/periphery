@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- STUB (ADR-0061 north star). The published "flash anything" app's shared core;
+         flip IsPackable when the flow is real and a flasher provider is wired. -->
+    <IsPackable>false</IsPackable>
+    <Description>Pure MVU core + app service for FlashAnything, the published "flash anything" app: an immutable AppState folded from AppEvents by a pure reducer, consuming the Periphery.Bootloader contract, rendered by interchangeable CLI and Avalonia front-ends. STUB (ADR-0061).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Firmware\Periphery.Firmware.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+  </ItemGroup>
+
+</Project>

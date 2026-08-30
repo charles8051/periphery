@@ -1,0 +1,615 @@
+name: Release
+
+# Tag-driven release: pushing a `v*.*.*` tag runs the test gate and, on success:
+#   - packs every packable src/ project and pushes the .nupkgs to nuget.org
+#     (`publish` job).
+#   - publishes Periphery.Cli as a self-contained single-file binary and attaches
+#     it to the matching GitHub Release, so consumers can grab it without a .NET
+#     SDK or `dotnet tool install`. TWO jobs own this: `release-binaries` (Windows
+#     RIDs, zip) and `release-binaries-linux` (linux-x64, tar.gz). They are split
+#     because only a Linux runner can produce a binary carrying the Unix execute
+#     bit — see the comment on `release-binaries-linux`.
+#   - publishes the dual-mode Treehopper Flasher (CLI when run with args, GUI when
+#     double-clicked) as a self-contained single-file `treehopper-flash.exe` and
+#     attaches it to the same Release (`release-flasher` job).
+# Packages go to nuget.org via Trusted Publishing: the publish job requests a
+# short-lived OIDC token from GitHub, nuget.org validates it against a policy
+# registered for this repository and this workflow FILENAME, and returns a
+# temporary API key good for one hour. No long-lived key is stored anywhere.
+#
+# The policy on nuget.org must name:
+#   Repository Owner  charles8051
+#   Repository        periphery
+#   Workflow File     publish.yml          <- filename only, no path
+#   Environment       nuget.org
+#   Glob              Periphery*           <- scope it; a policy binds to the
+#                                             package OWNER, not to this repo,
+#                                             so unscoped it could publish
+#                                             Prognosis and Roam too.
+#
+# The glob is a PREFIX rather than the 17 exact ids on purpose. A policy that
+# only permits new versions of existing packages rejects an id nuget.org has
+# never seen, so the first push of a new package would fail. Narrowing this to
+# exact ids trades that away; do not do it without knowing that is the cost.
+# Residual risk, accepted: a future unrelated `Periphery...` package on this
+# account would fall in scope. None exists, and every Periphery* id today is
+# this repo's. See #367 for the related question of whether a NEW packable
+# project should be able to publish without a separate decision.
+#
+# Renaming this file breaks publishing until the policy is updated to match.
+#
+# ── Runners ────────────────────────────────────────────────────────────────────
+# Defaults to self-hosted ephemeral runners:
+#   Linux   → [self-hosted, linux, x64, docker], SDK container
+#   Windows → [self-hosted, windows, x64], .NET 8/10 baked on the host
+# Each job's `runs-on` reads a repo variable that DEFAULTS to self-hosted; set the
+# variable to a hosted label (as JSON) to fall the whole repo back to hosted in one
+# switch — e.g. if a self-hosted runner is down:
+#   gh variable set LINUX_RUNNER   --repo charles8051/periphery --body '["ubuntu-latest"]'
+#   gh variable set WINDOWS_RUNNER --repo charles8051/periphery --body '["windows-latest"]'
+# The SDK container (Linux) and the setup-dotnet steps are conditional on
+# self-hosted vs hosted: the container host has only Docker; the hosted images
+# already carry the SDK.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # Manual dispatch builds ONLY the self-contained CLI binaries, from any ref, and
+  # uploads them as workflow artifacts instead of attaching them to a Release.
+  # This exists because the smoke-check tool was otherwise unobtainable without
+  # cutting a release: the binary is how `periphery` reaches a VM or a hardware
+  # rig, so verifying an unreleased fix required tagging it first. The
+  # package-publishing and flasher jobs stay tag-only (see their `if:` guards) —
+  # a dispatch must never push to the package feed.
+  workflow_dispatch:
+    inputs:
+      rids:
+        description: 'WINDOWS runtime identifiers to build (JSON array). linux-x64 is always built by release-binaries-linux and is unaffected by this input.'
+        type: string
+        default: '["win-x64","win-arm64"]'
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Validate before publishing — a release must not ship if tests fail. Unit
+  # suites only (Category!=Integration); the device-backed Integration tier runs
+  # on the Linux device rig via linux-ci.yml, not here. Split by OS because the
+  # self-hosted Linux leg needs an SDK container and the Windows leg does not.
+  # --blame-hang-timeout 5m dumps + fails any test that wedges >5 min.
+  test-linux:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]') }}
+    # SDK container on the self-hosted runner (host has only Docker); none on the hosted fallback.
+    container: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') && 'mcr.microsoft.com/dotnet/sdk:10.0' || '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+      - name: Trust workspace for git (container)
+        # The container runs as root over runner-owned files, so git flags the
+        # checkout "dubious ownership" and MinVer's own git call falls back to
+        # 0.0.0-alpha.0. The SYSTEM git config is read regardless of HOME (unlike
+        # checkout's HOME-scoped safe.directory, which MinVer's call misses).
+        if: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') }}
+        run: git config --system --add safe.directory '*'
+      # Hosted fallback only: the self-hosted container already carries the SDK.
+      - if: ${{ !contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Periphery.slnx
+      - name: Build
+        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
+      - name: Test
+        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category!=Integration" --blame-hang-timeout 5m --blame-crash --logger "trx;LogFileName=test-linux.trx"
+      - name: Upload test results
+        if: always()
+        # Diagnostic only — an upload failure (e.g. the account-wide artifact
+        # storage quota) must not fail the job. This job gates `publish`, so a
+        # failure here turns a fully green test run into a blocked release.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-linux
+          path: "**/test-*.trx"
+          retention-days: 30
+
+  test-windows:
+    runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]') }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+      # Hosted fallback only: the self-hosted Windows runner has .NET 8/10 baked.
+      - if: ${{ !contains(fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]'), 'self-hosted') }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Periphery.slnx
+      - name: Build
+        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
+      - name: Test
+        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category!=Integration" --blame-hang-timeout 5m --blame-crash --logger "trx;LogFileName=test-windows.trx"
+      - name: Upload test results
+        if: always()
+        # Diagnostic only — an upload failure (e.g. the account-wide artifact
+        # storage quota) must not fail the job. This job gates `publish`, so a
+        # failure here turns a fully green test run into a blocked release.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-windows
+          path: "**/test-*.trx"
+          retention-days: 30
+
+  publish:
+    needs: [test-linux, test-windows]
+    # NOT gated at the job level, deliberately. The gate is on the push STEP
+    # instead, which makes a workflow_dispatch of this job a genuine dry run:
+    # restore, build, pack, the completeness gate and the nuget.org OIDC exchange
+    # all run, and only the push is skipped. That is the whole point -- if the
+    # Trusted Publishing policy is wrong you find out having published nothing.
+    #
+    # An earlier revision gated the job on `startsWith(github.ref, 'refs/tags/')`,
+    # which reads as tag-only and is not: workflow_dispatch lets the caller pick
+    # any ref INCLUDING a tag, so a dispatch could satisfy it and publish. The
+    # step-level event gate below is immune to that -- no dispatch is a `push`
+    # event whatever ref it selects. There is deliberately no dry_run input: an
+    # input that appears to gate publishing but does not is worse than none.
+    # Hosted, unlike every other job in this file. This is the job that handles a
+    # credential, it runs a few times a year, and a clean throwaway VM is the
+    # right place for both. It also takes the release path out of the SDK
+    # container, which is what forced `git config --system --add safe.directory`
+    # here: without that, MinVer could not read the tag through the container's
+    # dubious-ownership check and packed every project as 0.0.0-alpha.0. A hosted
+    # runner has no such problem, so the workaround goes with it.
+    runs-on: ubuntu-latest
+    environment: nuget.org
+    permissions:
+      contents: read
+      id-token: write   # required for nuget.org to issue the short-lived key
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          # 10.0 because .slnx needs SDK 9.0.200+ to parse. 8.0 because the
+          # libraries multi-target net8.0 and packing that leg needs its
+          # targeting pack.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Restore
+        run: dotnet restore Periphery.slnx
+      - name: Build (non-incremental)
+        # Deterministic rebuild before packing (#132). The v2.0.0-alpha.1 publish
+        # job ran 33s and only a handful of projects logged "Successfully created
+        # package" — the rest were satisfied from prior outputs. That happened to
+        # be complete, but a release must not depend on what a reused self-hosted
+        # workspace happens to be carrying. `--no-incremental` runs the Rebuild
+        # target, so every assembly in the release is compiled from this commit.
+        #
+        # NOTE: `--no-incremental` is a `dotnet build` switch only — `dotnet pack`
+        # rejects it (MSB1001 Unknown switch), which is why this is a separate
+        # build step feeding `pack --no-build` below rather than a flag on pack.
+        run: dotnet build Periphery.slnx --configuration Release --no-restore --no-incremental -p:PeripheryLocalFeedDisable=true
+      - name: Pack
+        # Packs every project with <IsPackable>true</IsPackable>. `--no-build`
+        # packs exactly the outputs the step above just rebuilt — no second,
+        # differently-conditioned build. `packages/` is wiped first because the
+        # self-hosted runners reuse their _work dir: a stale .nupkg left by an
+        # earlier tag would otherwise be picked up by the push glob below.
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf packages
+          dotnet pack Periphery.slnx --configuration Release --no-build -p:PeripheryLocalFeedDisable=true -o packages
+      - name: List packages and assert the family is complete
+        # Fail-loud completeness gate (#132): a release that silently ships 16 of
+        # 17 packages is worse than a release that fails. The expected set is
+        # DERIVED from the solution — every project in Periphery.slnx whose
+        # evaluated $(IsPackable) is true must have produced a .nupkg — so adding
+        # a packable project (e.g. Periphery.Camera.Testing) extends this gate
+        # automatically and there is no hardcoded count to remember to bump.
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Enumerate projects with the SDK's own solution reader rather than a
+          # regex over the .slnx XML: no chance of matching a commented-out
+          # <Project Path="…">, and no breakage if the format grows an attribute.
+          # Filtering on the .csproj suffix drops the (localised) two-line header;
+          # tr normalises separators in case the SDK emits them Windows-style.
+          projects="$(dotnet sln Periphery.slnx list | tr '\\' '/' | grep '\.csproj$')"
+
+          expected=()
+          while IFS= read -r proj; do
+            [ -n "$proj" ] || continue
+            # A non-zero msbuild exit already aborts the step: the status of
+            # `v="$(cmd)"` IS the command's, and `set -e` acts on it.
+            packable="$(dotnet msbuild "$proj" -nologo -getProperty:IsPackable \
+              -p:Configuration=Release -p:PeripheryLocalFeedDisable=true | tr -d '[:space:]')"
+            # This guard covers the shape `set -e` cannot see: msbuild exiting 0
+            # having printed nothing usable. Left unchecked it would quietly shrink
+            # the expected set, and a short release would sail through the gate.
+            if [ -z "$packable" ]; then
+              echo "::error::Could not evaluate \$(IsPackable) for $proj — refusing to publish on a guess."
+              exit 1
+            fi
+            # MSBuild yields the literal text from the project file, so `True` is as
+            # valid as `true`. Compare case-insensitively: a capitalised spelling
+            # would otherwise drop a genuinely packable project from the expected
+            # set and red-X a release that is actually complete.
+            [ "${packable,,}" = "true" ] || continue
+            id="$(dotnet msbuild "$proj" -nologo -getProperty:PackageId \
+              -p:Configuration=Release -p:PeripheryLocalFeedDisable=true | tr -d '[:space:]')"
+            # Same reasoning as the IsPackable guard above.
+            if [ -z "$id" ]; then
+              echo "::error::$proj is packable but has no evaluable \$(PackageId)."
+              exit 1
+            fi
+            expected+=("$id")
+          done <<< "$projects"
+
+          if [ "${#expected[@]}" -eq 0 ]; then
+            echo "::error::Derived zero packable projects from Periphery.slnx — this step's MSBuild evaluation is broken, not the pack. Fix the step; do NOT publish."
+            exit 1
+          fi
+
+          echo "Packed files in packages/:"
+          ls -lh packages/
+
+          # Sorted here once, so `found` is ordered by construction and every list
+          # this step prints comes out sorted without sorting at each print site.
+          mapfile -t found < <(find packages -maxdepth 1 -name '*.nupkg' ! -name '*.snupkg' -printf '%f\n' | sort)
+
+          # Match names, not the filesystem: `case` patterns are pure string tests,
+          # so nothing can be masked by a glob that silently fails to expand.
+          #
+          # Do NOT relax the [0-9] to `*`. It anchors the version segment, and that
+          # is the only thing keeping ids that share a prefix apart in BOTH
+          # directions: `Periphery.Camera` cannot claim
+          # `Periphery.Camera.Testing.<version>.nupkg` (the char after the dot is
+          # `T`, not a digit), and `Periphery.Camera.Testing` cannot claim
+          # `Periphery.Camera.<version>.nupkg`. Widen it and a missing package
+          # starts being "found" by its sibling.
+          missing=()
+          for id in "${expected[@]}"; do
+            claimed=0
+            for f in ${found[@]+"${found[@]}"}; do
+              case "$f" in "$id".[0-9]*.nupkg) claimed=1; break ;; esac
+            done
+            [ "$claimed" -eq 1 ] || missing+=("$id")
+          done
+
+          # The reverse direction: a .nupkg no expected project accounts for. Bare
+          # counts cannot distinguish "one missing" from "one missing + one extra",
+          # so name both sides explicitly.
+          unexpected=()
+          for f in ${found[@]+"${found[@]}"}; do
+            owned=0
+            for id in "${expected[@]}"; do
+              case "$f" in "$id".[0-9]*.nupkg) owned=1; break ;; esac
+            done
+            [ "$owned" -eq 1 ] || unexpected+=("$f")
+          done
+
+          # Counts still differ when neither list is populated only if one id was
+          # claimed twice — e.g. two versions of the same package in the dir.
+          if [ "${#missing[@]}" -ne 0 ] || [ "${#unexpected[@]}" -ne 0 ] || [ "${#found[@]}" -ne "${#expected[@]}" ]; then
+            {
+              echo "Release would be INCOMPLETE — refusing to push a partial package family."
+              echo
+              echo "Expected ${#expected[@]} packages (every IsPackable=true project in Periphery.slnx):"
+              printf '  %s\n' "${expected[@]}" | sort
+              echo
+              echo "Found ${#found[@]} .nupkg (excluding .snupkg) in packages/:"
+              printf '  %s\n' ${found[@]+"${found[@]}"}
+              if [ "${#missing[@]}" -ne 0 ]; then
+                echo
+                echo "MISSING (expected but not packed):"
+                printf '  %s\n' "${missing[@]}" | sort
+              fi
+              if [ "${#unexpected[@]}" -ne 0 ]; then
+                echo
+                echo "UNEXPECTED (packed but no packable project accounts for them):"
+                printf '  %s\n' "${unexpected[@]}"
+              fi
+              if [ "${#missing[@]}" -eq 0 ] && [ "${#unexpected[@]}" -eq 0 ]; then
+                echo
+                echo "Every expected id matched and nothing is unaccounted for, so the count"
+                echo "gap means one id was claimed more than once — most likely two versions"
+                echo "of the same package sharing packages/."
+              fi
+              echo
+              echo "This gate follows IsPackable automatically, so a mismatch means pack did"
+              echo "not run for a project it should have (stale output, leftover packages/),"
+              echo "or an unexpected extra .nupkg is present — not that a number needs bumping."
+            } >&2
+            echo "::error::Package family incomplete: expected ${#expected[@]} .nupkg, found ${#found[@]} (${#missing[@]} missing, ${#unexpected[@]} unexpected). See this step's log for the named lists."
+            exit 1
+          fi
+
+          echo "OK: all ${#expected[@]} expected packages are present."
+      # Requested immediately before the push, not earlier in the job: the key
+      # nuget.org returns is valid for one hour.
+      - name: NuGet login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          # A repo VARIABLE, not a secret. The nuget.org profile name is public,
+          # and a secret would be masked to *** in the log precisely when a failed
+          # OIDC exchange makes you want to read the value back.
+          user: ${{ vars.NUGET_USER }}
+      # The only push trigger on this workflow is a v*.*.* tag, so this step runs
+      # for a release tag and for nothing else.
+      - name: Push to nuget.org
+        if: ${{ github.event_name == 'push' }}
+        run: >
+          dotnet nuget push "packages/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+      - name: Dry run complete
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          echo "Dry run: the OIDC exchange with nuget.org succeeded and the"
+          echo "packages below were built. NOTHING WAS PUSHED."
+          ls -1 packages/*.nupkg
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: packages
+          path: packages/*.nupkg
+          if-no-files-found: warn
+
+  # Self-contained Periphery.Cli for consumers who want a portable binary (no .NET
+  # SDK / runtime / `dotnet tool install` required — just download and run), and
+  # the delivery vehicle for fleet smoke checks on VMs and hardware rigs.
+  #
+  # On a tag: attached to the GitHub Release. On workflow_dispatch: uploaded as a
+  # workflow artifact from whatever ref was chosen, so an unreleased fix can be
+  # exercised on a box without cutting a version.
+  #
+  # Windows RIDs only. Cross-publishing linux-x64 from here works, but PACKAGING
+  # it does not: the runner's tar is Windows' bundled bsdtar, which rejects
+  # --mode, and Compress-Archive cannot carry a Unix execute bit either — so the
+  # Linux binary would ship non-executable. release-binaries-linux builds it on
+  # the Linux runner instead, where the bit is set natively and needs no flag.
+  release-binaries:
+    needs: [test-linux, test-windows]
+    runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]') }}
+    permissions:
+      contents: write   # needed to create/upload to the GitHub Release
+    strategy:
+      matrix:
+        # Windows RIDs only. linux-x64 is built by release-binaries-linux on the
+        # Linux runner — see that job for why it cannot be produced here.
+        rid: ${{ fromJSON(github.event.inputs.rids || '["win-x64","win-arm64"]') }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+      - if: ${{ !contains(fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]'), 'self-hosted') }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish Periphery.Cli (self-contained single-file)
+        shell: pwsh
+        run: |
+          dotnet publish src/Periphery.Cli/Periphery.Cli.csproj `
+            --configuration Release `
+            --runtime ${{ matrix.rid }} `
+            --self-contained `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PeripheryLocalFeedDisable=true `
+            --output "artifacts/Periphery.Cli-${{ matrix.rid }}"
+
+      # Windows-only: Install-Periphery.ps1 installs to %LOCALAPPDATA% and edits the
+      # per-user PATH, neither of which means anything on linux-x64.
+      - name: Stage installer script (Windows RIDs)
+        if: startsWith(matrix.rid, 'win-')
+        shell: pwsh
+        run: |
+          Copy-Item `
+            -Path "scripts/Install-Periphery.ps1" `
+            -Destination "artifacts/Periphery.Cli-${{ matrix.rid }}/Install-Periphery.ps1"
+
+      - name: Compute artifact name
+        id: name
+        shell: pwsh
+        run: |
+          # github.ref_name is the tag on a tag push but the BRANCH on a dispatch,
+          # and a branch like `feat/cli-smoke-checks` carries a `/` that is not a
+          # legal filename character. Slashes become dashes so a dispatch run from
+          # any branch produces a valid archive name.
+          $label = "${{ github.ref_name }}" -replace '[/\\]', '-'
+          "label=$label" >> $env:GITHUB_OUTPUT
+
+      - name: Package (Windows — zip)
+        if: startsWith(matrix.rid, 'win-')
+        shell: pwsh
+        run: |
+          $zipName = "Periphery.Cli-${{ steps.name.outputs.label }}-${{ matrix.rid }}.zip"
+          Compress-Archive `
+            -Path "artifacts/Periphery.Cli-${{ matrix.rid }}/*" `
+            -DestinationPath "artifacts/$zipName"
+          Get-Item "artifacts/$zipName" | Format-List Name, Length
+
+      # Tag run: the archive becomes a Release asset, as before.
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          # The action auto-uses the tag that triggered the workflow.
+          # Both patterns are listed: linux-* ships a .tar.gz, and a .zip-only
+          # glob would have dropped it silently while still reporting success.
+          files: artifacts/Periphery.Cli-*
+          fail_on_unmatched_files: true
+          # Flag semver prerelease tags (hyphen suffix, e.g. v1.7.0-alpha.2) as
+          # GitHub prereleases so they don't show as "Latest release".
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+      # Dispatch run: no tag exists, so there is no Release to attach to. The
+      # archive is uploaded as a workflow artifact instead — this is the path that
+      # gets an unreleased CLI onto a smoke-check box.
+      - name: Upload as workflow artifact (dispatch)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Periphery.Cli-${{ steps.name.outputs.label }}-${{ matrix.rid }}
+          path: artifacts/Periphery.Cli-*
+          if-no-files-found: error
+          retention-days: 14
+
+  # linux-x64 CLI, built ON LINUX on purpose.
+  #
+  # Cross-publishing linux-x64 from the Windows runner works, but packaging it
+  # there does not: `dotnet publish` writes the apphost onto NTFS, which has no
+  # Unix execute bit to preserve, and neither packer on that box can add one --
+  # Compress-Archive drops permissions entirely, and the runner's `tar.exe` is
+  # Windows' bundled bsdtar, which rejects `--mode` (GNU tar accepts it, which is
+  # exactly how this shipped broken: it was verified locally against GNU tar and
+  # failed on the runner). The result would be a tarball whose binary will not
+  # run -- the first thing a Linux smoke-check box hits.
+  #
+  # Building here sidesteps the whole problem: on Linux the SDK sets +x on the
+  # apphost itself, and tar records it with no flag at all.
+  release-binaries-linux:
+    needs: [test-linux, test-windows]
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]') }}
+    container: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') && 'mcr.microsoft.com/dotnet/sdk:10.0' || '' }}
+    permissions:
+      contents: write   # needed to create/upload to the GitHub Release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+      - name: Trust workspace for git (container)
+        # Same dubious-ownership issue as test-linux/publish: without this MinVer
+        # cannot read the tag and stamps 0.0.0-alpha.0 into the binary. --system
+        # is the load-bearing part (checkout's HOME-scoped entry is missed by
+        # MinVer's own git call); the PATH is scoped to this workspace rather than
+        # the '*' the older jobs use, so a new instance of that wildcard is not
+        # added to the shared runner image.
+        if: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') }}
+        run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
+      - if: ${{ !contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # Delegates to scripts/package-cli-linux.sh so CI and local verification
+      # run the SAME file. `scripts/Verify-ReleasePackaging.ps1` executes that
+      # script in this same image, which is how a packaging bug gets caught
+      # before a tag is pushed rather than after (three were not).
+      #
+      # What actually guarantees bash here is the script's own shebang plus its
+      # `set -euo pipefail` — the run command invokes `bash` explicitly, so this
+      # step runs under bash whatever `shell:` says. `shell: bash` is kept as
+      # belt-and-braces for a future edit to `./scripts/...`, but it is NOT
+      # load-bearing, and an earlier revision of this comment wrongly claimed it
+      # was. (It genuinely was load-bearing when the pipefail lived in the YAML
+      # body: the container's /bin/sh is dash, which has no `set -o pipefail`,
+      # and the step died on line 1 before any assertion ran.)
+      - name: Publish and package the linux-x64 CLI (asserts the execute bit)
+        shell: bash
+        run: bash scripts/package-cli-linux.sh "${{ github.ref_name }}"
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: artifacts/Periphery.Cli-*.tar.gz
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Upload as workflow artifact (dispatch)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Periphery.Cli-linux-x64
+          path: artifacts/Periphery.Cli-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  # Self-contained single-file build of the dual-mode Treehopper Flasher: the GUI
+  # binary that also runs the CLI when invoked with arguments (no args / double-click
+  # opens the window; `list`, `flash …`, etc. run on the console). Shipped as
+  # `treehopper-flash.exe` and attached to the same Release. Windows-only — the GUI is
+  # Avalonia; -p:IncludeNativeLibrariesForSelfExtract=true bundles Skia/ANGLE into the
+  # single file. The self-hosted Windows runner has the SDK baked; the hosted
+  # fallback installs it.
+  release-flasher:
+    needs: [test-linux, test-windows]
+    # Tag-only: this job's sole output is an asset on the GitHub Release for the
+    # pushed tag, which does not exist on a dispatch run. The CLI is the smoke-check
+    # tool, so only release-binaries gained the on-demand path.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]') }}
+    permissions:
+      contents: write   # needed to create/upload to the GitHub Release
+    strategy:
+      matrix:
+        rid: [win-x64]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+      - if: ${{ !contains(fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]'), 'self-hosted') }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish Treehopper Flasher (self-contained single-file, dual-mode)
+        shell: pwsh
+        run: |
+          dotnet publish src/Periphery.Treehopper.Flasher.Gui/Periphery.Treehopper.Flasher.Gui.csproj `
+            --configuration Release `
+            --runtime ${{ matrix.rid }} `
+            --self-contained `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PeripheryLocalFeedDisable=true `
+            --output "artifacts/treehopper-flash-${{ matrix.rid }}"
+
+      - name: Rename to treehopper-flash.exe
+        shell: pwsh
+        run: |
+          $dir = "artifacts/treehopper-flash-${{ matrix.rid }}"
+          Rename-Item -Path "$dir/Periphery.Treehopper.Flasher.Gui.exe" -NewName "treehopper-flash.exe"
+
+      - name: Package as zip
+        # Zip only the single self-contained exe — the publish dir also holds .pdb/.xml
+        # (symbols + docs) that don't belong in the release artifact.
+        shell: pwsh
+        run: |
+          $zipName = "treehopper-flash-${{ github.ref_name }}-${{ matrix.rid }}.zip"
+          Compress-Archive `
+            -Path "artifacts/treehopper-flash-${{ matrix.rid }}/treehopper-flash.exe" `
+            -DestinationPath "artifacts/$zipName"
+          Get-Item "artifacts/$zipName" | Format-List Name, Length
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          # The action auto-uses the tag that triggered the workflow.
+          files: artifacts/treehopper-flash-*.zip
+          fail_on_unmatched_files: true
+          # Flag semver prerelease tags (hyphen suffix) as GitHub prereleases.
+          prerelease: ${{ contains(github.ref_name, '-') }}

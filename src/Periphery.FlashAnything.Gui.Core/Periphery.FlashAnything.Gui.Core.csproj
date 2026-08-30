@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.FlashAnything.Gui</RootNamespace>
+    <AssemblyName>Periphery.FlashAnything.Gui.Core</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- The reusable FlashAnything GUI view-toolkit: the Avalonia App / window / view-model + the
+         GuiHost.Run launcher, composition-agnostic. Shared by the generic flashany GUI and any
+         device-specific flasher GUI (ADR-0063 DEC-006); knows the engine, not any device. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+    <ProjectReference Include="..\Periphery.Diagnostics\Periphery.Diagnostics.csproj" />
+    <ProjectReference Include="..\Periphery.FlashAnything\Periphery.FlashAnything.csproj" />
+    <!-- DualModeHost folds the CLI into the GUI binary (single dual-mode exe): a terminal invocation
+         runs the CLI, a double-click opens the GUI. Adds the CLI engine's small managed code; the
+         .NET runtime is shared, not duplicated. -->
+    <ProjectReference Include="..\Periphery.FlashAnything.Cli.Core\Periphery.FlashAnything.Cli.Core.csproj" />
+  </ItemGroup>
+
+</Project>

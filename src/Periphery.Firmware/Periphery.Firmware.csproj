@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- ADR-0061 phase 0+: the shared image foundation the bootloader packages build on —
+         the real Intel HEX parser (moved from Periphery.Bootloader.Efm8.Usb) + ELF (PT_LOAD)
+         parser + raw-binary load + format auto-detect with a brick-guard. Packable because
+         the published Periphery.Bootloader.Efm8.Usb now references it. DfuSe (.dfu) parsing to come. -->
+    <IsPackable>true</IsPackable>
+    <Description>Shared firmware image model + parsers (Intel HEX / ELF / raw binary; DfuSe to come) for the Periphery firmware-bootloader platform.</Description>
+    <PackageTags>firmware;intel-hex;elf;firmware-image;embedded;parsing</PackageTags>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,76 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Periphery/Periphery.csproj" />
+    <Project Path="src/Periphery.Bootloader/Periphery.Bootloader.csproj" />
+    <Project Path="src/Periphery.Bootloader.Stm32.Usb/Periphery.Bootloader.Stm32.Usb.csproj" />
+    <Project Path="src/Periphery.Camera/Periphery.Camera.csproj" />
+    <Project Path="src/Periphery.Camera.Avalonia/Periphery.Camera.Avalonia.csproj" />
+    <Project Path="src/Periphery.Camera.OpenCvSharp/Periphery.Camera.OpenCvSharp.csproj" />
+    <Project Path="src/Periphery.Camera.Testing/Periphery.Camera.Testing.csproj" />
+    <Project Path="src/Periphery.Cli/Periphery.Cli.csproj" />
+    <Project Path="src/Periphery.Diagnostics/Periphery.Diagnostics.csproj" />
+    <Project Path="src/Periphery.Bootloader.Efm8.Usb/Periphery.Bootloader.Efm8.Usb.csproj" />
+    <Project Path="src/Periphery.Firmware/Periphery.Firmware.csproj" />
+    <Project Path="src/Periphery.FlashAnything/Periphery.FlashAnything.csproj" />
+    <Project Path="src/Periphery.FlashAnything.Cli/Periphery.FlashAnything.Cli.csproj" />
+    <Project Path="src/Periphery.FlashAnything.Cli.Core/Periphery.FlashAnything.Cli.Core.csproj" />
+    <Project Path="src/Periphery.FlashAnything.Gui/Periphery.FlashAnything.Gui.csproj" />
+    <Project Path="src/Periphery.FlashAnything.Gui.Core/Periphery.FlashAnything.Gui.Core.csproj" />
+    <Project Path="src/Periphery.Hid/Periphery.Hid.csproj" />
+    <Project Path="src/Periphery.Monitor/Periphery.Monitor.csproj" />
+    <Project Path="src/Periphery.Treehopper/Periphery.Treehopper.csproj" />
+    <Project Path="src/Periphery.Treehopper.Firmware/Periphery.Treehopper.Firmware.csproj" />
+    <Project Path="src/Periphery.Treehopper.Libraries/Periphery.Treehopper.Libraries.csproj" />
+    <Project Path="src/Periphery.Treehopper.Control/Periphery.Treehopper.Control.csproj" />
+    <Project Path="src/Periphery.Treehopper.Control.Cli/Periphery.Treehopper.Control.Cli.csproj" />
+    <Project Path="src/Periphery.Treehopper.Control.Gui/Periphery.Treehopper.Control.Gui.csproj" />
+    <Project Path="src/Periphery.Treehopper.Flasher/Periphery.Treehopper.Flasher.csproj" />
+    <Project Path="src/Periphery.Treehopper.Flasher.Cli/Periphery.Treehopper.Flasher.Cli.csproj" />
+    <Project Path="src/Periphery.Treehopper.Flasher.Gui/Periphery.Treehopper.Flasher.Gui.csproj" />
+    <Project Path="src/Periphery.Usb/Periphery.Usb.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/Periphery.Examples.Camera/Periphery.Examples.Camera.csproj" />
+    <Project Path="examples/Periphery.Examples.CameraAvalonia/Periphery.Examples.CameraAvalonia.csproj" />
+    <Project Path="examples/Periphery.Examples.Sandbox/Periphery.Examples.Sandbox.csproj" />
+    <Project Path="examples/Periphery.Examples.Treehopper/Periphery.Examples.Treehopper.csproj" />
+    <Project Path="examples/Periphery.Examples.TreehopperLed/Periphery.Examples.TreehopperLed.csproj" />
+    <Project Path="examples/Periphery.Examples.TreehopperSpiStress/Periphery.Examples.TreehopperSpiStress.csproj" />
+    <Project Path="examples/Periphery.Examples.Usb/Periphery.Examples.Usb.csproj" />
+  </Folder>
+  <Folder Name="/examples/scripts/">
+    <File Path="examples/scripts/camera.cs" />
+    <File Path="examples/scripts/device-dashboard.cs" />
+    <File Path="examples/scripts/device-dump.cs" />
+    <File Path="examples/scripts/rx-demo.cs" />
+    <File Path="examples/scripts/serial-device-handle.cs" />
+    <File Path="examples/scripts/serial-facade.cs" />
+    <File Path="examples/scripts/serial-session-host.cs" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Periphery.Bootloader.Stm32.Usb.Tests/Periphery.Bootloader.Stm32.Usb.Tests.csproj" />
+    <Project Path="tests/Periphery.Bootloader.Tests/Periphery.Bootloader.Tests.csproj" />
+    <Project Path="tests/Periphery.Camera.Avalonia.Tests/Periphery.Camera.Avalonia.Tests.csproj" />
+    <Project Path="tests/Periphery.Camera.OpenCvSharp.Interop.Tests/Periphery.Camera.OpenCvSharp.Interop.Tests.csproj" />
+    <Project Path="tests/Periphery.Camera.OpenCvSharp.Tests/Periphery.Camera.OpenCvSharp.Tests.csproj" />
+    <Project Path="tests/Periphery.Camera.Tests/Periphery.Camera.Tests.csproj" />
+    <Project Path="tests/Periphery.Cli.Tests/Periphery.Cli.Tests.csproj" />
+    <Project Path="tests/Periphery.Bootloader.Efm8.Usb.Tests/Periphery.Bootloader.Efm8.Usb.Tests.csproj" />
+    <Project Path="tests/Periphery.Firmware.Tests/Periphery.Firmware.Tests.csproj" />
+    <Project Path="tests/Periphery.FlashAnything.Cli.Tests/Periphery.FlashAnything.Cli.Tests.csproj" />
+    <Project Path="tests/Periphery.FlashAnything.Tests/Periphery.FlashAnything.Tests.csproj" />
+    <Project Path="tests/Periphery.Hid.Tests/Periphery.Hid.Tests.csproj" />
+    <Project Path="tests/Periphery.Monitor.Tests/Periphery.Monitor.Tests.csproj" />
+    <Project Path="tests/Periphery.Tests/Periphery.Tests.csproj" />
+    <Project Path="tests/Periphery.Treehopper.Libraries.Tests/Periphery.Treehopper.Libraries.Tests.csproj" />
+    <Project Path="tests/Periphery.Treehopper.Tests/Periphery.Treehopper.Tests.csproj" />
+    <Project Path="tests/Periphery.Treehopper.Control.Tests/Periphery.Treehopper.Control.Tests.csproj" />
+    <Project Path="tests/Periphery.Treehopper.Control.Cli.Tests/Periphery.Treehopper.Control.Cli.Tests.csproj" />
+    <Project Path="tests/Periphery.Treehopper.Firmware.Tests/Periphery.Treehopper.Firmware.Tests.csproj" />
+    <Project Path="tests/Periphery.Treehopper.Flasher.Tests/Periphery.Treehopper.Flasher.Tests.csproj" />
+    <Project Path="tests/Periphery.Usb.Tests/Periphery.Usb.Tests.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Periphery.Camera.Benchmarks/Periphery.Camera.Benchmarks.csproj" />
+  </Folder>
+</Solution>

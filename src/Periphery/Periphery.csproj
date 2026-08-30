@@ -1,0 +1,58 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery</PackageId>
+<Description>Cross-platform .NET library for discovering hardware devices (USB, Bluetooth, network adapters, displays, etc.). Discovery-only — no protocol I/O. Uses SetupAPI/cfgmgr32 on Windows, libudev on Linux, and IOKit on macOS.</Description>
+    <PackageTags>hardware;usb;bluetooth;device-enumeration;wmi;cross-platform;device-discovery;hid;network-adapter</PackageTags>
+
+    <!-- SourceLink: lets consumers step into library source while debugging -->
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Tests" />
+    <InternalsVisibleTo Include="Periphery.Hid" />
+    <InternalsVisibleTo Include="Periphery.Usb" />
+    <InternalsVisibleTo Include="Periphery.Monitor" />
+    <!-- The EFM8 uploader emits a per-record diagnostic trace via PeripheryLoggerFactory, the
+         same static sink every other Periphery.* library logs through (so a wired file log captures it). -->
+    <InternalsVisibleTo Include="Periphery.Bootloader.Efm8.Usb" />
+    <!-- scratch/PortPathProbe is the ADR-0079 D4 instrument. It needs PortPath's ParseFailure
+         and Hops for the same reason the fixture suite does: classifying a non-path by reason,
+         and reading the hop vector from the parsed representation rather than deriving it from
+         TryGetExternalHubCount — which is the answer under test. Goes when the probe does. -->
+    <InternalsVisibleTo Include="PortPathProbe" />
+  </ItemGroup>
+
+  <ItemGroup>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Periphery\**" />
+    <EmbeddedResource Remove="Periphery\**" />
+    <None Remove="Periphery\**" />
+    <Compile Remove="examples\**" />
+    <EmbeddedResource Remove="examples\**" />
+    <None Remove="examples\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+
+  </Project>

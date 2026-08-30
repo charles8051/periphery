@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.Cli</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- dotnet tool packaging -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>periphery</ToolCommandName>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Cli</PackageId>
+    <Description>Command-line tool for inspecting connected hardware via Periphery. Provides `devices list` (snapshot), `devices watch` (live event stream), and `devices dashboard` (Spectre.Console TUI). Install with `dotnet tool install -g Periphery.Cli`.</Description>
+    <PackageTags>hardware;device-enumeration;cli;dotnet-tool;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Hid\Periphery.Hid.csproj" />
+    <ProjectReference Include="..\Periphery.Monitor\Periphery.Monitor.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Periphery" />
+    <Using Include="Periphery.Hid" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+    <PackageReference Include="Spectre.Console" Version="0.55.0" />
+    <PackageReference Include="Spectre.Console.Cli" Version="0.55.0" />
+  </ItemGroup>
+
+</Project>

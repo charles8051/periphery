@@ -1,0 +1,143 @@
+name: macOS CI
+
+# Automatic macOS coverage for the IOKit P/Invoke surface (src/Periphery/MacOS/),
+# which nothing else exercises: build.yml is dispatch-only, so the bindings could
+# rot against IOKit.framework unnoticed between manual runs.
+#
+# macos-latest is a HOSTED runner and bills at a 10x minute multiplier on a private
+# repo — an order of magnitude more than the free self-hosted Linux tier. Three
+# things keep that honest, and none of them should be removed casually:
+#   1. Build + unit/contract tests only. No device tier on the hosted runner: it has
+#      no USB, no camera, nothing for the Integration suite to reach.
+#   2. Markdown-only pushes don't trigger a run.
+#   3. Superseded runs are cancelled (see the concurrency block).
+# build.yml's full windows/linux/macos matrix stays manual — this is the cheapest
+# leg of it, promoted to run on its own.
+#
+# Two tiers, mirroring linux-ci.yml:
+#   build-test    — macos-latest, hosted; unit + contract tests.
+#   device-tests  — the (not yet provisioned) Mac mini device rig; runs the
+#                   Category=Integration suite natively against real hardware.
+#                   DISPATCH-FROM-MAIN ONLY (see the job). Dispatch-only for the
+#                   same reason as linux-ci.yml's rig job: the rig is powered on
+#                   demand, so an automatic run would queue forever on an offline
+#                   runner.
+#                   Scope note: Periphery's macOS support is enumeration-only
+#                   today — UsbDevice, HidDevice, CameraDevice and MonitorDevice
+#                   all throw PlatformNotSupportedException — so this tier is the
+#                   inherited cross-enumeration comparisons until those backends
+#                   exist.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+# Least privilege: nothing here writes to the repo. Both jobs only check out and
+# run dotnet; the artifact upload rides the runner's own runtime token, not this
+# one. Matters most for device-tests, which runs on a persistent self-hosted rig.
+permissions:
+  contents: read
+
+# Cancel a superseded run — at 10x, a stale build is the most expensive kind of
+# waste here. Deliberately the opposite of peanut-gallery.yml's cancel-in-progress:
+# false; a killed build carries no state forward, a killed review comment does.
+concurrency:
+  group: macos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  build-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Periphery.slnx
+
+      - name: Build
+        # PeripheryLocalFeedDisable suppresses the on-build local-feed write
+        # (the runner shouldn't scribble into ~/.nuget/local-feed).
+        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
+
+      - name: Test (unit)
+        # The MacOS*ContractTests run their inherited single-enumeration invariants
+        # against the real IOKit path in this tier, so a broken P/Invoke binding
+        # reddens the run here rather than waiting for a device rig.
+        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category!=Integration" --logger "trx;LogFileName=test-macos.trx"
+
+      - name: Upload test results
+        if: always()
+        # Diagnostic only — an upload failure (e.g. the account-wide artifact
+        # storage quota) must not fail the job and red-X an otherwise green run.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-macos
+          path: "**/test-*.trx"
+          retention-days: 14
+
+  device-tests:
+    # Manual-dispatch only, and NOT YET RUNNABLE: the macOS device rig does not
+    # exist. The wiring lands ahead of the hardware so that provisioning the mini
+    # is a runner registration and nothing else.
+    #
+    # Dispatch is additionally pinned to main. workflow_dispatch lets the caller
+    # pick any ref, and this job hands that ref's build+test code the rig's local
+    # privileges and its attached hardware. Pinning does not make an untrusted
+    # dispatch safe - dispatch already requires write access, and main is not a
+    # protected branch on this plan - but it forces device-rig code through main,
+    # where it is visible in history, instead of a throwaway branch. To exercise a
+    # branch on the rig, SSH in and run the suite by hand (see the profile).
+    # Rig posture proper - ephemeral registration, post-run cleanup - is #286.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, macos, arm64, periphery-devices]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Rig preflight
+        # macOS has no v4l2loopback/uhid equivalent, so unlike the Linux rig every
+        # fixture here is physical. Nothing to synthesize means nothing to assert
+        # against a service unit — this just records what was attached, so a run
+        # that fails on a missing device is diagnosable from the log alone.
+        run: |
+          system_profiler SPUSBDataType
+          system_profiler SPCameraDataType
+
+      - name: Restore
+        run: dotnet restore Periphery.slnx
+
+      - name: Build
+        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
+
+      - name: Test (device integration)
+        # No Fixture!=PhysicalWebcam exclusion, deliberately: on this rig EVERY
+        # fixture is hardware a person plugged in, and the job is dispatch-only, so
+        # there is no unattended run for an unplugged device to redden.
+        # Today this tier is the Integration-gated cross-enumeration comparisons the
+        # MacOS provider contract tests inherit. macOS-specific integration tests
+        # added later should follow the Linux convention (an env-var + platform Skip
+        # gate, see LinuxV4l2IntegrationTests) and set the gate here.
+        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category=Integration" --logger "trx;LogFileName=test-macos-devices.trx"
+
+      - name: Upload test results
+        if: always()
+        # Diagnostic only — an upload failure (e.g. the account-wide artifact
+        # storage quota) must not fail the job and red-X an otherwise green run.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-macos-devices
+          path: "**/test-*.trx"
+          retention-days: 14

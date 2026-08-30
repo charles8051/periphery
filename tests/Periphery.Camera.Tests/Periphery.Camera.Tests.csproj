@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- The device tests issue raw V4L2 ioctls as an INDEPENDENT ORACLE: they read the
+         kernel's own control values through V4l2Interop rather than through the mapping
+         under test, so a self-consistent but wrong mapping cannot satisfy them (#274).
+         VIDIOC_G_CTRL/S_CTRL take a struct pointer, hence unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <!-- FakeTimeProvider: drives CameraSession's injected clock (frame-timeout,
+         bounded-stop delays, producer duration) so the timeout-vs-cancellation
+         decision is tested deterministically without real-millisecond sleeps.
+         Pinned to the repo's Microsoft.Extensions.* 9.0.x line (review finding 2.2). -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery.Camera\Periphery.Camera.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Camera.Testing\Periphery.Camera.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+</Project>

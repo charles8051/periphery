@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.Examples.TreehopperLed</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Diagnostics\Periphery.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Treehopper\Periphery.Treehopper.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Treehopper.Libraries\Periphery.Treehopper.Libraries.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Observability: structured logging + an opt-in file sink (the log-file
+         flag), modeled on the FrameFlow examples. -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Periphery" />
+    <Using Include="Periphery.Treehopper" />
+    <Using Include="Periphery.Treehopper.Libraries.Displays" />
+  </ItemGroup>
+
+</Project>

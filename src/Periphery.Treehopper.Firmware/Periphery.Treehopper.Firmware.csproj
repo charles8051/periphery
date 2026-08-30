@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;SYSLIB1051</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Treehopper.Firmware</PackageId>
+    <Description>The Treehopper firmware-reflash capability, split out of Periphery.Treehopper (ADR-0063 DEC-007): TreehopperBootloaderEntry (the app-to-EFM8-bootloader mode switch) and the TreehopperFirmwareUpdate reflash convenience wrapper, composed over the shared bootloader-entry orchestration and the generic EFM8 USB-HID flasher. Kept separate so the board package (Periphery.Treehopper) stays free of the bootloader/firmware dependency chain - board-only consumers don't pull Periphery.Bootloader / .Efm8.Usb / .Hid.</Description>
+    <PackageTags>hardware;usb;treehopper;firmware;bootloader;efm8;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The board API it reboots into the bootloader (TreehopperBoard.RebootIntoBootloaderAsync). -->
+    <ProjectReference Include="..\Periphery.Treehopper\Periphery.Treehopper.csproj" />
+    <!-- The bootloader-entry seam + shared enter/wait/gate/flash orchestration (ADR-0063). -->
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+    <!-- The generic EFM8 USB-HID flasher + Intel-HEX -> boot-record generator. -->
+    <ProjectReference Include="..\Periphery.Bootloader.Efm8.Usb\Periphery.Bootloader.Efm8.Usb.csproj" />
+    <!-- HID transport to open the re-enumerated EFM8 bootloader. -->
+    <ProjectReference Include="..\Periphery.Hid\Periphery.Hid.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>

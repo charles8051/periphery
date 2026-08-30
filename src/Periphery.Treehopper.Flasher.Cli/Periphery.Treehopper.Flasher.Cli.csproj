@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Periphery.Treehopper.Flasher.Cli</RootNamespace>
+    <AssemblyName>Periphery.Treehopper.Flasher.Cli</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- The branded "Treehopper Flasher" CLI (ADR-0063 DEC-006): the same FlashAnything CLI over a
+         curated Treehopper-only composition. IsPackable=false while the platform is in-progress. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>treehopper-flash</ToolCommandName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sibling of the generic flashany CLI: same shared toolkit + engine, curated composition. -->
+    <ProjectReference Include="..\Periphery.FlashAnything.Cli.Core\Periphery.FlashAnything.Cli.Core.csproj" />
+    <ProjectReference Include="..\Periphery.Treehopper.Flasher\Periphery.Treehopper.Flasher.csproj" />
+  </ItemGroup>
+
+</Project>

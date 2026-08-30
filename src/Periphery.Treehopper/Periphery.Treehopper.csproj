@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;SYSLIB1051</NoWarn>
+
+    <!-- The EFM8 device firmware (C/A51 sources, built out-of-band by the Keil
+         toolchain via firmware/Treehopper-EFM8/build.ps1) lives under this project
+         but is NOT part of the .NET build. Keep its tree out of the default item
+         globs so the .c/.h/.a51/.hex files don't become None/Content items. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);firmware\**</DefaultItemExcludes>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Treehopper</PackageId>
+    <Description>Treehopper USB I/O board extension for Periphery, built on Periphery.Usb. Vertical slice: open a board and drive the on-board LED with an async-first API; pins and peripherals build on the same UsbDevice transport (ADR-0039).</Description>
+    <PackageTags>hardware;usb;treehopper;gpio;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Board-only: GPIO / I2C / SPI / LED / meters over the USB transport. The firmware-reflash
+         capability (TreehopperFirmwareUpdate / TreehopperBootloaderEntry) and its bootloader
+         dependency chain moved to the separate Periphery.Treehopper.Firmware package (ADR-0063
+         DEC-007), so board consumers don't transitively pull Periphery.Bootloader / .Efm8.Usb / .Hid. -->
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Usb\Periphery.Usb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Treehopper.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Abstractions-only logging dependency; referenced directly (not just
+         transitively via Periphery) so the [LoggerMessage] source generator — an
+         analyzer, which does not flow through a ProjectReference — runs here. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
