@@ -113,7 +113,9 @@ await watcher.StartAsync();
 // name, and it moves across reboots and re-plugs; the VID/PID and serial number
 // do not. The proxy reopens the port wherever it lands next.
 var scanner = new DeviceProfile(
-    f => f.OfCategory(DeviceCategory.Ports).WithUsbId("0403", "6001"),
+    f => f.OfCategory(DeviceCategory.Ports)
+          .WithUsbId("0403", "6001")
+          .WithSerialNumber("A9012XYZ"),   // drop this if only one such device is ever attached
     name: "Scanner");
 
 SerialPort? port = null;   // needs the System.IO.Ports package
