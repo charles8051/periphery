@@ -1,0 +1,522 @@
+---
+title: "ADR-0084: One criteria surface, a bindable filter, streaming terminals, and a lifecycle owner in every extension"
+status: "Proposed"
+date: "2026-08-31"
+authors: "@charles8051"
+tags: ["architecture", "decision", "api-design", "fluent", "devicequery", "devicefilter", "devicewatcher", "camera", "ergonomics"]
+supersedes: ""
+superseded_by: ""
+---
+
+# ADR-0084: One criteria surface, a bindable filter, streaming terminals, and a lifecycle owner in every extension
+
+## Status
+
+Proposed. Records the findings of an end-to-end review of the public API surface
+and the six changes that follow from them. Extends ADR-0008, which introduced the
+fluent registration verbs, to the criteria half of the same chain. Does not
+change any device model, provider, or platform contract.
+
+---
+
+## Context
+
+The entry surface is small and reads well. `Devices.Enumerate()` and
+`Devices.Watch()` are two verbs, the criteria chain is discoverable, and
+`DeviceProfile` + `DeviceProxy` — bind a device by identity, reopen it wherever
+the OS puts it next — is the strongest idea in the library. Nothing below
+proposes changing any of that.
+
+The problems are one layer down, and they are structural rather than cosmetic.
+Five of them, each with a concrete cost.
+
+### 1. Three fluent surfaces re-declare the same criteria
+
+`DeviceQuery`, `DeviceFilter`, and `DeviceWatcher` each hand-roll their own
+`With*` chain: 26, 27, and 25 public criteria methods respectively, of which only
+19 are common to all three. Every criterion is written three times, in three
+files, with three sets of XML docs.
+
+They have already drifted:
+
+| Criterion | `DeviceQuery` | `DeviceFilter` | `DeviceWatcher` |
+| --- | :---: | :---: | :---: |
+| `WithTag` / `WithAllTags` / `WithAnyTag` | ✅ | ✅ | ❌ |
+| `WithIdStartsWith` | ❌ | ✅ | ❌ |
+| `WithContainerId` | ❌ | ✅ | ❌ |
+| `Active` | ✅ | ✅ | ❌ |
+| `OrderBy` / `Take` | ✅ | ❌ | ❌ |
+
+Two of these are correct and stay that way. `Active` is meaningless on a watcher,
+whose whole job is to report the activation edge, and `OrderBy`/`Take` are
+result-shaping operators with no meaning on a predicate.
+
+The other five gaps are accidents of hand-copying. Capability tags (ADR-0051) are
+the library's own recommended way to select a printer or a HID device, and a
+watcher-level filter cannot express one. A consumer that selects a tracker by tag
+and a watcher by category is writing two vocabularies for the same question.
+
+The maintenance cost compounds. Adding one criterion today means editing three
+files and remembering that the third exists.
+
+### 2. There is no bindable filter, so every consumer hand-writes the binder
+
+`DeviceFilter` is a mutable builder configured through an `Action<DeviceFilter>`
+delegate. That is a good runtime shape and a bad configuration shape: a delegate
+cannot be deserialized, diffed, logged, or round-tripped.
+
+So `docs/surface/configuration-driven-tracking.md` — the library's own
+recommended pattern — instructs every consumer to write a DTO with one property
+per criterion, plus an if-ladder that replays it onto a `DeviceFilter`:
+
+```csharp
+// what the guide tells every consumer to write, once, by hand
+if (Category.HasValue)      filter.OfCategory(Category.Value);
+if (DeviceName is not null) filter.WithName(DeviceName);
+if (VendorId is not null)   filter.WithUsbId(VendorId, ProductId);
+// ... one arm per criterion, forever
+```
+
+That ladder is mechanical translation of a surface Periphery already owns. Every
+consumer writes the same one, and every copy silently falls behind whenever a
+criterion is added here. The DTO in the guide is already missing `Tags`,
+`IdStartsWith`, and `ContainerId`.
+
+The failure mode is also poor. `DeviceProfile`'s constructor rejects an empty
+filter with an `ArgumentException` naming the `configure` parameter — correct for
+a delegate written in C#, useless when the real cause is a typo in a JSON overlay
+three layers up. A consumer cannot pre-validate without duplicating the
+`HasAnyCriteria` check, which is `internal`.
+
+### 3. `DeviceQuery` buffers the entire enumeration before yielding anything
+
+`DeviceQuery.GetAsyncEnumerator` collects every match into a `List<DeviceInfo>`,
+sorts and limits it, and only then begins yielding. `ToListAsync`,
+`FirstOrDefaultAsync`, `CountAsync`, and `AnyAsync` are all written on top of that
+enumerator.
+
+`FirstOrDefaultAsync()` therefore walks every device on the box even when the
+first device examined is a match, and `.Take(1)` does not help. On Windows the
+per-device cost is a cfgmgr32 property read plus whatever the enrichment pipeline
+is configured to do, and monitor and battery enrichment are opted into by the
+filter itself. A `FirstOrDefaultAsync` looking for one monitor pays the full-box
+walk with monitor enrichment on.
+
+The buffer exists to support `OrderBy` and `Take`, which genuinely require
+materialization. It is unconditional, so the queries that use neither pay for
+both. Nothing in the type's contract promises this. The class implements
+`IAsyncEnumerable<DeviceInfo>` and reads as a streaming type.
+
+### 4. `DeviceInfo` is 51 flat nullable properties
+
+Every property of every category lives on one record. A HID mouse carries
+`DisplayMaxAvgLuminanceInNits`, `DriveType`, `MacAddress`, and
+`HidMaxFeatureReportLength`, all null. Autocomplete stops being a discovery tool
+at that width, and the type does not tell a reader which properties can ever be
+populated together.
+
+The flat shape is deliberate and worth keeping. It serializes cleanly, it is
+trivially `with`-able, and it avoids a polymorphic hierarchy that would force a
+cast at every call site. The problem is that it is the only shape offered. There
+is no narrower view for a caller who already knows they hold a display.
+
+### 5. `Periphery.Camera` has no lifecycle owner, unlike every other extension
+
+`docs/surface/periphery-session-integration-guide.md` states the principle
+plainly: **Periphery owns lifecycle.** Three of the four I/O extensions honour
+it.
+
+| Package | Device type | Lifecycle owner |
+| --- | --- | --- |
+| `Periphery.Usb` | `UsbDevice` | `UsbDeviceProxy` |
+| `Periphery.Hid` | `HidDevice` | `HidDeviceProxy` |
+| `Periphery.Monitor` | `MonitorDevice` | `MonitorDeviceProxy` |
+| `Periphery.Camera` | `CameraDevice`, `CameraSession` | **none** |
+
+`CameraSession.For(DeviceInfo)` takes a snapshot value, not a `DeviceProfile` or
+an `IDeviceTracker`. A consumer that wants a camera bound by identity and
+reopened after a replug writes the tracker subscription, the open, the frame
+pump, the disposal-on-every-exit-path, and the restart. That is the work
+`DeviceProxyBase` already does for the other three transports.
+
+Camera also has a failure mode the others do not, and which no existing type
+models: **the device stays enumerated and Active while the stream is dead.** A
+wedged UVC pipeline produces no frames and no PnP edge, so a tracker-driven
+reopen never fires. Detecting it needs a frame-arrival deadline, which is
+session-level knowledge the consumer must reconstruct from outside. ADR-0082
+establishes that a camera session is lossy. Nothing yet owns the case where it is
+lossy forever.
+
+Issue `#123` documents the other half of the same wedge from the teardown side:
+`CameraSession.RunBoundedAsync` and `MfCameraBackend.DisposeAsync` each abandon
+cleanup on a hard timeout, and an abandoned cleanup still holding the device
+cascaded one wedged mode into nineteen consecutive open failures on a C270.
+`#123` lists a reset rung (ADR-0060) among its directions. This ADR's D5 is the
+lifecycle half; the two meet at the same escalation ladder.
+
+### What this ADR does not propose for camera
+
+Issue `#121` settled the scope question for `Periphery.Camera` in the other
+direction, and that decision stands: **no frame router, no fan-out primitive.**
+`FrameFlow.Graph` already owns fan-out, Periphery cannot take the `IFrame` /
+`IRefCounted` dependency it would need (ADR-0045), and an opinionated router is a
+thing consumers adapt away from. `CaptureAsync()` plus refcounting is the right
+minimum for frame *distribution*.
+
+D5 is not a reversal of that. `#121` is about where a frame goes after it is
+delivered, which is application policy. D5 is about who opens the device, who
+reopens it after a replug, and who disposes the session on a fault — which
+`docs/surface/periphery-session-integration-guide.md` places on Periphery's side
+of the line, and which the other three extensions already do. The test that keeps
+them apart: `CameraDeviceProxy` hands a consumer one frame at a time and has no
+opinion about what happens next.
+
+### What these five have in common
+
+Each is Periphery declining to own something it is best positioned to own: the
+criteria vocabulary, the configuration binding, the streaming contract, the
+per-category view, and the camera's lifecycle. In each case the work does not
+disappear. It moves to every consumer, is written slightly differently in each,
+and drifts from the library independently.
+
+---
+
+## Decision
+
+### D1 — One criteria definition, three terminals
+
+Extract the shared criteria vocabulary into a single generic interface
+implemented by all three types.
+
+```csharp
+public interface IDeviceCriteria<out TSelf>
+{
+    TSelf OfCategory(DeviceCategory category);
+    TSelf Where(Func<DeviceInfo, bool> predicate);
+    TSelf WithName(string text, StringComparison comparison = StringComparison.OrdinalIgnoreCase);
+    TSelf WithUsbId(HardwareId vendorId, HardwareId? productId = null);
+    TSelf WithTag(string tag);
+    TSelf WithAllTags(params string[] tags);
+    TSelf WithAnyTag(params string[] tags);
+    TSelf WithIdStartsWith(string prefix, StringComparison comparison = StringComparison.OrdinalIgnoreCase);
+    TSelf WithContainerId(Guid containerId);
+    // ... the full shared set
+}
+
+public sealed class DeviceQuery   : IDeviceCriteria<DeviceQuery>,   IAsyncEnumerable<DeviceInfo> { }
+public sealed class DeviceFilter  : IDeviceCriteria<DeviceFilter> { }
+public sealed class DeviceWatcher : IDeviceCriteria<DeviceWatcher>, IAsyncDisposable { }
+```
+
+Every criterion is declared once. `DeviceQuery` and `DeviceWatcher` implement it
+by delegating to their inner `DeviceFilter`, which is what they already do.
+Adding a criterion becomes one interface member plus one `DeviceFilter`
+implementation.
+
+Terminals stay on the concrete types, because they are what distinguishes them:
+`OrderBy`/`Take`/`ToListAsync` on `DeviceQuery`, `Matches` on `DeviceFilter`,
+`AddTracker`/`StartAsync`/events on `DeviceWatcher`.
+
+The five accidental gaps close as a consequence. `Active` stays off
+`DeviceWatcher` deliberately — it is not an `IDeviceCriteria` member but a
+`DeviceQuery`/`DeviceFilter` one, and the watcher expresses activation through
+its `Activated`/`Deactivated` edges instead.
+
+Source-compatible. No existing call site changes.
+
+### D2 — A bindable `DeviceFilterSpec`
+
+Ship the DTO the configuration guide currently asks consumers to write.
+
+```csharp
+public sealed record DeviceFilterSpec
+{
+    public DeviceCategory? Category { get; init; }
+    public string[]? Tags { get; init; }
+    public string? DeviceName { get; init; }
+    public string? Manufacturer { get; init; }
+    public string? VendorId { get; init; }
+    public string? ProductId { get; init; }
+    public string? SerialNumber { get; init; }
+    public string? Id { get; init; }
+    public string? IdStartsWith { get; init; }
+    public Guid? ContainerId { get; init; }
+    public BusType? BusType { get; init; }
+
+    /// <summary>True if at least one criterion is set.</summary>
+    public bool HasAnyCriteria { get; }
+
+    /// <summary>Human-readable description, for diagnostics and operator UI.</summary>
+    public override string ToString();
+}
+```
+
+with the replay owned here:
+
+```csharp
+public DeviceFilter Apply(DeviceFilterSpec spec);                   // on DeviceFilter
+public DeviceQuery  Matching(DeviceFilterSpec spec);                // on DeviceQuery
+public DeviceProfile(DeviceFilterSpec spec, string? name = null);   // on DeviceProfile
+```
+
+`DeviceFilterSpec` is a plain record with a parameterless-constructible shape, so
+`IConfiguration.Get<T>()` and `System.Text.Json` bind it with no adapter. A
+source-generated `JsonSerializerContext` entry goes alongside the existing ones
+in `Serialization/` so it round-trips under AOT.
+
+Public `HasAnyCriteria` lets a consumer validate a bound configuration before
+constructing a profile, and report the error against its own configuration key
+rather than against a `configure` parameter the operator never wrote. The
+`DeviceProfile(DeviceFilterSpec, string?)` overload throws with the spec's
+`ToString()` in the message rather than the delegate parameter name.
+
+The delegate overloads stay. They are the better shape for filters written in C#,
+including any using `Where(...)`, which by construction cannot be expressed as
+data.
+
+### D3 — Stream by default; buffer only when a buffering operator is present
+
+`DeviceQuery.GetAsyncEnumerator` yields matches as they arrive when neither
+`OrderBy` nor `Take` has been called. The existing buffer-sort-limit path runs
+only when one of them has.
+
+`FirstOrDefaultAsync` and `AnyAsync` stop at the first match. `Take(n)` stops
+after `n` when no `OrderBy` is present. `ToListAsync` and `CountAsync` are
+unchanged in observable behaviour.
+
+Ordering of streamed results is provider order, which is what the current
+unordered path already yields. This changes only when items are produced and how
+many devices are touched, both of which the `IAsyncEnumerable` contract already
+permitted.
+
+### D4 — Typed facets over the flat record
+
+Keep `DeviceInfo` exactly as it is. Add narrow readonly-struct views over the
+subsets that travel together.
+
+```csharp
+public readonly struct DisplayFacet { public Size? Resolution { get; } public Rectangle? Bounds { get; } /* ... */ }
+public readonly struct UsbFacet     { public UsbSpeed? Speed { get; } public UsbClassCode? ClassCode { get; } /* ... */ }
+public readonly struct HidFacet     { }
+public readonly struct BatteryFacet { }
+public readonly struct StorageFacet { }
+public readonly struct NetworkFacet { }
+
+public static class DeviceInfoFacets
+{
+    public static bool TryAsDisplay(this DeviceInfo device, out DisplayFacet facet);
+    public static DisplayFacet? AsDisplay(this DeviceInfo device);
+    // one pair per facet
+}
+```
+
+`TryAs*` returns false when the device carries none of that facet's properties.
+Facets are views over the same record: no copying beyond the struct, no
+allocation, no second source of truth. `DeviceInfo` remains the serialization
+shape and the only thing providers populate.
+
+Purely additive and optional. Callers who prefer the flat record keep using it.
+
+### D5 — `CameraDeviceProxy`, and a stall deadline on the session
+
+Give `Periphery.Camera` the lifecycle owner the other three extensions have.
+
+```csharp
+await using var camera = await CameraDeviceProxy.OpenAsync(
+    profile,                                   // or an IDeviceTracker
+    configure: b => b.PreferNv12().MaxResolution(1920, 1080),
+    onFrame: (frame, ct) => sink.WriteAsync(frame, ct),
+    recoveryPolicy: policy,
+    ct);
+```
+
+Built on `DeviceProxyBase`, so it inherits the activation window, the reconnect
+loop, `IRecoveryPolicy` (ADR-0055), and `IDeviceReset` escalation (ADR-0060) that
+the USB, HID, and monitor proxies already use. The proxy owns the frame pump and
+the guarantee that the session is disposed on every exit path.
+
+For the stall case, `CameraSessionOptions` gains a frame-arrival deadline:
+
+```csharp
+public TimeSpan? StallTimeout { get; init; }
+```
+
+When set, a session that delivers no frame within the window ends its capture
+with a `CameraStallException`. That turns an invisible wedge into an ordinary
+session fault, which `CameraDeviceProxy` recovers through the same
+`IRecoveryPolicy` ladder as any other fault. Unset preserves today's behaviour
+exactly.
+
+**The recovery must not reopen into an abandoned cleanup.** This is the cascade
+in `#123`: a stalled session's teardown can be abandoned on a timeout while still
+holding the device, and an immediate reopen contends with it. A proxy that
+retries a stall on the default backoff would have turned that C270 run into
+nineteen automated failures instead of nineteen manual ones. So `StallTimeout`
+lands *after* `#123`'s first direction — make abandonment observable, and have a
+subsequent `OpenAsync` on the same device either wait for the abandoned cleanup
+or fail fast naming it. Until a stalled camera can be reopened deterministically,
+`CameraDeviceProxy` has nothing sound to escalate to.
+
+`CameraSession.For(DeviceInfo)` and the direct `OpenAsync` path stay. The proxy
+is the recommended composition, not the only one — the same relationship
+`UsbDeviceProxy` has to `UsbDevice`.
+
+### D6 — `DeviceWatcher.StartAsync` may be retried, and accepts a policy
+
+`StartAsync` currently sets `_started = true` before the provider registration and
+the initial snapshot, and does not roll it back on failure. A watcher whose start
+throws is therefore permanently unusable: the retry throws
+`InvalidOperationException("The watcher has already been started.")`, so the
+caller must discard the instance and rebuild every tracker and every event
+subscription attached to it.
+
+`_started` is set only after the provider registration and snapshot complete. A
+failed start leaves the watcher in its pre-start state, and the same instance can
+be started again with its trackers and subscriptions intact.
+
+The watcher also accepts the recovery abstraction the library already has:
+
+```csharp
+public Task StartAsync(CancellationToken ct = default);
+public Task StartAsync(IRecoveryPolicy recoveryPolicy, CancellationToken ct = default);
+```
+
+The overload retries the start according to the policy, honouring `Retry(delay)`
+and `GiveUp` from `RecoveryDirective`. `Reset` is not meaningful for a provider
+registration and is treated as `GiveUp`. The no-policy overload is unchanged: one
+attempt, throw on failure.
+
+This matters more than convenience. The watcher is a consumer's entire view of its
+hardware — every tracker reports through it — so a transient start failure that
+cannot be retried leaves an application permanently blind, with its trackers
+frozen at whatever they last read.
+
+---
+
+## Consequences
+
+### Positive
+
+- One place to add a criterion, and no way to add it to two of three surfaces.
+- Capability tags (ADR-0051) become expressible at watcher level, which is where
+  the README already tells readers to select devices by capability.
+- Configuration-driven tracking stops being a copy-paste pattern in a document
+  and becomes a supported API. `docs/surface/configuration-driven-tracking.md`
+  shrinks to a binding example.
+- `FirstOrDefaultAsync` on a filtered category stops paying a full-box property
+  read. This is the single largest enumeration cost in the library.
+- Autocomplete on a display returns display properties.
+- `Periphery.Camera` stops being the odd extension out, and the stream-stall
+  failure mode gets a name and a recovery path.
+- A watcher start that fails is recoverable without rebuilding application state.
+
+### Negative
+
+- `IDeviceCriteria<TSelf>` is a large interface, and adding a member to it is a
+  breaking change for any external implementer. Mitigated by documenting it as
+  not-for-implementation; the three implementations are already sealed.
+- `DeviceFilterSpec` is a second way to express a filter, and the two can drift
+  the way the three fluent surfaces did. Mitigated by a test asserting that every
+  data-expressible `IDeviceCriteria` member has a corresponding spec property.
+- D3 changes timing a caller may have come to depend on. A `FirstOrDefaultAsync`
+  that previously observed a device appearing late in the walk may now return
+  earlier. This is a behaviour change within a documented streaming contract, and
+  lands on a major.
+- Six facet structs are six more types in the core namespace, for information
+  already reachable.
+- `CameraDeviceProxy` adds a dependency from `Periphery.Camera` onto the core
+  proxy machinery. `Periphery.Camera` already references core, so no new package
+  edge.
+
+### Neutral
+
+- No device model, provider, enricher, or platform contract changes.
+- D1, D2, D4, D5, and the policy overload in D6 are additive. D3 and the
+  `_started` rollback in D6 are behavioural and land together on a major.
+
+---
+
+## Alternatives considered
+
+**Collapse `DeviceQuery` and `DeviceWatcher` into one type.** They share a
+criteria vocabulary and nothing else. One is a pull enumeration that completes,
+the other a push subscription that runs until disposed. Merging them produces a
+type where half the members throw depending on how it was constructed.
+
+**Make `DeviceFilter` itself the configuration DTO.** It is mutable, carries
+lambda predicates that cannot serialize, and exposes `Matches` plus internal
+enrichment hints that have no meaning in a config file. A separate record keeps
+the runtime type free to hold delegates.
+
+**Source-generate the three fluent surfaces from one definition.** Solves the
+duplication without an interface, but leaves three unrelated types with no shared
+contract, so a method taking "something filterable" still cannot be written. The
+interface is the thing consumers actually want.
+
+**Split `DeviceInfo` into a polymorphic hierarchy.** Every call site casts,
+serialization needs a discriminator, and a device that is both a display and a
+USB device has no place in a single-inheritance tree. Facets are views, not
+types, and a device can have several.
+
+**Leave camera lifecycle to consumers, on the grounds that frame pumping is
+application policy.** The session-integration guide draws the line at lifecycle
+versus message exchange, and reopen-after-replug is lifecycle by that definition.
+The other three extensions already sit on Periphery's side of that line. This is
+the strongest objection to D5, because `#121` rejected a camera fan-out primitive
+on adjacent reasoning; see "What this ADR does not propose for camera" above for
+where the two differ.
+
+---
+
+## Sequencing
+
+1. **D1** — the interface, and the five gap closures it implies. Additive.
+2. **D2** — `DeviceFilterSpec` on top of D1's settled vocabulary. Additive.
+3. **D6 policy overload** — additive. The `_started` rollback ships with D3.
+4. **D4** — facets. Additive, independent of the rest.
+5. **D3** — streaming terminals. Behavioural; lands on a major with the
+   `_started` rollback.
+6. **D5** — `CameraDeviceProxy` and `StallTimeout`. Largest single piece,
+   independent of D1–D4, and **blocked on `#123`**: a stall the proxy cannot
+   reopen from deterministically is not worth automating.
+
+`#70` (hoist the three identical `DeviceProxy` factory bodies into
+`DeviceProxyBase`) is the same duplication class as D1, one layer down. Doing it
+before D5 means `CameraDeviceProxy` is a fourth caller of a shared factory rather
+than a fourth copy of one.
+
+---
+
+## References
+
+### ADRs
+
+- ADR-0008 — fluent tracker registration (`AddTracker` / `AddTrackers`)
+- ADR-0045 — substrate independence from Crossbar (the `IFrame` / `IRefCounted`
+  participation protocol `#121` cites as unavailable to Periphery)
+- ADR-0051 — capability categories demoted to tags
+- ADR-0055 — injectable reconnect policy (`IRecoveryPolicy`), shipped in
+  `DeviceProxyBase` with `ExponentialBackoffRecoveryPolicy.Default`
+- ADR-0060 — device reset and recovery escalation
+- ADR-0065 — camera testing seam
+- ADR-0081 — a delivered frame has tight rows
+- ADR-0082 — a camera session is lossy
+
+### Issues
+
+- `#121` — document the frame fan-out recipe; do not ship a router. Sets the
+  scope posture D5 must not violate.
+- `#123` — abandoned camera teardown is invisible and cascades into the next
+  open. Blocks D5's `StallTimeout`.
+- `#70` — hoist the three identical `DeviceProxy` factory bodies into
+  `DeviceProxyBase`. Same duplication class as D1; worth doing before D5.
+- `#17` — teardown-time backend error mis-classified as a capture fault.
+  Adjacent to `CameraStallException` classification.
+- `#16` — stale. It asks for ADR-0055's `IReconnectPolicy`, which shipped as
+  `IRecoveryPolicy`; `DeviceProxyBase` consults it and `ConnectionState` exists.
+  Should be closed.
+
+### Guides
+
+- `docs/surface/configuration-driven-tracking.md`
+- `docs/surface/periphery-session-integration-guide.md`
