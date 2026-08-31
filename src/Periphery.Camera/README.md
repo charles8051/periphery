@@ -120,7 +120,7 @@ try
         {
             var lease = frame.AddRef();
             if (!sub.Writer.TryWrite(lease))
-                lease.Dispose();  // channel completed — see below; drop modes return true
+                lease.Dispose();  // consumer closed its channel — drop modes return true
         }
         frame.Dispose();          // our own lease
     }
@@ -134,7 +134,8 @@ finally
 }
 ```
 
-Each consumer then owns disposal of what it reads, and drains what is left:
+Each consumer then owns disposal of what it reads, and — this is the part that
+is easy to get half right — **closes its channel before draining it**:
 
 ```csharp
 try
@@ -145,13 +146,24 @@ try
 }
 finally
 {
-    // A cancelled or faulted consumer still owns whatever is queued. Completing
-    // a channel does NOT dispose its contents and does NOT invoke itemDropped —
-    // those frames are simply still readable, and still holding pooled leases.
+    // Close FIRST. A consumer that stops while the producer is still running
+    // must make further writes fail, or the producer keeps filling a channel
+    // nobody reads and every one of those frames strands its lease.
+    preview.Writer.TryComplete();
+
+    // Then drain. Completing a channel does NOT dispose its contents and does
+    // NOT invoke itemDropped — those frames are simply still readable, and
+    // still holding pooled leases.
     while (preview.Reader.TryRead(out var stranded))
         stranded.Dispose();
 }
 ```
+
+Draining without completing first is a race, not a cleanup: the drain empties
+the channel, the producer writes one more frame, and that frame is stranded for
+good. Completing first is what closes it, because once a channel is complete
+`TryWrite` returns `false` — which is exactly the branch the producer loop
+disposes on. The two halves are one mechanism.
 
 **`itemDropped` is the part that is easy to miss and expensive to omit.** Without
 it, every dropped frame strands a pooled lease, and the pool is dead after
