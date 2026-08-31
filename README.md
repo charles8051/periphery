@@ -237,6 +237,18 @@ Worked examples, the three entry points, the native-payload choice and the
 lease-lifetime trap are in
 [that package's README](https://github.com/charles8051/periphery/blob/main/src/Periphery.Camera.OpenCvSharp/README.md).
 
+## One camera, several consumers
+
+A preview, an inference graph and an encoder want different latency, different
+queue depths and different drop behaviour. `Periphery.Camera` ships no router, on
+purpose — it gives you refcounted frames instead, and the fan-out is a producer
+loop plus one bounded channel per consumer.
+
+The recipe, the per-consumer policy table, how to size `BufferCount` to the
+fan-out, and the retention trap that makes a replay buffer exhaust the pool are
+in
+[the `Periphery.Camera` README](https://github.com/charles8051/periphery/blob/main/src/Periphery.Camera/README.md).
+
 ## Repository Layout
 
 ```
