@@ -205,7 +205,35 @@ Periphery answers none of them:
 
 The consumer that can answer these has deployment knowledge — how many of this
 model exist, and which one is meant to be here — that Periphery does not.
-Recording the questions is the contract; answering them is the consumer's.
+
+**The rule, stated so it is not left implicit: a re-pair starts a new identity.**
+The subtree that appears after a re-pair is a new device as far as Periphery is
+concerned, not the old one returning. Consumers should be written to that rule
+rather than to a hope that some field survives.
+
+Three constraints bound any retirement rule a consumer writes. They follow from
+what is observable, so they hold regardless of the policy chosen:
+
+- **Periphery holds no record to retire.** Enumeration is stateless; the only
+  stale record is the consumer's own. There is nothing here to garbage-collect.
+- **A time-based rule is unsound.** Absence is indistinguishable from out of
+  range. The `DEV_` node vanishes on unpair and merely goes `IsActive: false`
+  when the peripheral is off, so "gone for N minutes" cannot separate an
+  unpaired device from one in a drawer. Retirement has to key on something the
+  consumer knows — an expected inventory, or an operator action — not elapsed
+  time.
+- **VID/PID is not an identity.** It survives a re-pair, which is why D2 lists
+  it, but it does not distinguish two units of the same model. A profile that
+  falls back to `WithUsbId` in a fleet containing duplicates will match both and
+  merge them. That is the problem ADR-0074 exists for, and on Bluetooth it is
+  sharper than on USB: there is no port path (ADR-0079) to break the tie, so two
+  identical LE peripherals present simultaneously have **no** observable
+  discriminator once their addresses have changed.
+
+That last point is the honest limit of this ADR. For a single peripheral of a
+given model, re-pair handling is a bookkeeping choice. For two identical ones, it
+is not solvable from the device tree at all, and a consumer needs an out-of-band
+answer.
 
 ---
 
@@ -233,9 +261,14 @@ Recording the questions is the contract; answering them is the consumer's.
 - **NEG-003.** D2 adds a third vocabulary — durability scope — alongside
   `Category` and `Tags`. Three axes on identity is a lot to hold. Mitigated by
   keeping it in XML docs at the point of use rather than as a public type.
-- **NEG-004.** D5 describes the reconciliation problem without solving it. A
-  consumer that wanted a decision gets a well-specified question instead, and
-  two consumers may answer it differently for the same hardware.
+- **NEG-004.** D5 states the rule (a re-pair starts a new identity) and the
+  constraints on any retirement policy, but does not pick the policy. A consumer
+  that wanted a default gets a bounded question instead, and two consumers may
+  answer it differently for the same hardware.
+- **NEG-005.** Two identical LE peripherals present at once have no observable
+  discriminator after their addresses change: same VID/PID, no port path, no
+  serial. This ADR does not solve that and cannot — it is recorded in D5 as a
+  limit rather than left for a consumer to discover.
 
 ---
 
