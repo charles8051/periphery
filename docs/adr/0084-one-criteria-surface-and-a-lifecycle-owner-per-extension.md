@@ -247,6 +247,14 @@ public sealed record DeviceFilterSpec
     public Guid? ContainerId { get; init; }
     public BusType? BusType { get; init; }
 
+    /// <summary>
+    /// Restrict to active (<c>true</c>) or inactive (<c>false</c>) devices.
+    /// Null is no criterion — <see cref="DeviceFilter.Active"/>'s parameter
+    /// defaults to <c>true</c>, so the tri-state is needed to keep "unset" and
+    /// "active only" distinguishable in data.
+    /// </summary>
+    public bool? Active { get; init; }
+
     /// <summary>True if at least one criterion is set.</summary>
     public bool HasAnyCriteria { get; }
 
@@ -293,9 +301,14 @@ The delegate overloads stay. They are the better shape for filters written in C#
 including any using `Where(...)`, which by construction cannot be expressed as
 data.
 
-A test asserts that every data-expressible `IDeviceCriteria` member has a
-corresponding spec property, so a criterion added to the interface cannot
-silently skip the spec.
+A test asserts that every data-expressible criterion has a corresponding spec
+property, so a criterion added later cannot silently skip the spec. **Its
+subject is `DeviceFilter`'s public surface, not `IDeviceCriteria`'s.** `Active`
+is the reason: it is deliberately not an `IDeviceCriteria` member (D1), because
+it is meaningless on a watcher — but it is perfectly expressible as data, and a
+test scoped to the interface would have missed it exactly as this ADR's first
+draft did. `Where(...)` is the only member excluded, and it is excluded by
+construction rather than by omission.
 
 ### D3 — `OrderBy` is the only thing that buffers
 
