@@ -392,6 +392,28 @@ subsequent `OpenAsync` on the same device either wait for the abandoned cleanup
 or fail fast naming it. Until a stalled camera can be reopened deterministically,
 `CameraDeviceProxy` has nothing sound to escalate to.
 
+**This gates the proxy's whole recovery path, not just `StallTimeout`.** Any
+automatic reopen contends with an abandoned cleanup, whatever fault triggered
+it, so the ordering constraint is on D5 as a decision rather than on one option
+of it — which is why the sequencing section lists D5 blocked on `#123` outright.
+
+Two consequences follow, and they are worth stating rather than leaving to
+implementation:
+
+- **The stall is reported before it is ever retried.** `StallTimeout`'s first
+  increment ships as a metric and a fault, with `CameraDeviceProxy` surfacing
+  `GaveUp` and leaving the restart to the application. That is the whole of the
+  behaviour until `#123` lands.
+- **Automatic reopen is the second step, not the first.** It is enabled only
+  once a reopen can observe the previous teardown — at which point it is an
+  ordinary `IRecoveryPolicy` ladder like the other three proxies, and a
+  consumer that wants the conservative behaviour still gets it by injecting a
+  `GiveUp`-on-first-fault policy.
+
+Shipping the reopen before the observation would automate exactly the cascade
+`#123` measured, which is the argument for the ordering rather than an aside
+about it.
+
 `CameraSession.For(DeviceInfo)` and the direct `OpenAsync` path stay. The proxy
 is the recommended composition, not the only one — the same relationship
 `UsbDeviceProxy` has to `UsbDevice`.
@@ -428,11 +450,26 @@ So each attempt owns everything it created:
 Trackers and event subscriptions are untouched throughout — they are watcher
 state, not attempt state, which is the whole point of retrying in place.
 
-Events raised by the snapshot before an attempt fails are the one thing that
-cannot be recalled. A consumer may observe `Appeared` for a device and then see
-the start throw. The snapshot is therefore the last thing an attempt does, so the
-window is as small as it can be made, and the retry re-raises them from a cleared
-cache rather than deduplicating against a half-filled one.
+**The snapshot's events are raised on commit, not during the walk.** An event
+cannot be un-raised, so an attempt that raises `Appeared` for four devices and
+then throws on the fifth leaves the consumer holding four arrivals for a start
+that failed — and the retry raises them a second time. Documenting that as an
+accepted residue is not good enough when the whole point of D6 is that a retry
+is safe.
+
+So the snapshot enumerates into a local list and raises nothing. The attempt
+commits by assigning `_started`, publishing the provider, seeding
+`_deviceCache` and `_knownConnectedIds`, and only then draining that list into
+`Appeared`/`Activated` and the per-tracker fan-out. A failed attempt discards
+the list, having raised nothing, so a retry cannot duplicate anything.
+
+This makes the whole attempt transactional rather than only its provider-side
+half, and it costs one list of `DeviceInfo` for the duration of the walk. The
+observable change is that snapshot events now arrive after `StartAsync` has
+committed rather than interleaved with it. Live events that arrive during the
+walk are already queued by the monitor provider and are delivered after the
+snapshot drains, which is the ordering the current code documents as its reason
+for registering before snapshotting.
 
 The watcher also accepts the recovery abstraction the library already has:
 
@@ -492,9 +529,12 @@ frozen at whatever they last read.
   provider registration, which is harder to spot than the unstartable watcher it
   replaces. It needs a test that faults the snapshot specifically and asserts the
   provider was disposed and no duplicate events were raised on the retry.
-- A snapshot that fails partway can still have raised `Appeared` for some
-  devices. Rollback clears watcher-side caches but cannot un-raise an event, so a
-  consumer may see arrivals for a start that then threw.
+- Deferring the snapshot's events to commit changes when a consumer first hears
+  about existing devices: after `StartAsync` returns rather than during it. Code
+  that subscribes and then awaits `StartAsync` is unaffected; code that relied on
+  observing arrivals mid-call is not.
+- The deferred snapshot holds one `DeviceInfo` list for the duration of the walk.
+  On a large box that is a few hundred records, and it is transient.
 - Six facet structs are six more types in the core namespace, for information
   already reachable.
 - `CameraDeviceProxy` adds a dependency from `Periphery.Camera` onto the core
