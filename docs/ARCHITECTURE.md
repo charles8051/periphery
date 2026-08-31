@@ -877,7 +877,79 @@ When `filter.Category` is `DeviceCategory.All`, the Linux/macOS providers must f
 
 > Named `IsConnected` when written; the property is `DeviceInfo.IsActive` today.
 
-**Windows:** `DevNodeHelper.IsDeviceConnected` calls into `cfgmgr32.dll` (`CM_Get_DevNode_Status`) and checks `DN_STARTED` / `DN_DEVICE_DISCONNECTED` flags. This works uniformly for *all* PnP device categories with a single codepath.
+**Windows:** `DevNodeHelper.IsDeviceConnected` calls into `cfgmgr32.dll` (`CM_Get_DevNode_Status`) and checks `DN_STARTED` / `DN_DEVICE_DISCONNECTED` flags. One codepath covers every PnP category, but it reports a fact about a **devnode**, not about a **device** — and on buses that model one peripheral as several devnodes those differ.
+
+Measured on Windows 11 (2026-08-30) with a paired BR/EDR keyboard and a paired BLE mouse, over a real power-off/power-on cycle:
+
+| Node shape | Category | On link-down | Tracks the link? |
+|---|---|---|---|
+| `BTHENUM\DEV_…` (BR/EDR peripheral) | Bluetooth | `0x0180600A` → `0x0380600A`, gains `DN_DEVICE_DISCONNECTED` | ✅ Yes |
+| `BTHLE\DEV_…` (LE peripheral) | Bluetooth | `0x0180200A` → `0x0380200A`, gains `DN_DEVICE_DISCONNECTED` | ✅ Yes |
+| `BTHENUM\{uuid}_VID&…` (BR/EDR service, e.g. HID `0x1124`) | Hid | `0x0180000A` → `0x0180200A`; `DN_STARTED` stays set, `DN_DEVICE_DISCONNECTED` never set, `ProblemCode` stays `0` | ❌ No — permanently `true` |
+| `BTHLEDevice\{uuid}_Dev_…` (LE service, e.g. HID-over-GATT `0x1812`) | Hid | no status change at all | ❌ No — permanently `true` |
+| `HID\{uuid}…&Col0n` (function children) | Hid / Keyboard / Mouse | devnode **removed**, `DEVPKEY_Device_LastRemovalDate` stamped; re-added on reconnect | ✅ Yes, by presence |
+
+So `IsActive` is permanently `true` on exactly the node a consumer reaches for when asking "is this Bluetooth keyboard usable right now". It is not wrong about the devnode — the `bthhid` function driver stays loaded and bound across a link drop, so `DN_STARTED` persists. It is answering a different question than the caller asked.
+
+The service node is **not** a child of the peripheral node on BR/EDR: `BTHENUM\{uuid}` and `BTHENUM\DEV_` are siblings, both parented to `BTH\MS_BTHBRB\…`. (On LE they *are* children of `BTHLE\DEV_`.) What joins them on both transports is `DEVPKEY_Device_ContainerId` — identical across every node of one peripheral, and the null container `{00000000-0000-0000-ffff-ffffffffffff}` on the radio's own nodes.
+
+**For consumers:** ask presence of the function children (they are removed from the device tree on link-down and re-added on link-up), not `IsActive` on the `BTHENUM\{uuid}` / `BTHLEDevice\{uuid}` service node.
+
+Do **not** reach for a category filter to do this. `DeviceCategory` does not separate the stuck node from the moving ones, and which category the moving nodes land in depends on the peripheral:
+
+| Peripheral | Node | Category | Liveness |
+|---|---|---|---|
+| Keyboard (BR/EDR) | `BTHENUM\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected (poll-only) |
+| | `BTHENUM\{00001124-…}` | `Hid` | **stuck `true` while bonded** |
+| | 6 × `HID\{00001124-…}&Col0n` | `Hid` | appear / disappear with the link |
+| | 2 × `HID\{00001124-…}&Col0n` | `Keyboard` | appear / disappear with the link |
+| Mouse (LE) | `BTHLE\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected (poll-only) |
+| | `BTHLEDevice\{00001812-…}` | `Hid` | **stuck `true` while bonded** |
+| | `HID\{00001812-…}\c&…` | `Mouse` | appears / disappears with the link |
+
+A `DeviceCategory.Hid` filter on the keyboard matches the stuck node *and* six moving ones. On the mouse it matches **only the stuck node** — the node that tracks the link is `DeviceCategory.Mouse`.
+
+The rule that does generalise is by node role within a peripheral's container, not by category:
+
+- the one `…\DEV_…` node carries bonding (presence) and connection (`IsActive`, poll-only);
+- the `BTHENUM\{uuid}` / `BTHLEDevice\{uuid}` service nodes carry neither, and their `IsActive` is the trap;
+- every remaining descendant is a function child and carries connection by presence, with events.
+
+Verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child). Whether a non-HID profile, or a peripheral for which Windows binds no function driver at all, follows the same shape is untested — with no function child there is nothing to watch and the `DEV_` node must be polled.
+
+That presence signal is **event-driven, not polled**. Measured with a cfgmgr32 listener registered for `CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE` (all instances) and `CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE` (all classes), across one link drop and restore:
+
+| Node | Events delivered |
+|---|---|
+| `HID\{00001124-…}&Col0n` (all 8) | link-down: `DEVICEINTERFACEREMOVAL` + `DEVICEINSTANCEREMOVED`. link-up: `DEVICEINSTANCEENUMERATED` + `DEVICEINTERFACEARRIVAL` + `DEVICEINSTANCESTARTED` |
+| every `BTHENUM\…`, `BTHLE\…`, `BTHLEDevice\…`, `BTH\…` node | **none** — zero events, including on `BTHENUM\DEV_`, whose `DN_` bits do change |
+
+The listener was proven live by USB arrival/removal events on the same callback seconds either side of the transition. This confirms ADR-0054 rather than contradicting it: cfgmgr32 pushes nothing for a link-state change on an already-installed devnode, and the reason the HID children *do* raise edges is that they are removed and re-created as devnodes, not merely re-flagged.
+
+So `DeviceWatcher`'s existing `Appeared` / `Disappeared` already carry Bluetooth HID link state. No polling, no new plumbing, no `DevicePropertyChanged` dependency.
+
+**Bonded vs connected.** The ADR-0004 two-level model answers this on the `DEV_` node with nothing new:
+
+- **Bonded** = a `BTHENUM\DEV_…` / `BTHLE\DEV_…` node is present in the tree.
+- **Connected** = `IsActive` on that same node.
+
+Both states were observed live: a paired keyboard sitting on its USB cable, with its Bluetooth link down, reads `Present=True, IsActive=False`.
+
+Bonding is event-driven as well. Removing and re-pairing a BLE mouse under the listener produced, for the whole subtree including `BTHLE\DEV_` itself, `DEVICEINTERFACEREMOVAL` + `DEVICEINSTANCEREMOVED` on unpair and `DEVICEINSTANCEENUMERATED` + `DEVICEINTERFACEARRIVAL` + `DEVICEINSTANCESTARTED` on re-pair. The same run also delivered the full event set for the BLE `HID\{00001812-…}` child.
+
+Do **not** read bonding off `Bluetooth_DeviceFlags` (`BDIF_PAIRED 0x8`, `BDIF_SSP_PAIRED 0x200`). Those bits are set correctly, but the property was measured going stale on BR/EDR nodes across connect/disconnect, so it should not be trusted to update on unbond either.
+
+**BLE identity is not stable across re-pairing.** The re-paired mouse came back with a device address that had never been seen before, so every instance ID in its subtree changed, and `DEVPKEY_Device_ContainerId` changed with it. Anything keyed on `DeviceInfo.Id`, `SerialNumber`, or `ContainerId` sees a re-paired BLE device as a **new** device, not the same one returning. Observed once, on one BLE mouse; BR/EDR re-pairing was not tested.
+
+*(The measured link drop was induced by connecting the same keyboard over USB, which makes it drop its Bluetooth link. A power-switch cycle measured separately produced the identical node removal and re-add, observed by polling.)*
+
+Signals that were tested and do **not** work, recorded so they are not retried:
+
+- `DEVPKEY_Device_ProblemCode` — stays `0` on the service node in both states.
+- `Bluetooth_DeviceFlags` (`{2BD67D8B-…},3`, carrying `BDIF_CONNECTED 0x20`) — tracks correctly on `BTHLE\DEV_`, but never changes on any BR/EDR `BTHENUM` node.
+- `DN_DISABLEABLE` — does toggle on the service node, but toggles on the radio's `BTH\MS_BTHBRB` node at the same instants, so it is not a per-device link signal.
+
+Only two peripherals were available, both HID-profile. Whether A2DP/HFP service nodes behave the same is untested.
 
 **Linux:** Physical-presence detection varies by subsystem — there is no single sysfs attribute:
 
@@ -901,7 +973,7 @@ When `filter.Category` is `DeviceCategory.All`, the Linux/macOS providers must f
 | HID | `IOHIDDevice` open/close status | ✅ High |
 | Display | `IODisplayConnect` `IODisplayIsConnected` | ✅ High |
 
-**Impact:** The `IsConnected` contract ("physically active, driver started, not disconnected") cannot be uniformly satisfied across all categories on all platforms. Some categories will only have a best-effort heuristic.
+**Impact:** The `IsConnected` contract ("physically active, driver started, not disconnected") cannot be uniformly satisfied across all categories on all platforms. Some categories will only have a best-effort heuristic. On Windows the contract is satisfied literally on every node. The divergence there is that a devnode's lifetime is not the peripheral's link lifetime, so on multi-node buses the literal answer does not answer the caller's question.
 
 **Recommended approach:**
 - Implement `IsConnected` with the best available heuristic per category/platform
