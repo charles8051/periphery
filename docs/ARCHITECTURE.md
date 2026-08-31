@@ -913,9 +913,9 @@ The rule that does generalise is by node role within a peripheral's container, n
 
 - the one `…\DEV_…` node carries bonding (presence) and connection (`IsActive`, poll-only);
 - the `BTHENUM\{uuid}` / `BTHLEDevice\{uuid}` service nodes carry neither, and their `IsActive` is the trap;
-- every remaining descendant is a function child and carries connection by presence, with events.
+- every remaining descendant is a function child and — **on the HID profiles measured** — carries connection by presence, with events.
 
-Verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child). Whether a non-HID profile, or a peripheral for which Windows binds no function driver at all, follows the same shape is untested — with no function child there is nothing to watch and the `DEV_` node must be polled.
+The third bullet is the one that does not generalise on this evidence. It is verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child), and **only those**. A non-HID profile whose service and function nodes Windows models differently could present a function child that persists across a link drop, or none at all; treating its absence as definitive would then report a live device as disconnected. Where there is no function child there is nothing to watch, and the `DEV_` node must be polled. Confirm the shape on the profile in front of you before relying on it.
 
 **The three-tier shape is general; the pathology is not.** USB has the same structure, captured in the same listener run:
 
@@ -938,7 +938,14 @@ That presence signal is **event-driven, not polled**. Measured with a cfgmgr32 l
 
 The listener was proven live by USB arrival/removal events on the same callback seconds either side of the transition. This confirms ADR-0054 rather than contradicting it: cfgmgr32 pushes nothing for a link-state change on an already-installed devnode, and the reason the HID children *do* raise edges is that they are removed and re-created as devnodes, not merely re-flagged.
 
-So `DeviceWatcher`'s existing `Appeared` / `Disappeared` already carry Bluetooth HID link state. No polling, no new plumbing, no `DevicePropertyChanged` dependency.
+**What this does and does not establish.** The measurement is at the cfgmgr32 layer: a listener registered for *all* device instances and *all* interface classes received these events. It was **not** taken through `DeviceWatcher`, so it does not by itself show that a Periphery consumer receives them.
+
+Two gaps follow, and both matter before relying on the recommendation:
+
+- **Watcher scope.** The events land on `HID\…` nodes, whose categories are `Hid`, `Keyboard`, or `Mouse` — never `Bluetooth`. A watcher filtered to `DeviceCategory.Bluetooth` will therefore see no link transition at all, and will hold stale connection state indefinitely. The filter has to cover the function children's categories, which is the same point as the category table above.
+- **Delivery and correlation.** That cfgmgr32 raises the edge does not establish that `WindowsDeviceMonitorProvider` surfaces it as `Appeared` / `Disappeared` for these nodes, nor how startup enumeration races a transition already in progress.
+
+The honest statement is that the underlying OS edges exist, so an event-driven answer is *available* without polling. Whether Periphery currently delivers it end to end for these nodes is untested and should be measured through `DeviceWatcher` before the recommendation is treated as settled.
 
 **Bonded vs connected.** The ADR-0004 two-level model answers this on the `DEV_` node with nothing new:
 
@@ -951,7 +958,7 @@ Bonding is event-driven as well. Removing and re-pairing a BLE mouse under the l
 
 Do **not** read bonding off `Bluetooth_DeviceFlags` (`BDIF_PAIRED 0x8`, `BDIF_SSP_PAIRED 0x200`). Those bits are set correctly, but the property was measured going stale on BR/EDR nodes across connect/disconnect, so it should not be trusted to update on unbond either.
 
-**BLE identity is not stable across re-pairing.** The re-paired mouse came back with a device address that had never been seen before, so every instance ID in its subtree changed, and `DEVPKEY_Device_ContainerId` changed with it. Anything keyed on `DeviceInfo.Id`, `SerialNumber`, or `ContainerId` sees a re-paired BLE device as a **new** device, not the same one returning. Observed once, on one BLE mouse; BR/EDR re-pairing was not tested.
+**BLE identity is not stable across re-pairing.** The re-paired mouse came back with a device address that had never been seen before, so every instance ID in its subtree changed, and `DEVPKEY_Device_ContainerId` changed with it. Anything keyed on `DeviceInfo.Id` or `ContainerId` sees a re-paired BLE device as a **new** device, not the same one returning. `SerialNumber` is unaffected only because it is never populated here — `ParseSerialNumber` returns `null` when the last instance-ID segment contains `&`, which every Bluetooth instance ID's does. The `VID&…_PID&…_REV&…` triple survives unchanged. Observed once, on one LE HID mouse; BR/EDR re-pairing was not tested. See ADR-0083.
 
 *(The measured link drop was induced by connecting the same keyboard over USB, which makes it drop its Bluetooth link. A power-switch cycle measured separately produced the identical node removal and re-add, observed by polling.)*
 

@@ -1,5 +1,5 @@
 ---
-title: "ADR-0083: BLE device identity is address-derived and does not survive re-pairing"
+title: "ADR-0083: BLE device identity is address-derived and did not survive re-pairing on the device measured"
 status: "Proposed"
 status_note: "Measured once, on one BLE mouse, on one machine. The decision it argues for — document, do not synthesize — does not depend on the sample size. The generalisation to BR/EDR does, and is left open."
 date: "2026-08-30"
@@ -10,7 +10,7 @@ superseded_by: ""
 depends_on: ["0001-device-tracking-handles.md", "0006-device-profile-single-device-resolution.md", "0030-application-level-reconnect.md", "0034-device-group-tracker.md", "0073-observations-not-verdicts.md", "0074-device-role-group-exclusive-role-assignment.md"]
 ---
 
-# ADR-0083: BLE device identity is address-derived and does not survive re-pairing
+# ADR-0083: BLE device identity is address-derived and did not survive re-pairing
 
 ## Status
 
@@ -19,8 +19,10 @@ Windows 11 machine, captured while investigating the Bluetooth activity-semantic
 question recorded in `ARCHITECTURE.md` §10.6.2.
 
 That sample supports the decision below, which is a decision *not* to build
-something. It does not support generalising the finding to BR/EDR, and this ADR
-does not do so — see [Open questions](#open-questions).
+something. It does not support generalising the finding — not to BR/EDR, and not
+even to every LE peripheral, since an LE device on a public or static random
+address may well keep its identity across a re-pair. This ADR does not
+generalise it; see [Open questions](#open-questions).
 
 ---
 
@@ -56,14 +58,31 @@ field is not unstable here; it is absent.
 
 ### Why this happens
 
-Bluetooth LE separates the address a peripheral advertises from any durable
-identity. A device may advertise a resolvable private address that rotates, and
-the identity behind it is recoverable only with the bonding IRK. Windows names
-the devnode after the address it has, so a new address means a new instance ID,
-and everything derived from it moves too.
+Windows names the devnode after the address it has, so if the address changes,
+the instance ID changes and everything derived from it moves too. That part is
+mechanical and is not in question.
 
-This is the protocol working as designed, not a Windows defect and not something
-a device-tree projection can see through.
+Why the address changed is **not** established by this measurement, and the
+explanation must be scoped accordingly. LE permits several address types:
+
+| Address type | Stable across re-bond? |
+|---|---|
+| Public | Yes — an assigned, fixed address |
+| Static random | Yes, per power cycle, and typically for the device's lifetime |
+| Resolvable private (RPA) | No — rotates; resolvable only with the bonding IRK |
+| Non-resolvable private | No |
+
+Only the RPA case requires IRK resolution, and only the private types are
+expected to change. So "LE addresses are not durable identity" is true of *some*
+LE devices, not all of them. What was observed here is one device whose address
+changed across a re-pair, which is consistent with the RPA case and with a
+device that issues a fresh address on re-bond, and does not distinguish them.
+
+Where it *is* an RPA, no device-tree projection can see through the rotation,
+because the IRK lives in the pairing store. That is the protocol working as
+designed rather than a Windows defect. Where the peripheral uses a public or
+static random address, the premise does not apply at all and the instance ID may
+well be stable — untested here.
 
 ### An observation, offered as a hypothesis
 
@@ -100,18 +119,28 @@ Periphery does not: knowledge of which devices are supposed to exist.
 
 ### D2 — Matcher durability is documented on each matcher
 
-Each identity-bearing member states how far its durability reaches:
+**Every row below is the observed result for one LE HID mouse whose address
+changed across one re-pair.** It is not a general claim about LE, and certainly
+not about Bluetooth. A peripheral on a public or static random address may keep
+its instance ID and container across a re-pair; that case is untested.
 
-| Member | Survives a link drop | Survives a re-pair |
+| Member | Survives a link drop | Survives a re-pair (LE HID, n=1) |
 |---|---|---|
-| `VendorId` / `ProductId` | Yes | Yes — LE, measured once (see NEG-002) |
-| `Id` | Yes | **No** |
-| `ContainerId`, `DeviceFilter.WithContainerId` | Yes | **No** |
+| `VendorId` / `ProductId` | Yes | Yes |
+| `Id` | Yes | No |
+| `ContainerId`, `DeviceFilter.WithContainerId` | Yes | No |
 | `SerialNumber` | n/a — always `null` on Bluetooth nodes | n/a |
 
-This goes in the XML docs on `DeviceInfo.Id`, `DeviceInfo.ContainerId`, and
-`DeviceFilter.WithContainerId`, because that is where a consumer choosing a
-matcher actually reads. `ARCHITECTURE.md` §10.6.2 carries the measurement.
+A consumer should read this as "do not assume `Id` or `ContainerId` survives a
+re-pair", which is safe on any transport, rather than as "they never survive",
+which is asserted well beyond the evidence.
+
+**Not yet done.** This belongs in the XML docs on `DeviceInfo.Id`,
+`DeviceInfo.ContainerId`, and `DeviceFilter.WithContainerId`, because that is
+where a consumer choosing a matcher actually reads. Those API docs are
+unchanged as of this ADR; adding them is follow-up work, tracked by this
+decision rather than delivered by it. `ARCHITECTURE.md` §10.6.2 carries the
+measurement in the meantime.
 
 ### D3 — The reconnect consequence is named, not fixed
 
@@ -132,6 +161,37 @@ gone. Whether the vacated role is released, and whether the new candidate is
 eligible for it, is a question ADR-0074 should answer explicitly rather than
 inherit by accident. Flagged there; not decided here.
 
+### D5 — The reconciliation contract is stated, even though the policy is not
+
+D1 declines to synthesize an identity. That is not a licence to leave the
+lifecycle undescribed: a consumer cannot write correct code against "you decide"
+without knowing what it will observe. Describing the sequence costs nothing and
+synthesizes nothing.
+
+What a consumer observes across a re-pair, in order:
+
+1. `Disappeared` for every node of the old subtree, including the `…\DEV_…`
+   node. The old `Id` and `ContainerId` never return.
+2. `Appeared` for a new subtree carrying the same `VendorId` / `ProductId` and a
+   different `Id` and `ContainerId`.
+
+Nothing in that sequence marks step 2 as the same physical device as step 1.
+A consumer holding per-device state must therefore decide three things, and
+Periphery answers none of them:
+
+- **Retirement.** When to drop the old record. Never dropping it means a
+  duplicate per re-pair; dropping it on `Disappeared` cannot be distinguished
+  from a device that is merely out of range.
+- **Reconciliation.** Whether the new subtree is the same device. VID/PID plus
+  name is the available evidence and is ambiguous between two units of one
+  model — which is exactly why D1 refuses to make the call centrally.
+- **Role release.** For ADR-0074 group members, whether the vacated role is
+  freed for the new candidate (see D4).
+
+The consumer that can answer these has deployment knowledge — how many of this
+model exist, and which one is meant to be here — that Periphery does not.
+Recording the questions is the contract; answering them is the consumer's.
+
 ---
 
 ## Consequences
@@ -151,12 +211,16 @@ inherit by accident. Flagged there; not decided here.
 - **NEG-001.** A consumer that wants "the same mouse, across a re-pair" gets no
   help from Periphery and must supply its own knowledge. That is the intended
   outcome, and it is still a gap from that consumer's point of view.
-- **NEG-002.** The durability table asserts `VendorId` / `ProductId` are
-  pairing-durable on the strength of one re-pair of one device. It is the
-  weakest row and is marked as such in the table.
+- **NEG-002.** The whole D2 table rests on one re-pair of one LE HID mouse, and
+  the table says so in its header rather than in a footnote a reader can skip.
+  The safe reading — "do not assume `Id` or `ContainerId` survives" — holds
+  regardless; the categorical reading does not.
 - **NEG-003.** D2 adds a third vocabulary — durability scope — alongside
   `Category` and `Tags`. Three axes on identity is a lot to hold. Mitigated by
   keeping it in XML docs at the point of use rather than as a public type.
+- **NEG-004.** D5 describes the reconciliation problem without solving it. A
+  consumer that wanted a decision gets a well-specified question instead, and
+  two consumers may answer it differently for the same hardware.
 
 ---
 
