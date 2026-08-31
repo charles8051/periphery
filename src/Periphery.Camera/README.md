@@ -98,6 +98,8 @@ For everyone else, the recipe is a producer loop and one bounded channel per
 consumer.
 
 ```csharp
+using System.Threading.Channels;
+
 // One channel per consumer. Depth and drop behaviour are per-consumer choices.
 static Channel<ICameraFrame> Subscribe(int depth, BoundedChannelFullMode mode) =>
     Channel.CreateBounded<ICameraFrame>(
@@ -109,31 +111,57 @@ var inference = Subscribe(1, BoundedChannelFullMode.DropOldest);
 var encoder   = Subscribe(8, BoundedChannelFullMode.DropWrite);
 Channel<ICameraFrame>[] subs = [preview, inference, encoder];
 
-// The producer loop: one AddRef per subscriber, then release your own lease.
-await foreach (var frame in session.CaptureAsync(ct: ct))
+try
 {
-    foreach (var sub in subs)
+    // The producer loop: one AddRef per subscriber, then release your own lease.
+    await foreach (var frame in session.CaptureAsync(ct: ct))
     {
-        var lease = frame.AddRef();
-        if (!sub.Writer.TryWrite(lease))
-            lease.Dispose();      // refused outright — release the ref we just took
+        foreach (var sub in subs)
+        {
+            var lease = frame.AddRef();
+            if (!sub.Writer.TryWrite(lease))
+                lease.Dispose();  // channel completed — see below; drop modes return true
+        }
+        frame.Dispose();          // our own lease
     }
-    frame.Dispose();              // our own lease
+}
+finally
+{
+    // Tell every consumer no more frames are coming, so ReadAllAsync ends
+    // instead of hanging. Frames already queued are still theirs to dispose.
+    foreach (var sub in subs)
+        sub.Writer.TryComplete();
 }
 ```
 
-Each consumer then owns disposal of what it reads:
+Each consumer then owns disposal of what it reads, and drains what is left:
 
 ```csharp
-await foreach (var frame in preview.Reader.ReadAllAsync(ct))
-    using (frame)
-        Render(frame);
+try
+{
+    await foreach (var frame in preview.Reader.ReadAllAsync(ct))
+        using (frame)
+            Render(frame);
+}
+finally
+{
+    // A cancelled or faulted consumer still owns whatever is queued. Completing
+    // a channel does NOT dispose its contents and does NOT invoke itemDropped —
+    // those frames are simply still readable, and still holding pooled leases.
+    while (preview.Reader.TryRead(out var stranded))
+        stranded.Dispose();
+}
 ```
 
 **`itemDropped` is the part that is easy to miss and expensive to omit.** Without
 it, every dropped frame strands a pooled lease, and the pool is dead after
-`BufferCount` drops. It has been on `Channel.CreateBounded` since .NET 6 and is
-available on both target frameworks.
+`BufferCount` drops. The overload is available on both of this package's target
+frameworks, `net8.0` and `net10.0`.
+
+**`itemDropped` covers eviction on a write, and nothing else.** It does not fire
+on `Complete()`, on a cancelled read, or on a `WriteAsync` that throws. Every one
+of those paths is yours to drain, which is why the two loops above have a
+`finally`.
 
 ### Choosing a policy per consumer
 
@@ -144,27 +172,56 @@ consumer falls behind, not whether one is:
 |---|---|---|---|
 | Preview | `DropOldest` | 1 | Evicts the queued frame; the newest always wins. A stale frame is worth nothing on screen |
 | Inference | `DropOldest` | 1 | Same. Detection on every third frame is still detection |
-| Encoder | `DropWrite` | 8 | Keeps the queued burst intact and refuses the new frame, so an encoded clip has no reordering |
+| Encoder | `DropWrite` | 8 | Keeps the queued burst intact and drops the incoming frame, so an encoded clip has no reordering |
 
-Both `DropOldest` and `DropWrite` route the loser to `itemDropped`, so the lease
-is released either way. `DropOldest` chooses freshness, `DropWrite` chooses
-continuity.
+Both route the loser to `itemDropped`, so the lease is released either way.
+`DropOldest` chooses freshness, `DropWrite` chooses continuity.
+
+Measured on a capacity-1 channel, writing `A` then `B`:
+
+| `FullMode` | 2nd `TryWrite` | `itemDropped` | Left in channel |
+|---|---|---|---|
+| `DropOldest` | `true` | `A` | `B` |
+| `DropWrite` | `true` | `B` | `A` |
+| `Wait` | `false` | — | `A` |
+
+**Under a drop mode `TryWrite` returns `true`, so the `if (!TryWrite)` branch in
+the loop above never runs.** It is there for the one case that does return
+`false` without invoking `itemDropped`: a completed channel, which is what a
+consumer that has already shut down looks like. Disposing there is not a
+double-release, because `itemDropped` did not fire.
 
 ### If a consumer must not lose frames
 
 `BoundedChannelFullMode.Wait` does nothing under `TryWrite` — a full channel
-simply refuses the write, which is `DropWrite` with extra steps. To actually
-apply backpressure you have to await it:
+simply refuses the write, which is `DropWrite` that forgot to call
+`itemDropped`. To actually apply backpressure you have to await it, and then you
+own the failure paths:
 
 ```csharp
-await sub.Writer.WriteAsync(frame.AddRef(), ct);
+var lease = frame.AddRef();
+try
+{
+    await sub.Writer.WriteAsync(lease, ct);   // ownership transfers only on success
+}
+catch
+{
+    lease.Dispose();   // cancelled, or the channel completed — itemDropped did not fire
+    throw;
+}
 ```
 
-That blocks the shared producer loop, so a slow consumer now costs the preview
-and the inference graph their frames too, and stalls the session's own producer
-behind them. Use it only when a gap is worse than a stall for *every* consumer.
-Otherwise give the lossless consumer its own copy-out path — see the retention
-trap below.
+The `try` is not defensive padding. `AddRef` runs before the await, and
+`WriteAsync` throws `OperationCanceledException` on a cancelled wait and
+`ChannelClosedException` on a completed channel — both **without** invoking
+`itemDropped`. Written as a one-liner, every shutdown strands a pooled lease, and
+enough shutdowns exhaust the pool.
+
+Awaiting also blocks the shared producer loop, so a slow consumer now costs the
+preview and the inference graph their frames too, and stalls the session's own
+producer behind them. Use it only when a gap is worse than a stall for *every*
+consumer. Otherwise give the lossless consumer its own copy-out path — see the
+retention trap below.
 
 ### Size `BufferCount` to the fan-out
 
