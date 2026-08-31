@@ -463,6 +463,31 @@ commits by assigning `_started`, publishing the provider, seeding
 `Appeared`/`Activated` and the per-tracker fan-out. A failed attempt discards
 the list, having raised nothing, so a retry cannot duplicate anything.
 
+**Commit is the point of no return, so the drain cannot fail the start.** Once
+`_started` is assigned the watcher *is* started, and an exception from a
+consumer's own `Appeared` handler must not be reported as a start failure — a
+caller cannot distinguish that from a registration failure, and rolling back
+underneath a committed, already-notified watcher is exactly the duplicate-state
+problem this decision exists to remove.
+
+The post-commit drain therefore isolates each handler: a throwing subscriber is
+caught, logged against that device, and the drain continues. `StartAsync` cannot
+throw once the commit has happened.
+
+The two failure regions are cleanly split as a result. Before commit, anything
+that throws rolls the attempt back and propagates, and the retry is safe. After
+commit, nothing propagates, and there is nothing to retry.
+
+**This is new behaviour, not an existing convention being extended.**
+`DeviceWatcher` contains no exception handling around event dispatch anywhere
+today — `src/Periphery/DeviceWatcher.cs` has no `catch` clause at all — so a
+throwing subscriber currently escapes into whichever thread raised the event,
+including the provider's pump thread on a live edge. Isolating the snapshot
+drain fixes the path D6 touches and deliberately leaves the live-event path
+alone, because changing dispatch semantics for every event is a larger decision
+than this one and belongs in its own ADR. Worth filing: the live path has the
+same defect and a worse blast radius.
+
 This makes the whole attempt transactional rather than only its provider-side
 half, and it costs one list of `DeviceInfo` for the duration of the walk. The
 observable change is that snapshot events now arrive after `StartAsync` has
