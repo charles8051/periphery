@@ -917,6 +917,18 @@ The rule that does generalise is by node role within a peripheral's container, n
 
 Verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child). Whether a non-HID profile, or a peripheral for which Windows binds no function driver at all, follows the same shape is untested — with no function child there is nothing to watch and the `DEV_` node must be polled.
 
+**The three-tier shape is general; the pathology is not.** USB has the same structure, captured in the same listener run:
+
+| Tier | Bluetooth (BR/EDR) | USB |
+|---|---|---|
+| device | `BTHENUM\DEV_…` | `USB\VID_…&PID_…\<inst>` |
+| service / interface | `BTHENUM\{00001124-…}` | `USB\VID_…&PID_…&MI_00\<inst>` |
+| function | `HID\{00001124-…}&Col0n` | `HID\VID_…&PID_…&MI_01&Col01\<inst>` |
+
+On USB **all three tiers** were removed and re-created together on unplug and replug, each with full `DEVICEINSTANCEREMOVED` / `DEVICEINSTANCESTARTED` edges. The middle tier is not stuck there.
+
+So the stuck `IsActive` is not a consequence of the tier structure. It is a lifetime mismatch specific to buses where pairing outlives connection: unplugging a USB device destroys its devnodes, while dropping a Bluetooth link leaves every devnode in place because the bond still exists. This is worth stating because it bounds the fix — any design framed as "model the bus tiers" would describe the structure accurately and leave the mismatch exactly where it is.
+
 That presence signal is **event-driven, not polled**. Measured with a cfgmgr32 listener registered for `CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE` (all instances) and `CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE` (all classes), across one link drop and restore:
 
 | Node | Events delivered |
