@@ -232,7 +232,11 @@ Ship the DTO the configuration guide currently asks consumers to write.
 public sealed record DeviceFilterSpec
 {
     public DeviceCategory? Category { get; init; }
-    public string[]? Tags { get; init; }
+    /// <summary>Every listed tag must be present. Empty or null is no criterion.</summary>
+    public string[]? AllTags { get; init; }
+
+    /// <summary>At least one listed tag must be present. Empty or null is no criterion.</summary>
+    public string[]? AnyTags { get; init; }
     public string? DeviceName { get; init; }
     public string? Manufacturer { get; init; }
     public string? VendorId { get; init; }
@@ -254,10 +258,25 @@ public sealed record DeviceFilterSpec
 with the replay owned here:
 
 ```csharp
-public DeviceFilter Apply(DeviceFilterSpec spec);                   // on DeviceFilter
-public DeviceQuery  Matching(DeviceFilterSpec spec);                // on DeviceQuery
-public DeviceProfile(DeviceFilterSpec spec, string? name = null);   // on DeviceProfile
+public DeviceFilter Apply(DeviceFilterSpec spec);                          // on DeviceFilter
+public DeviceQuery  Matching(DeviceFilterSpec spec);                       // on DeviceQuery
+public static DeviceProfile DeviceProfile.FromSpec(                        // on DeviceProfile
+    DeviceFilterSpec spec, string? name = null);
 ```
+
+**A static factory, not a constructor overload.** `DeviceProfile`'s existing
+constructor takes `Action<DeviceFilter>`, and adding a second reference-type
+first parameter would make `new DeviceProfile(null)` — and any call passing a
+null-typed expression — ambiguous with CS0121. That is a source break in exactly
+the consumers this ADR is trying to help. `FromSpec` competes with nothing.
+
+**Tags are two properties, not one.** `IDeviceCriteria` has three tag
+operations, and a single `Tags` array cannot say which one it means. Guessing a
+default is worse than the if-ladder it replaces, because a spec that quietly
+means *any* where the author meant *all* selects the wrong device and reports no
+error. `AllTags` and `AnyTags` are separate and may both be set; `WithTag(x)` is
+`AllTags: [x]`, so it needs no third property. Null or empty is no criterion, not
+a criterion matching everything.
 
 `DeviceFilterSpec` is a plain record with a parameterless-constructible shape, so
 `IConfiguration.Get<T>()` and `System.Text.Json` bind it with no adapter. A
@@ -266,23 +285,39 @@ in `Serialization/` so it round-trips under AOT.
 
 Public `HasAnyCriteria` lets a consumer validate a bound configuration before
 constructing a profile, and report the error against its own configuration key
-rather than against a `configure` parameter the operator never wrote. The
-`DeviceProfile(DeviceFilterSpec, string?)` overload throws with the spec's
-`ToString()` in the message rather than the delegate parameter name.
+rather than against a `configure` parameter the operator never wrote. `FromSpec`
+throws with the spec's `ToString()` in the message rather than a delegate
+parameter name.
 
 The delegate overloads stay. They are the better shape for filters written in C#,
 including any using `Where(...)`, which by construction cannot be expressed as
 data.
 
-### D3 — Stream by default; buffer only when a buffering operator is present
+A test asserts that every data-expressible `IDeviceCriteria` member has a
+corresponding spec property, so a criterion added to the interface cannot
+silently skip the spec.
 
-`DeviceQuery.GetAsyncEnumerator` yields matches as they arrive when neither
-`OrderBy` nor `Take` has been called. The existing buffer-sort-limit path runs
-only when one of them has.
+### D3 — `OrderBy` is the only thing that buffers
 
-`FirstOrDefaultAsync` and `AnyAsync` stop at the first match. `Take(n)` stops
-after `n` when no `OrderBy` is present. `ToListAsync` and `CountAsync` are
+`DeviceQuery.GetAsyncEnumerator` yields matches as they arrive unless `OrderBy`
+has been called. **`Take` does not force buffering** — a sort needs every
+candidate before it can name the first result, but a limit does not.
+
+| Query shape | Path |
+| --- | --- |
+| Neither | Stream every match |
+| `Take(n)` only | Stream, and stop the source enumeration after the *n*th match |
+| `OrderBy` (with or without `Take`) | Buffer, sort, limit — today's path, unchanged |
+
+So `FirstOrDefaultAsync` and `AnyAsync` stop at the first match, and `.Take(1)`
+touches one device rather than all of them. `ToListAsync` and `CountAsync` are
 unchanged in observable behaviour.
+
+The streaming `Take` must dispose the provider's enumerator once it has yielded
+*n*, rather than draining it — otherwise the early return buys nothing, which is
+the failure the current buffer already has. `GetAsyncEnumerator` is an iterator,
+so `await foreach`'s own disposal covers the caller-breaks-early case; the
+`Take` path needs the same discipline on its own exit.
 
 Ordering of streamed results is provider order, which is what the current
 unordered path already yields. This changes only when items are produced and how
@@ -370,21 +405,51 @@ throws is therefore permanently unusable: the retry throws
 caller must discard the instance and rebuild every tracker and every event
 subscription attached to it.
 
-`_started` is set only after the provider registration and snapshot complete. A
-failed start leaves the watcher in its pre-start state, and the same instance can
-be started again with its trackers and subscriptions intact.
+**A start attempt is transactional.** Moving the `_started` assignment is not
+enough on its own, and the naive version is worse than the bug it fixes.
+`StartAsync` does two things: it registers with the monitor provider, then it
+takes the initial snapshot. If registration succeeds and the snapshot throws,
+clearing `_started` alone leaves a live registration behind — and the retry adds
+a second one. The consumer gets duplicate `Appeared`/`Activated` events for every
+device, a leaked provider handle, and a `DisposeAsync` that only unregisters one.
+That is a worse failure than the unstartable watcher, because it is silent.
+
+So each attempt owns everything it created:
+
+- Registration is held locally until the attempt commits. On any failure or
+  cancellation, the attempt detaches its handlers, disposes the provider it
+  registered, and clears `_deviceCache` and `_knownConnectedIds` before
+  rethrowing.
+- The attempt commits by assigning `_started = true` and publishing the provider,
+  after both the registration and the snapshot have completed.
+- A failed attempt therefore leaves no provider-side state, and the retry starts
+  from the same position the first attempt did.
+
+Trackers and event subscriptions are untouched throughout — they are watcher
+state, not attempt state, which is the whole point of retrying in place.
+
+Events raised by the snapshot before an attempt fails are the one thing that
+cannot be recalled. A consumer may observe `Appeared` for a device and then see
+the start throw. The snapshot is therefore the last thing an attempt does, so the
+window is as small as it can be made, and the retry re-raises them from a cleared
+cache rather than deduplicating against a half-filled one.
 
 The watcher also accepts the recovery abstraction the library already has:
 
 ```csharp
 public Task StartAsync(CancellationToken ct = default);
-public Task StartAsync(IRecoveryPolicy recoveryPolicy, CancellationToken ct = default);
+public Task StartAsync(IRecoveryPolicy recoveryPolicy, CancellationToken ct);
 ```
 
 The overload retries the start according to the policy, honouring `Retry(delay)`
 and `GiveUp` from `RecoveryDirective`. `Reset` is not meaningful for a provider
 registration and is treated as `GiveUp`. The no-policy overload is unchanged: one
 attempt, throw on failure.
+
+**The token is not optional on the policy overload.** With both parameters
+defaulted, an existing `StartAsync(default)` becomes ambiguous — `default`
+converts to `CancellationToken` and to `IRecoveryPolicy` alike, so the call fails
+with CS0121. Requiring the token keeps the one-argument call unambiguous.
 
 This matters more than convenience. The watcher is a consumer's entire view of its
 hardware — every tracker reports through it — so a transient start failure that
@@ -422,6 +487,14 @@ frozen at whatever they last read.
   that previously observed a device appearing late in the walk may now return
   earlier. This is a behaviour change within a documented streaming contract, and
   lands on a major.
+- D6's transactional attempt makes the failure path do real work — detach,
+  dispose, clear — where today it does none. A bug in that rollback is a leaked
+  provider registration, which is harder to spot than the unstartable watcher it
+  replaces. It needs a test that faults the snapshot specifically and asserts the
+  provider was disposed and no duplicate events were raised on the retry.
+- A snapshot that fails partway can still have raised `Appeared` for some
+  devices. Rollback clears watcher-side caches but cannot un-raise an event, so a
+  consumer may see arrivals for a start that then threw.
 - Six facet structs are six more types in the core namespace, for information
   already reachable.
 - `CameraDeviceProxy` adds a dependency from `Periphery.Camera` onto the core
