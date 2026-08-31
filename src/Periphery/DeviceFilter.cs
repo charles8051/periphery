@@ -216,6 +216,16 @@ public sealed class DeviceFilter
     /// the provider does not populate <see cref="DeviceInfo.ContainerId"/>
     /// (Linux, macOS) this filter will never match.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Not durable across Bluetooth re-pairing.</b> "Stable across
+    /// reboots and port reseats" does not extend to unpairing and re-pairing a
+    /// Bluetooth peripheral: a re-paired LE mouse was measured returning under a
+    /// different container id, so a profile pinned with this filter stops
+    /// matching and the device reads as permanently absent (ADR-0083). Match on
+    /// <see cref="WithUsbId(HardwareId, HardwareId?)"/> where a profile must
+    /// survive a re-pair — the
+    /// VID/PID pair was unchanged across that transition.</para>
+    /// </remarks>
     public DeviceFilter WithContainerId(Guid containerId)
         => Where(d => d.ContainerId == containerId);
 
