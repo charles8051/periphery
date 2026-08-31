@@ -10,7 +10,7 @@ superseded_by: ""
 depends_on: ["0001-device-tracking-handles.md", "0006-device-profile-single-device-resolution.md", "0030-application-level-reconnect.md", "0034-device-group-tracker.md", "0073-observations-not-verdicts.md", "0074-device-role-group-exclusive-role-assignment.md"]
 ---
 
-# ADR-0083: BLE device identity is address-derived and did not survive re-pairing
+# ADR-0083: BLE device identity is address-derived and did not survive re-pairing on the LE HID device measured
 
 ## Status
 
@@ -135,12 +135,12 @@ A consumer should read this as "do not assume `Id` or `ContainerId` survives a
 re-pair", which is safe on any transport, rather than as "they never survive",
 which is asserted well beyond the evidence.
 
-**Not yet done.** This belongs in the XML docs on `DeviceInfo.Id`,
-`DeviceInfo.ContainerId`, and `DeviceFilter.WithContainerId`, because that is
-where a consumer choosing a matcher actually reads. Those API docs are
-unchanged as of this ADR; adding them is follow-up work, tracked by this
-decision rather than delivered by it. `ARCHITECTURE.md` §10.6.2 carries the
-measurement in the meantime.
+**Delivered with this ADR.** `DeviceInfo.Id`, `DeviceInfo.ContainerId`, and
+`DeviceFilter.WithContainerId` each carry a `<remarks>` durability note, because
+that is where a consumer choosing a matcher actually reads. `WithContainerId`'s
+existing "stable across reboots and port reseats" needed the correction most:
+true as far as it went, and silent on the case that breaks it.
+`ARCHITECTURE.md` §10.6.2 carries the measurement.
 
 ### D3 — The reconnect consequence is named, not fixed
 
@@ -168,12 +168,27 @@ lifecycle undescribed: a consumer cannot write correct code against "you decide"
 without knowing what it will observe. Describing the sequence costs nothing and
 synthesizes nothing.
 
-What a consumer observes across a re-pair, in order:
+**Continuity across re-pairing is not supported.** Periphery does not claim, and
+cannot claim, that a device seen after a re-pair is the device seen before it.
+That is the direct statement, so a consumer does not have to infer it from D1.
 
-1. `Disappeared` for every node of the old subtree, including the `…\DEV_…`
-   node. The old `Id` and `ContainerId` never return.
-2. `Appeared` for a new subtree carrying the same `VendorId` / `ProductId` and a
-   different `Id` and `ContainerId`.
+What was **measured at the cfgmgr32 layer**, in order:
+
+1. `DEVICEINSTANCEREMOVED` + `DEVICEINTERFACEREMOVAL` for every node of the old
+   subtree, including the `…\DEV_…` node. The old `Id` and `ContainerId` never
+   return.
+2. `DEVICEINSTANCEENUMERATED` + `DEVICEINTERFACEARRIVAL` +
+   `DEVICEINSTANCESTARTED` for a new subtree carrying the same `VendorId` /
+   `ProductId` and a different `Id` and `ContainerId`.
+
+**Whether a consumer observes this as `Disappeared` then `Appeared` is
+untested.** The measurement used a `CM_Register_Notification` listener, not
+`DeviceWatcher`. Delivery through `WindowsDeviceMonitorProvider`, the ordering a
+consumer actually sees, and the race against startup enumeration are all
+unverified — and a watcher filtered to `DeviceCategory.Bluetooth` would in any
+case miss the function-child events entirely. Treat the sequence above as
+evidence about the OS, not as a delivered contract, until it is measured through
+`DeviceWatcher`. This is the same gap recorded in `ARCHITECTURE.md` §10.6.2.
 
 Nothing in that sequence marks step 2 as the same physical device as step 1.
 A consumer holding per-device state must therefore decide three things, and

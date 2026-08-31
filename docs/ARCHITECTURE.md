@@ -917,7 +917,12 @@ The rule that does generalise is by node role within a peripheral's container, n
 
 The third bullet is the one that does not generalise on this evidence. It is verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child), and **only those**. A non-HID profile whose service and function nodes Windows models differently could present a function child that persists across a link drop, or none at all; treating its absence as definitive would then report a live device as disconnected. Where there is no function child there is nothing to watch, and the `DEV_` node must be polled. Confirm the shape on the profile in front of you before relying on it.
 
-**The three-tier shape is general; the pathology is not.** USB has the same structure, captured in the same listener run:
+**The three-tier shape is general; the pathology is not.** Two separate claims are in play here and they carry different evidence, so keep them apart:
+
+- *That devnodes come in device / service-or-interface / function tiers* is ordinary PnP, and the USB capture below is independent evidence for it. It is a statement about tree shape.
+- *That a function child's presence tracks the peripheral's link* is the HID-scoped rule qualified above. It is a statement about lifetime, and it does **not** follow from the tier shape.
+
+Generalising the first does not license generalising the second. USB has the same structure, captured in the same listener run:
 
 | Tier | Bluetooth (BR/EDR) | USB |
 |---|---|---|

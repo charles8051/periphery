@@ -25,6 +25,16 @@ public sealed record DeviceInfo
     /// so the case-insensitive instance-id identity invariant travels with the
     /// value (see <see cref="DeviceId"/>). Serializes as a bare string.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Durability.</b> Stable across a disconnect/reconnect of the same
+    /// device. It is <b>not</b> guaranteed stable across re-pairing a Bluetooth
+    /// peripheral: on Windows the instance ID embeds the device address, and a
+    /// re-paired LE peripheral was measured returning with a different address,
+    /// so every id in its subtree changed (ADR-0083). Do not assume a device
+    /// keyed by <see cref="Id"/> can be recognised again after it is unpaired
+    /// and re-paired. <see cref="VendorId"/> / <see cref="ProductId"/> survived
+    /// that transition; <see cref="ContainerId"/> did not.</para>
+    /// </remarks>
     public required DeviceId Id { get; init; }
 
     /// <summary>Human-readable device name.</summary>
@@ -52,6 +62,16 @@ public sealed record DeviceInfo
     /// Container ID that groups multiple device interfaces into a single
     /// physical device (e.g. a USB hub that exposes HID + audio).
     /// </summary>
+    /// <remarks>
+    /// <para><b>Durability.</b> Groups the nodes of one physical device within a
+    /// session and survives a disconnect/reconnect. It is <b>not</b> guaranteed
+    /// stable across re-pairing a Bluetooth peripheral: a re-paired LE mouse was
+    /// measured returning under a different container (ADR-0083). Every
+    /// container observed there was a name-based (v5) UUID, consistent with
+    /// derivation from the device address — so when the address moves, this
+    /// moves with it. Use it to correlate the nodes of one device, not to
+    /// recognise a device across a re-pair.</para>
+    /// </remarks>
     public Guid? ContainerId { get; init; }
 
     // ── Hardware IDs ───────────────────────────────────────────────────
