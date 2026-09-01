@@ -718,12 +718,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
             _logger.LogInformation("Starting device watcher");
 
-            _started = true;
-            _appearedEventCount = 0;
-            _activatedEventCount = 0;
-            _deactivatedEventCount = 0;
-            _disappearedEventCount = 0;
-            _knownConnectedIds.Clear();
+            ResetAttemptCounters();
 
             // Provider registration + the initial device snapshot are blocking,
             // synchronous OS work: SetupAPI/cfgmgr32 on Windows has no async API,
@@ -736,31 +731,61 @@ public sealed class DeviceWatcher : IAsyncDisposable
             // walk. This honours the watcher's contract that events fire on
             // thread-pool threads; an awaiting caller still observes the same
             // post-condition (provider started + snapshot complete) on return.
+            // The attempt owns everything it creates until it commits. Nothing is
+            // written to _provider or _started until both the registration and the
+            // snapshot have succeeded, so a failed attempt leaves no provider-side
+            // state behind and the same instance can be started again with its
+            // trackers and subscriptions intact.
             await Task.Run(async () =>
             {
-                // 1. Start event watchers FIRST so no events are lost
-                _provider = _monitorOverride ?? DeviceProviderFactory.GetMonitorProvider();
-                _provider.DeviceAppeared += OnProviderAppeared;
-                _provider.DeviceDisappeared += OnProviderDisappeared;
-                _provider.DeviceActivated += OnProviderActivated;
-                _provider.DeviceDeactivated += OnProviderDeactivated;
-                _provider.DevicePropertyChanged += OnProviderPropertyChanged;
+                IDeviceMonitorProvider? provider = null;
 
-                // When trackers or group trackers are registered, the OS subscription
-                // must be unfiltered so that events for all tracked categories arrive.
-                // The watcher-level filter still applies to global events in-memory.
-                // Since ADR-0054 removed the Windows whole-tree property scan, this
-                // breadth no longer feeds any periodic re-walk — it only widens live
-                // event fan-out (and, on Linux/macOS, the subsystem/class subscription).
-                var providerFilter = (_trackers.Count > 0 || _multiTrackers.Count > 0)
-                    ? new DeviceFilter() : _filter;
-                await _provider.StartAsync(providerFilter, ct).ConfigureAwait(false);
+                // True only when THIS attempt created the provider. A caller-supplied
+                // one (from the injecting constructor, which is public) belongs to the
+                // caller — disposing it on rollback would leave a retry re-using a
+                // disposed instance.
+                bool ownsProvider = false;
 
-                // 2. Snapshot already-active devices via the query provider
-                //    Events that arrive during the snapshot are handled by the
-                //    monitor provider above — the watcher-then-snapshot ordering
-                //    guarantees no device is missed.
-                await SnapshotCurrentDevicesAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    // 1. Start event watchers FIRST so no events are lost
+                    provider = _monitorOverride ?? DeviceProviderFactory.GetMonitorProvider();
+                    ownsProvider = _monitorOverride is null;
+
+                    provider.DeviceAppeared += OnProviderAppeared;
+                    provider.DeviceDisappeared += OnProviderDisappeared;
+                    provider.DeviceActivated += OnProviderActivated;
+                    provider.DeviceDeactivated += OnProviderDeactivated;
+                    provider.DevicePropertyChanged += OnProviderPropertyChanged;
+
+                    // When trackers or group trackers are registered, the OS subscription
+                    // must be unfiltered so that events for all tracked categories arrive.
+                    // The watcher-level filter still applies to global events in-memory.
+                    // Since ADR-0054 removed the Windows whole-tree property scan, this
+                    // breadth no longer feeds any periodic re-walk — it only widens live
+                    // event fan-out (and, on Linux/macOS, the subsystem/class subscription).
+                    var providerFilter = (_trackers.Count > 0 || _multiTrackers.Count > 0)
+                        ? new DeviceFilter() : _filter;
+                    await provider.StartAsync(providerFilter, ct).ConfigureAwait(false);
+
+                    // 2. Snapshot already-active devices via the query provider
+                    //    Events that arrive during the snapshot are handled by the
+                    //    monitor provider above — the watcher-then-snapshot ordering
+                    //    guarantees no device is missed.
+                    await SnapshotCurrentDevicesAsync(ct).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await RollBackAttemptAsync(provider, ownsProvider).ConfigureAwait(false);
+                    throw;
+                }
+
+                // Commit. _provider before _started: DisposeAsync releases on the
+                // provider being non-null, so publishing the flag first would open a
+                // window where a concurrent dispose sees a started watcher with no
+                // provider to release.
+                _provider = provider;
+                _started = true;
             }, ct).ConfigureAwait(false);
 
             _logger.LogInformation("Device watcher started");
@@ -769,6 +794,74 @@ public sealed class DeviceWatcher : IAsyncDisposable
         {
             _lifecycleLock.Release();
         }
+    }
+
+    private void ResetAttemptCounters()
+    {
+        _appearedEventCount = 0;
+        _activatedEventCount = 0;
+        _deactivatedEventCount = 0;
+        _disappearedEventCount = 0;
+    }
+
+    /// <summary>
+    /// Undoes everything a failed start attempt created, so the same watcher can
+    /// be started again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Dispose before clearing.</b> Detaching a handler does not stop one that
+    /// has already been entered, because the delegate list was captured at the
+    /// point of invocation. Both platform providers make dispose a join
+    /// (<c>CmNotifyHandle.ReleaseHandle</c> blocks until an in-progress callback
+    /// returns; the Linux monitor awaits its reader task), so disposing first is
+    /// what guarantees no handler is still running when the caches are touched.
+    /// </para>
+    /// <para>
+    /// <b><see cref="_knownConnectedIds"/> is deliberately NOT cleared.</b> The
+    /// handlers go live at the <c>+=</c> above, before <c>StartAsync</c> returns
+    /// on either provider, so a live arrival during the attempt may already have
+    /// raised <see cref="Activated"/> to the consumer and recorded its id here.
+    /// Clearing it would make the eventual <see cref="Disappeared"/> find
+    /// <c>wasConnected == false</c> and never cascade <see cref="Deactivated"/>,
+    /// orphaning an event the consumer has already seen.
+    /// </para>
+    /// <para>
+    /// <see cref="_deviceCache"/> <i>is</i> cleared, because
+    /// <see cref="KnownDevices"/> documents itself as empty until a start
+    /// settles, and a failed attempt must not leave it reporting a snapshot that
+    /// never completed.
+    /// </para>
+    /// </remarks>
+    private async Task RollBackAttemptAsync(IDeviceMonitorProvider? provider, bool ownsProvider)
+    {
+        if (provider is not null)
+        {
+            provider.DeviceAppeared -= OnProviderAppeared;
+            provider.DeviceDisappeared -= OnProviderDisappeared;
+            provider.DeviceActivated -= OnProviderActivated;
+            provider.DeviceDeactivated -= OnProviderDeactivated;
+            provider.DevicePropertyChanged -= OnProviderPropertyChanged;
+
+            if (ownsProvider)
+            {
+                // A failing dispose must not mask the fault that caused the rollback.
+                try
+                {
+                    await provider.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Disposing the provider after a failed start attempt threw");
+                }
+            }
+        }
+
+        lock (_deviceCache)
+            _deviceCache.Clear();
+        ResetAttemptCounters();
+
+        _logger.LogDebug("Rolled back a failed device-watcher start attempt");
     }
 
     // ── Snapshot ───────────────────────────────────────────────────────
@@ -807,12 +900,22 @@ public sealed class DeviceWatcher : IAsyncDisposable
                     // Seed the property-change cache with the initial snapshot.
                     lock (_deviceCache) _deviceCache[device.Id] = device;
 
+                    // Guard on the Add, exactly as OnProviderActivated does. The
+                    // provider goes live before the snapshot walk begins, so a device
+                    // that arrived during the walk has already had Activated raised;
+                    // without this the snapshot raises it a second time.
                     if (device.IsActive)
                     {
-                        lock (_knownConnectedIds) _knownConnectedIds.Add(device.Id);
-                    Interlocked.Increment(ref _activatedEventCount);
-                    Activated?.Invoke(this, new DeviceChangeEventArgs(device));
-                }
+                        bool isNew;
+                        lock (_knownConnectedIds)
+                            isNew = _knownConnectedIds.Add(device.Id);
+
+                        if (isNew)
+                        {
+                            Interlocked.Increment(ref _activatedEventCount);
+                            Activated?.Invoke(this, new DeviceChangeEventArgs(device));
+                        }
+                    }
             }
 
             // Per-tracker fan-out: always notify appeared
@@ -861,7 +964,13 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 _logger.LogInformation(
                     "Stopping device watcher. Events raised - Appeared: {AppearedCount}, Activated: {ActivatedCount}, Deactivated: {DeactivatedCount}, Disappeared: {DisappearedCount}",
                     _appearedEventCount, _activatedEventCount, _deactivatedEventCount, _disappearedEventCount);
+            }
 
+            // Keyed on the resource, not the flag. A start attempt now commits
+            // _started only after it succeeds, so a rollback that failed to null
+            // _provider would otherwise leak its cfgmgr32 registration or udev fd
+            // with no second chance to release it.
+            {
                 if (_provider is not null)
                 {
                     _provider.DeviceAppeared -= OnProviderAppeared;

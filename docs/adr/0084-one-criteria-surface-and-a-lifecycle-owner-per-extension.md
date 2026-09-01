@@ -604,105 +604,128 @@ about it.
 is the recommended composition, not the only one — the same relationship
 `UsbDeviceProxy` has to `UsbDevice`.
 
-### D6 — `DeviceWatcher.StartAsync` may be retried, and accepts a policy
+### D6 — A start attempt is transactional. No policy overload.
 
-`StartAsync` currently sets `_started = true` before the provider registration and
-the initial snapshot, and does not roll it back on failure. A watcher whose start
-throws is therefore permanently unusable: the retry throws
-`InvalidOperationException("The watcher has already been started.")`, so the
-caller must discard the instance and rebuild every tracker and every event
-subscription attached to it.
+**Implemented as the transaction only. The deferred snapshot and the
+`IRecoveryPolicy` overload are both cut**, the first to its own issue and the
+second permanently. Two independent reviews of the implementation plan found the
+reasoning below to be wrong in its central premise; what was measured is
+recorded here, and the superseded text is kept at the end.
 
-**A start attempt is transactional.** Moving the `_started` assignment is not
-enough on its own, and the naive version is worse than the bug it fixes.
-`StartAsync` does two things: it registers with the monitor provider, then it
-takes the initial snapshot. If registration succeeds and the snapshot throws,
-clearing `_started` alone leaves a live registration behind — and the retry adds
-a second one. The consumer gets duplicate `Appeared`/`Activated` events for every
-device, a leaked provider handle, and a `DisposeAsync` that only unregisters one.
-That is a worse failure than the unstartable watcher, because it is silent.
+#### The bug, unchanged
 
-So each attempt owns everything it created:
+`StartAsync` set `_started = true` before the provider registration and the
+initial snapshot and never rolled it back, so a watcher whose start threw was
+permanently unusable — the retry threw
+`InvalidOperationException("The watcher has already been started.")` and the
+caller had to discard the instance and rebuild every tracker and every event
+subscription on it.
 
-- Registration is held locally until the attempt commits. On any failure or
-  cancellation, the attempt detaches its handlers, disposes the provider it
-  registered, and clears `_deviceCache` and `_knownConnectedIds` before
-  rethrowing.
-- The attempt commits by assigning `_started = true` and publishing the provider,
-  after both the registration and the snapshot have completed.
-- A failed attempt therefore leaves no provider-side state, and the retry starts
-  from the same position the first attempt did.
+#### The premise that was wrong
 
-Trackers and event subscriptions are untouched throughout — they are watcher
-state, not attempt state, which is the whole point of retrying in place.
+The plan assumed a failed attempt could be made invisible: collect the snapshot
+without raising anything, and roll back cleanly if it fails.
 
-**The snapshot's events are raised on commit, not during the walk.** An event
-cannot be un-raised, so an attempt that raises `Appeared` for four devices and
-then throws on the fifth leaves the consumer holding four arrivals for a start
-that failed — and the retry raises them a second time. Documenting that as an
-accepted residue is not good enough when the whole point of D6 is that a retry
-is safe.
+**It cannot.** The five provider handlers go live at the `+=`, which happens
+*before* `provider.StartAsync` — and both platform providers raise on other
+threads before that call returns. On Windows the notification is registered and
+then a full device-tree walk runs, still inside `StartAsync`, with a comment
+acknowledging that an arrival callback can fire during it. On Linux the reader
+thread is `LongRunning` and starts before `StartAsync` returns.
 
-So the snapshot enumerates into a local list and raises nothing. The attempt
-commits by assigning `_started`, publishing the provider, seeding
-`_deviceCache` and `_knownConnectedIds`, and only then draining that list into
-`Appeared`/`Activated` and the per-tracker fan-out. A failed attempt discards
-the list, having raised nothing, so a retry cannot duplicate anything.
+**No provider handler reads `_started` or `_provider`** — verified across all
+five. So moving the commit changes nothing about what they do: from the `+=`
+onward the watcher is live to the consumer, and a live arrival during a failing
+attempt raises `Appeared`/`Activated` and drives the tracker fan-out.
 
-**Commit is the point of no return, so the drain cannot fail the start.** Once
-`_started` is assigned the watcher *is* started, and an exception from a
-consumer's own `Appeared` handler must not be reported as a start failure — a
-caller cannot distinguish that from a registration failure, and rolling back
-underneath a committed, already-notified watcher is exactly the duplicate-state
-problem this decision exists to remove.
+That fan-out cannot be undone. `DeviceTrackerResolution.Resolve()` returns only
+`Active`, `Present` or `Absent` — never `Unknown` — so a tracker matched during
+a failed attempt has left `Unknown` irreversibly.
 
-The post-commit drain therefore isolates each handler: a throwing subscriber is
-caught, logged against that device, and the drain continues. `StartAsync` cannot
-throw once the commit has happened.
+#### What shipped
 
-The two failure regions are cleanly split as a result. Before commit, anything
-that throws rolls the attempt back and propagates, and the retry is safe. After
-commit, nothing propagates, and there is nothing to retry.
+A transaction around the attempt, and nothing else:
 
-**This is new behaviour, not an existing convention being extended.**
-`DeviceWatcher` contains no exception handling around event dispatch anywhere
-today — `src/Periphery/DeviceWatcher.cs` has no `catch` clause at all — so a
-throwing subscriber currently escapes into whichever thread raised the event,
-including the provider's pump thread on a live edge. Isolating the snapshot
-drain fixes the path D6 touches and deliberately leaves the live-event path
-alone, because changing dispatch semantics for every event is a larger decision
-than this one and belongs in its own ADR. Worth filing: the live path has the
-same defect and a worse blast radius.
+- The provider is an attempt-local. Nothing is written to `_provider` or
+  `_started` until both the registration and the snapshot have succeeded.
+- On any failure the attempt detaches its five handlers and disposes the
+  provider **only if it created it** — the injecting constructor is public, so a
+  caller-supplied provider belongs to the caller and disposing it would leave the
+  retry using a disposed instance.
+- Dispose happens before the caches are touched, because detaching does not stop
+  a handler already entered. Both providers make dispose a join, which is what
+  makes the ordering sound; the code says so.
+- Commit assigns `_provider` **then** `_started`, and `DisposeAsync` now keys its
+  teardown on the provider being non-null rather than on the flag — otherwise a
+  rollback bug would leak a cfgmgr32 registration or a udev fd with no second
+  chance to release it.
 
-This makes the whole attempt transactional rather than only its provider-side
-half, and it costs one list of `DeviceInfo` for the duration of the walk. The
-observable change is that snapshot events now arrive after `StartAsync` has
-committed rather than interleaved with it. Live events that arrive during the
-walk are already queued by the monitor provider and are delivered after the
-snapshot drains, which is the ordering the current code documents as its reason
-for registering before snapshotting.
+**`_knownConnectedIds` is deliberately not cleared on rollback.** The first draft
+cleared it. That is an active bug: those ids were added by live arrivals that had
+*already* raised `Activated` to the consumer, so clearing them makes the eventual
+`Disappeared` find `wasConnected == false` and never cascade `Deactivated`,
+orphaning an event the consumer has seen. `_deviceCache` *is* cleared, because
+`KnownDevices` documents itself as empty until a start settles.
 
-The watcher also accepts the recovery abstraction the library already has:
+A pre-existing duplicate-event bug in the same method is fixed on the way past:
+the snapshot raised `Activated` without the `isNew` guard the live path has, so a
+device that arrived during the walk had `Activated` raised twice.
 
-```csharp
-public Task StartAsync(CancellationToken ct = default);
-public Task StartAsync(IRecoveryPolicy recoveryPolicy, CancellationToken ct);
-```
+#### Why the deferred snapshot was cut
 
-The overload retries the start according to the policy, honouring `Retry(delay)`
-and `GiveUp` from `RecoveryDirective`. `Reset` is not meaningful for a provider
-registration and is treated as `GiveUp`. The no-policy overload is unchanged: one
-attempt, throw on failure.
+The plan proposed collecting the snapshot and draining it after commit. Reviews
+found it makes things worse, not better:
 
-**The token is not optional on the policy overload.** With both parameters
-defaulted, an existing `StartAsync(default)` becomes ambiguous — `default`
-converts to `CancellationToken` and to `IRecoveryPolicy` alike, so the call fails
-with CS0121. Requiring the token keeps the one-argument call unambiguous.
+- It **widens** two existing races — duplicate `Appeared` and duplicate
+  `Activated` — from one loop iteration to the whole enumeration plus commit.
+- It **introduces** an inversion: collect enumerates X, X is unplugged, the live
+  `Disappeared(X)` finds nothing in `_knownConnectedIds` so no `Deactivated`
+  cascades, and the drain then replays `Appeared(X)` and `Activated(X)` for a
+  device that is physically gone — leaving X in both caches with no live event
+  left to clear it.
+- It buys nothing for the dominant failure mode. The overwhelmingly likely
+  failure is the provider registration itself, which fails **before any event is
+  raised**, and for which the transaction alone already gives a clean retry.
 
-This matters more than convenience. The watcher is a consumer's entire view of its
-hardware — every tracker reports through it — so a transient start failure that
-cannot be retried leaves an application permanently blind, with its trackers
-frozen at whatever they last read.
+Doing it soundly needs a dispatch gate, buffering of pre-commit live events, and
+a merge that honours "disappeared during the attempt" — a design of its own, with
+its own risk. Filed rather than bolted on.
+
+#### Why there is no policy overload
+
+`RecoveryContext` cannot represent a watcher start. Its `Device` is a
+non-nullable `DeviceInfo` documented as "the still-enumerated device we are
+failing to open"; a watcher start has no device, and every other field —
+`ResetCount`, `AvailableResets`, `RecoveryTrigger` — is per-device too. Making it
+fit means either handing third-party policy code a `null!` it will dereference,
+or widening a shipped public record struct that five other types consume.
+
+Both shipped policies are also wrong for it: the exponential one retries forever
+unless given an attempt bound, and the escalating one returns `Reset` from the
+second attempt, which for a provider registration means "give up" — so it
+degenerates to a single attempt.
+
+Once the start is retryable, a consumer's own loop is five lines with their own
+semantics for giving up. That is the better place for it.
+
+---
+
+<details>
+<summary>Original D6 as proposed (superseded)</summary>
+
+The original text proposed the transaction, plus deferring the snapshot's events
+to commit with a per-handler-isolated drain, plus
+`StartAsync(IRecoveryPolicy, CancellationToken)`.
+
+Three claims in it were falsified by measurement: that a failed attempt raises
+nothing (the handlers are live from the `+=`); that deferring the fan-out stops
+trackers resolving during a failable walk (it stops only the *snapshot* fan-out,
+not the live one); and that `OnInitialEnumerationComplete` being a one-way latch
+is the reason deferral is needed (that hook runs after the walk and is
+unreachable on the failure path — the real constraint is the per-profile
+resolution latches).
+
+</details>
 
 ---
 
