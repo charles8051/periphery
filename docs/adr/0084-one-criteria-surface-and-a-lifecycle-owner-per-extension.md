@@ -372,6 +372,12 @@ one-liners over `BusType.Software` — a classification platform work may yet
 refine. An enum can gain a member. `Active` stays `bool?`, because
 `DeviceFilter.Active(bool)` genuinely takes a boolean.
 
+**`Apply` refuses an empty spec.** A spec with nothing set is a no-op, and a
+no-op on a fresh filter is a filter matching every device — the exact shape a
+mistyped configuration binds to. `IConfiguration` cannot be made strict from
+here, so this is the one point in the library where that fail-open can be turned
+into an error, and it is.
+
 **Empty tag arrays are skipped, not forwarded.** `WithAnyTag([])` means "match
 nothing"; an absent configuration value must not mean that. `Apply` branches.
 

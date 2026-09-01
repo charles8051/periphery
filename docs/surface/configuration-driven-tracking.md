@@ -290,29 +290,29 @@ fall back to hardware B, accept any" chain entirely in configuration.
 ```json
 {
   "DeviceTracking": {
-    "Devices": [
-      {
-        "Name": "Mouse",
-        "Profiles": [
-          { "Name": "MX Master 3",  "VendorId": "046D", "ProductId": "C52B" },
-          { "Name": "M705",         "VendorId": "046D", "ProductId": "C534" },
-          { "Name": "Any Mouse",    "Category": "Mouse" }
-        ]
+    "Devices": {
+      "Mouse": {
+        "Profiles": {
+          "MX Master 3": { "VendorId": "046D", "ProductId": "C52B" },
+          "M705":        { "VendorId": "046D", "ProductId": "C534" },
+          "Any Mouse":   { "Category": "Mouse" }
+        }
       },
-      {
-        "Name": "Keyboard",
-        "Profiles": [
-          { "Name": "MX Keys",      "VendorId": "046D", "ProductId": "C52B" },
-          { "Name": "Any Keyboard", "Category": "Keyboard" }
-        ]
+      "Keyboard": {
+        "Profiles": {
+          "MX Keys":      { "VendorId": "046D", "ProductId": "C52B" },
+          "Any Keyboard": { "Category": "Keyboard" }
+        }
       }
-    ]
+    }
   }
 }
 ```
 
-Single-profile devices (no `Profiles` array) continue to use the flat fields
-(`Category`, `VendorId`, etc.) — both shapes coexist in the same config file.
+Profile keys are the profile names, so there is no `Name` field inside an entry
+and no flat single-profile shorthand — a device with one profile writes one
+entry under `Profiles`. Every value is a `DeviceFilterSpec`, so anything the
+filter can express, the configuration can.
 
 ### DTOs
 

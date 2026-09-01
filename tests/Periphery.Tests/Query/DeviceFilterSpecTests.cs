@@ -176,10 +176,15 @@ public class DeviceFilterSpecTests
         var spec = new DeviceFilterSpec { AllTags = [], AnyTags = [] };
         Assert.False(spec.HasAnyCriteria);
 
-        // WithAnyTag([]) called directly means "match nothing". An absent config
-        // value must not mean that, so Apply skips it.
-        var filter = new DeviceFilter().Apply(spec);
-        Assert.True(filter.Matches(new DeviceInfo { Id = "x" }));
+        // And because they are not criteria, this spec is empty — so Apply
+        // refuses it rather than yielding a match-everything filter.
+        Assert.Throws<ArgumentException>(() => new DeviceFilter().Apply(spec));
+
+        // The skip itself is what matters: WithAnyTag([]) called directly means
+        // "match nothing", which an absent config value must not mean.
+        var withOther = new DeviceFilterSpec { AnyTags = [], Category = DeviceCategory.Usb };
+        var filter = new DeviceFilter().Apply(withOther);
+        Assert.True(filter.Matches(new DeviceInfo { Id = "x", Category = DeviceCategory.Usb }));
     }
 
     // ── Replay preserves the provider hints ────────────────────────────
@@ -416,6 +421,19 @@ public class DeviceFilterSpecTests
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize(json, DeviceFilterSpecJsonContext.Default.DeviceFilterSpec)
         );
+    }
+
+    [Fact]
+    public void Apply_RefusesAnEmptySpec_RatherThanMatchingEveryDevice()
+    {
+        // The fail-open this closes: a mistyped configuration binds to an empty
+        // spec, and an empty spec applied to a fresh filter matches everything.
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new DeviceFilter().Apply(new DeviceFilterSpec())
+        );
+        Assert.Contains("no criteria", ex.Message, StringComparison.Ordinal);
+
+        Assert.Throws<ArgumentException>(() => Devices.Enumerate().Apply(new DeviceFilterSpec()));
     }
 
     [Fact]

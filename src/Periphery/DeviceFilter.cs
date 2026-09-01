@@ -482,6 +482,23 @@ public sealed class DeviceFilter
     {
         ArgumentNullException.ThrowIfNull(spec);
 
+        // A spec with nothing set is a no-op, and a no-op on a fresh filter is a
+        // filter that matches every device. That is never what a caller wanted —
+        // if they wanted no filtering they would not be applying a spec — and it
+        // is the shape a mistyped configuration binds to, because IConfiguration
+        // silently drops keys it does not recognise. Refusing it here is the one
+        // place this library can turn that fail-open into an error.
+        if (!spec.HasAnyCriteria)
+        {
+            throw new ArgumentException(
+                "The spec sets no criteria, so applying it would leave the filter matching every "
+                    + "device. If it came from configuration, a key is probably misspelled — "
+                    + "IConfiguration ignores unrecognised keys unless you bind with "
+                    + "ErrorOnUnknownConfiguration. Guard with DeviceFilterSpec.HasAnyCriteria when "
+                    + "an absent section is legitimate.",
+                nameof(spec));
+        }
+
         if (spec.Category.HasValue)
             OfCategory(spec.Category.Value);
 
