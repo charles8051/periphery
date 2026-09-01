@@ -130,6 +130,18 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// <param name="monitor">
     /// Provider used to receive real-time device events. Must not be <see langword="null"/>.
     /// </param>
+    /// <remarks>
+    /// <b>A start that fails after registering cannot be retried on this
+    /// overload.</b> The instance belongs to the caller, so a rolled-back attempt
+    /// will not dispose it — and <see cref="IDeviceMonitorProvider"/> has no stop
+    /// or reset, while every shipped implementation latches its start ("dispose
+    /// and create a new monitor to restart"). So if <c>StartAsync</c> succeeds on
+    /// the provider and the initial snapshot then throws, the retry cannot
+    /// re-register it. Use the
+    /// <see cref="DeviceWatcher(IDeviceProvider, Func{IDeviceMonitorProvider})"/>
+    /// overload where that matters: it mints a provider per attempt, the way
+    /// production does, so the watcher owns each one and disposes it on rollback.
+    /// </remarks>
     public DeviceWatcher(IDeviceProvider provider, IDeviceMonitorProvider monitor)
     {
         ArgumentNullException.ThrowIfNull(provider);
@@ -140,11 +152,21 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     /// <summary>
     /// Creates a watcher that mints a monitor provider per start attempt, the
-    /// way production does. Unlike the instance-injecting constructor, the
+    /// way production does. Unlike
+    /// <see cref="DeviceWatcher(IDeviceProvider, IDeviceMonitorProvider)"/>, the
     /// watcher <b>owns</b> what the factory returns and disposes it when an
-    /// attempt is rolled back.
+    /// attempt is rolled back — which is what makes a failed start retryable
+    /// even once the registration had succeeded.
     /// </summary>
-    internal DeviceWatcher(IDeviceProvider provider, Func<IDeviceMonitorProvider> monitorFactory)
+    /// <param name="provider">
+    /// Provider used to enumerate the initial device snapshot. Must not be <see langword="null"/>.
+    /// </param>
+    /// <param name="monitorFactory">
+    /// Invoked once per start attempt. Must return a fresh, unstarted provider
+    /// each time; returning the same instance twice reintroduces the limitation
+    /// this overload exists to remove.
+    /// </param>
+    public DeviceWatcher(IDeviceProvider provider, Func<IDeviceMonitorProvider> monitorFactory)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(monitorFactory);
