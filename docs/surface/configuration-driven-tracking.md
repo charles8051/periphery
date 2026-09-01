@@ -41,42 +41,82 @@ This pattern shows how to define tracked devices in `appsettings.json`, deserial
 
 ## 2. Options DTOs
 
+**Do not hand-write the binder.** Periphery ships `DeviceFilterSpec` — one
+property per `DeviceFilter` criterion, bindable from `IConfiguration` or JSON
+with no adapter, and replayed by `DeviceFilter.Apply`. A test in the library
+asserts every criterion has a spec property, so the spec cannot fall behind the
+filter the way a hand-written DTO does.
+
 ```csharp
 public sealed class DeviceTrackingOptions
 {
-    public List<DeviceDefinition> Devices { get; set; } = [];
-}
-
-public sealed class DeviceDefinition
-{
-    public required string Name { get; set; }
-    public DeviceCategory? Category { get; set; }
-    public string? DeviceName { get; set; }
-    public string? Manufacturer { get; set; }
-    public string? VendorId { get; set; }
-    public string? ProductId { get; set; }
-    public string? SerialNumber { get; set; }
-    public BusType? BusType { get; set; }
-
-    /// <summary>
-    /// Maps this configuration entry to a <see cref="DeviceTracker"/> instance.
-    /// Each non-null property becomes a filter criterion.
-    /// </summary>
-    public DeviceTracker ToTracker() => new(filter =>
-    {
-        if (Category.HasValue) filter.OfCategory(Category.Value);
-        if (DeviceName is not null) filter.WithName(DeviceName);
-        if (Manufacturer is not null) filter.ByManufacturer(Manufacturer);
-        if (VendorId is not null) filter.WithUsbId(VendorId, ProductId);
-        if (SerialNumber is not null) filter.WithSerialNumber(SerialNumber);
-        if (BusType.HasValue) filter.WithBusType(BusType.Value);
-    }, name: Name);
+    // Keyed, not a list, so a per-machine overlay can override one entry by
+    // name without restating the others.
+    public Dictionary<string, DeviceFilterSpec> Devices { get; set; } = new();
 }
 ```
 
-> **Why a separate DTO?** `DeviceTracker` is a runtime object with internal state (connected devices, observers, owner tracking). Configuration should _produce_ trackers, not _be_ trackers. The DTO is a plain serializable POCO; the tracker is the live observable handle.
+That is the whole DTO layer. The dictionary key becomes the tracker name:
 
----
+```csharp
+_trackers = options.Value.Devices
+    .Select(kv => new DeviceTracker(DeviceProfile.FromSpec(kv.Value, kv.Key)))
+    .ToArray();
+```
+
+`DeviceProfile.FromSpec` throws if the spec sets no criteria, with the spec's
+description and the profile name in the message — so a typo in an overlay
+surfaces against the configuration key an operator actually wrote, rather than
+against a `configure` parameter they never saw.
+
+To validate before constructing anything, ask the spec:
+
+```csharp
+foreach (var (name, spec) in options.Value.Devices)
+    if (!spec.HasAnyCriteria)
+        throw new InvalidOperationException(
+            $"DeviceTracking:Devices:{name} sets no criteria, so it would match every device.");
+```
+
+### What the spec covers
+
+Every `DeviceFilter` criterion except `Where(...)`, which takes a delegate and
+has no data form. Categories, tags, names, USB ids, serial numbers, device and
+parent ids, container ids, MAC addresses, port names, bus type, status, drive
+type, USB speed, battery status, activity, physicality, and minimum resolution.
+
+Three behaviours worth knowing before you write the JSON:
+
+- **A misspelled or wrongly-cased member throws.** The spec is declared
+  `JsonUnmappedMemberHandling.Disallow`, because the alternative is binding to an
+  empty spec that silently matches every device.
+- **An unparseable value throws**, naming the property. This deliberately differs
+  from the fluent `WithUsbId(string, …)`, which answers a bad vendor id with a
+  filter that never matches — acceptable at a C# call site, useless when the
+  cause is a config file.
+- **`IConfiguration` merges arrays by index.** A base file with
+  `"allTags": ["Usb","Hid"]` overridden by `"allTags": ["Usb"]` yields
+  `["Usb","Hid"]`. Set tag arrays in one layer.
+
+### If you need more than one profile per device
+
+`DeviceProfile.FromSpec` builds one profile. For the fallback-chain pattern —
+several profiles tried in order until one resolves to exactly one device — bind
+a list of specs and map each:
+
+```csharp
+public sealed class DeviceDefinition
+{
+    public Dictionary<string, DeviceFilterSpec> Profiles { get; set; } = new();
+}
+
+var tracker = new DeviceTracker(
+    name,
+    [.. definition.Profiles.Select(kv => DeviceProfile.FromSpec(kv.Value, kv.Key))]);
+```
+
+The profile name is stamped onto `DeviceTracker.ActiveProfile`, so diagnostics
+can report which one resolved.
 
 ## 3. Hosted Service
 

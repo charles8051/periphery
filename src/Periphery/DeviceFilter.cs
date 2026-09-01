@@ -437,6 +437,158 @@ public sealed class DeviceFilter
     public DeviceFilter VirtualOnly()
         => Where(d => d.BusType == BusType.Software);
 
+    // ── Spec replay ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Applies every criterion set on <paramref name="spec"/> to this filter.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Additive, with exactly the semantics of calling the fluent methods by
+    /// hand — because that is what it does. The four field-setting criteria
+    /// (<see cref="OfCategory"/>, <see cref="WithName"/>,
+    /// <see cref="ByManufacturer"/>, <see cref="WithUsbId(HardwareId, HardwareId?)"/>)
+    /// replace what was there; every other criterion appends and therefore ANDs.
+    /// So applying a spec onto a filter that already has a name replaces the
+    /// name and ANDs the rest.
+    /// </para>
+    /// <para>
+    /// Going through the public methods is a requirement, not an implementation
+    /// detail. They populate the structured hints providers read to narrow the
+    /// OS query — <see cref="Category"/>, <see cref="VendorId"/>,
+    /// <see cref="RelevantTags"/>. An <c>Apply</c> that hand-rolled equivalent
+    /// <see cref="Where"/> predicates would match identically and silently
+    /// degrade every spec-built filter into a full-system scan.
+    /// </para>
+    /// <para>
+    /// <b>Unparseable values throw</b>, naming the property. The fluent
+    /// <see cref="WithUsbId(string, string?)"/> answers a bad vendor id with a
+    /// filter that never matches, which is defensible for a filter written in
+    /// C# and is the worst possible answer for one bound from a config file: a
+    /// typo would yield a device that never appears and no error anywhere.
+    /// </para>
+    /// </remarks>
+    /// <param name="spec">The criteria to apply. An empty spec is a no-op.</param>
+    /// <returns>This filter, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="spec"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// A value cannot be parsed, or a paired property is half-set
+    /// (<see cref="DeviceFilterSpec.ProductId"/> without
+    /// <see cref="DeviceFilterSpec.VendorId"/>, or one of
+    /// <see cref="DeviceFilterSpec.MinWidth"/> /
+    /// <see cref="DeviceFilterSpec.MinHeight"/> without the other).
+    /// </exception>
+    public DeviceFilter Apply(DeviceFilterSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        if (spec.Category.HasValue)
+            OfCategory(spec.Category.Value);
+
+        // Empty is no criterion. WithAnyTag([]) means "match nothing", which is
+        // not what an absent config value should do — so branch rather than
+        // forward verbatim.
+        if (spec.AllTags is { Length: > 0 } allTags)
+            WithAllTags(allTags);
+        if (spec.AnyTags is { Length: > 0 } anyTags)
+            WithAnyTag(anyTags);
+
+        if (spec.DeviceName is not null)
+            WithName(spec.DeviceName);
+        if (spec.Manufacturer is not null)
+            ByManufacturer(spec.Manufacturer);
+        if (spec.Driver is not null)
+            WithDriver(spec.Driver);
+
+        if (spec.VendorId is not null)
+        {
+            if (!HardwareId.TryParse(spec.VendorId, out var vid))
+                throw Invalid(spec, nameof(DeviceFilterSpec.VendorId), spec.VendorId, "expected hex, e.g. \"046D\"");
+
+            HardwareId? pid = null;
+            if (spec.ProductId is not null)
+            {
+                if (!HardwareId.TryParse(spec.ProductId, out var parsed))
+                    throw Invalid(spec, nameof(DeviceFilterSpec.ProductId), spec.ProductId, "expected hex, e.g. \"C52B\"");
+                pid = parsed;
+            }
+
+            WithUsbId(vid, pid);
+        }
+        else if (spec.ProductId is not null)
+        {
+            throw new ArgumentException(
+                $"{nameof(DeviceFilterSpec.ProductId)} is set without {nameof(DeviceFilterSpec.VendorId)}. "
+                    + $"A product id alone matches nothing, because it is only meaningful for a given vendor. "
+                    + $"Spec: {spec}",
+                nameof(spec));
+        }
+
+        if (spec.SerialNumber is not null)
+            WithSerialNumber(spec.SerialNumber);
+        if (spec.Id is not null)
+            WithId(spec.Id);
+        if (spec.IdStartsWith is not null)
+            WithIdStartsWith(spec.IdStartsWith);
+        if (spec.ParentId is not null)
+            WithParent(spec.ParentId);
+        if (spec.ContainerId.HasValue)
+            WithContainerId(spec.ContainerId.Value);
+
+        if (spec.MacAddress is not null)
+        {
+            if (!System.Net.NetworkInformation.PhysicalAddress.TryParse(spec.MacAddress, out var mac))
+                throw Invalid(spec, nameof(DeviceFilterSpec.MacAddress), spec.MacAddress, "expected e.g. \"00-11-22-33-44-55\"");
+            WithMacAddress(mac);
+        }
+
+        if (spec.PortName is not null)
+        {
+            if (!SerialPortName.TryParse(spec.PortName, out var port))
+                throw Invalid(spec, nameof(DeviceFilterSpec.PortName), spec.PortName, "expected e.g. \"COM3\" or \"/dev/ttyUSB0\"");
+            WithPortName(port);
+        }
+
+        if (spec.BusType.HasValue)
+            WithBusType(spec.BusType.Value);
+        if (spec.Status.HasValue)
+            WithStatus(spec.Status.Value);
+        if (spec.DriveType.HasValue)
+            WithDriveType(spec.DriveType.Value);
+        if (spec.UsbSpeed.HasValue)
+            WithUsbSpeed(spec.UsbSpeed.Value);
+        if (spec.BatteryStatus.HasValue)
+            WithBatteryStatus(spec.BatteryStatus.Value);
+
+        if (spec.Active.HasValue)
+            Active(spec.Active.Value);
+
+        if (spec.Physicality.HasValue)
+        {
+            if (spec.Physicality.Value == DevicePhysicality.Physical)
+                PhysicalOnly();
+            else
+                VirtualOnly();
+        }
+
+        if (spec.MinWidth.HasValue != spec.MinHeight.HasValue)
+        {
+            throw new ArgumentException(
+                $"{nameof(DeviceFilterSpec.MinWidth)} and {nameof(DeviceFilterSpec.MinHeight)} must be set "
+                    + $"together; a minimum in one dimension alone is not a resolution. Spec: {spec}",
+                nameof(spec));
+        }
+        if (spec.MinWidth.HasValue && spec.MinHeight.HasValue)
+            WithMinResolution(spec.MinWidth.Value, spec.MinHeight.Value);
+
+        return this;
+    }
+
+    private static ArgumentException Invalid(DeviceFilterSpec spec, string property, string value, string hint)
+        => new(
+            $"{nameof(DeviceFilterSpec)}.{property} value \"{value}\" could not be parsed — {hint}. Spec: {spec}",
+            nameof(spec));
+
     // ── Internal — cloning ──────────────────────────────────────────────
 
     /// <summary>

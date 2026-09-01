@@ -51,6 +51,38 @@ public sealed class DeviceProfile
         Name = name;
     }
 
+    /// <summary>
+    /// Builds a profile from a bound <see cref="DeviceFilterSpec"/> — the shape
+    /// device selection takes when it comes from configuration.
+    /// </summary>
+    /// <param name="spec">The criteria. Must set at least one.</param>
+    /// <param name="name">Optional label, stamped onto <see cref="Name"/>.</param>
+    /// <remarks>
+    /// A static factory rather than a constructor overload on purpose. The
+    /// existing constructor takes <c>Action&lt;DeviceFilter&gt;</c>, and a second
+    /// reference-type first parameter would make <c>new DeviceProfile(null)</c>
+    /// ambiguous (CS0121) — a source break in exactly the consumers this exists
+    /// to help.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// The spec sets no criteria, or a value cannot be parsed. The message
+    /// carries the spec's description rather than a parameter name, because the
+    /// cause is usually a configuration file rather than a call site.
+    /// </exception>
+    public static DeviceProfile FromSpec(DeviceFilterSpec spec, string? name = null)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        if (!spec.HasAnyCriteria)
+        {
+            var label = name is not null ? $" (profile: \"{name}\")" : "";
+            throw new ArgumentException(
+                $"The spec sets no criteria, so it would match every device.{label}",
+                nameof(spec));
+        }
+
+        return new DeviceProfile(new DeviceFilter().Apply(spec), name);
+    }
+
     /// <summary>Optional human-readable label for this profile.</summary>
     public string? Name { get; }
 

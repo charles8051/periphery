@@ -48,6 +48,13 @@ public class CriteriaSurfaceParityTests
             "Tags are enrichment-only; the Windows removal payload is unenriched, so Disappeared would never match.",
         [$"{nameof(DeviceWatcher)}.{nameof(DeviceFilter.WithAllTags)}"] = "See WithTag.",
         [$"{nameof(DeviceWatcher)}.{nameof(DeviceFilter.WithAnyTag)}"] = "See WithTag.",
+        // A DeviceFilterSpec can carry Active, AllTags and AnyTags — the three
+        // criteria a watcher must not honour, per the entries above. A
+        // watcher-level Apply would therefore either ignore four properties
+        // silently or throw on specs that are perfectly valid elsewhere. Bind a
+        // spec to a filter or a profile and hand the watcher a tracker instead.
+        [$"{nameof(DeviceWatcher)}.{nameof(DeviceFilter.Apply)}"] =
+            "A spec can carry Active/AllTags/AnyTags, which a watcher cannot honour; it would ignore them silently.",
     };
 
     /// <summary>
