@@ -58,6 +58,17 @@ public sealed class DeviceQuery : IAsyncEnumerable<DeviceInfo>
 
     // ── Fluent filters ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Applies every criterion set on <paramref name="spec"/>. See
+    /// <see cref="DeviceFilter.Apply"/> for the replay semantics and the
+    /// parse-failure contract.
+    /// </summary>
+    public DeviceQuery Apply(DeviceFilterSpec spec)
+    {
+        _filter.Apply(spec);
+        return this;
+    }
+
     /// <summary>Filter to a specific device category.</summary>
     public DeviceQuery OfCategory(DeviceCategory category)
     {

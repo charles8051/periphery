@@ -310,89 +310,117 @@ three of the five.
 
 ### D2 — A bindable `DeviceFilterSpec`
 
-Ship the DTO the configuration guide currently asks consumers to write.
+**Implemented, with the property set corrected.** The sketch below covered
+**14 of the 26** data-expressible criteria while simultaneously mandating a test
+that every one of them have a property. Those two statements contradicted each
+other; the test would have failed on 12 members. The same class of gap as D1's
+"five accidental gaps", found the same way — by counting rather than assuming.
 
-```csharp
-public sealed record DeviceFilterSpec
-{
-    public DeviceCategory? Category { get; init; }
-    /// <summary>Every listed tag must be present. Empty or null is no criterion.</summary>
-    public string[]? AllTags { get; init; }
+Missing from the sketch: `WithStatus`, `WithDriveType`, `WithMacAddress`,
+`WithDriver`, `WithMinResolution`, `WithUsbSpeed`, `WithParent`, `WithPortName`
+(two overloads), `WithBatteryStatus`, `PhysicalOnly`, `VirtualOnly`.
 
-    /// <summary>At least one listed tag must be present. Empty or null is no criterion.</summary>
-    public string[]? AnyTags { get; init; }
-    public string? DeviceName { get; init; }
-    public string? Manufacturer { get; init; }
-    public string? VendorId { get; init; }
-    public string? ProductId { get; init; }
-    public string? SerialNumber { get; init; }
-    public string? Id { get; init; }
-    public string? IdStartsWith { get; init; }
-    public Guid? ContainerId { get; init; }
-    public BusType? BusType { get; init; }
+#### What shipped
 
-    /// <summary>
-    /// Restrict to active (<c>true</c>) or inactive (<c>false</c>) devices.
-    /// Null is no criterion — <see cref="DeviceFilter.Active"/>'s parameter
-    /// defaults to <c>true</c>, so the tri-state is needed to keep "unset" and
-    /// "active only" distinguishable in data.
-    /// </summary>
-    public bool? Active { get; init; }
+`DeviceFilterSpec`, a non-positional `sealed record` with **24 properties**
+covering every criterion except `Where(...)`, which takes a delegate and is
+excluded by construction. Replay is `DeviceFilter.Apply(spec)`, with
+`DeviceQuery.Apply(spec)` and `DeviceProfile.FromSpec(spec, name)` alongside.
 
-    /// <summary>True if at least one criterion is set.</summary>
-    public bool HasAnyCriteria { get; }
+Six decisions worth recording, each of which changed the design from the sketch:
 
-    /// <summary>Human-readable description, for diagnostics and operator UI.</summary>
-    public override string ToString();
-}
-```
+**`Apply` calls the public criteria methods, and nothing else.** This is a
+correctness constraint, not a style preference. `DeviceFilter` carries structured
+hints providers read to narrow the OS query — `Category` drives the Windows
+class-GUID pushdown and the two enrichment flags, `VendorId`/`ProductId` narrow
+the walk, and tag methods populate `RelevantTags`. An `Apply` that hand-rolled
+equivalent `Where` predicates would match identically and silently degrade every
+spec-built filter into a full-system scan.
 
-with the replay owned here:
+**Unparseable values throw, naming the property.** The fluent
+`WithUsbId(string, string?)` answers a bad vendor id with `Where(_ => false)` — a
+permanent silent no-match. Defensible at a C# call site; the worst available
+behaviour for a config DTO, where the cause is a typo three layers up and the
+symptom is a device that never appears. `Apply` diverges deliberately, and the
+divergence is documented on both.
 
-```csharp
-public DeviceFilter Apply(DeviceFilterSpec spec);                          // on DeviceFilter
-public DeviceQuery  Matching(DeviceFilterSpec spec);                       // on DeviceQuery
-public static DeviceProfile DeviceProfile.FromSpec(                        // on DeviceProfile
-    DeviceFilterSpec spec, string? name = null);
-```
+**A misspelled member throws on the JSON path.**
+`[JsonUnmappedMemberHandling(Disallow)]`, because the default is to bind a
+wrongly-cased document to an *empty* spec — and an empty spec applied to a
+filter matches every device on the box.
 
-**A static factory, not a constructor overload.** `DeviceProfile`'s existing
-constructor takes `Action<DeviceFilter>`, and adding a second reference-type
-first parameter would make `new DeviceProfile(null)` — and any call passing a
-null-typed expression — ambiguous with CS0121. That is a source break in exactly
-the consumers this ADR is trying to help. `FromSpec` competes with nothing.
+That attribute means nothing to `IConfiguration`, which is case-insensitive and
+silently ignores keys it does not recognise. Measured: a document with
+`Category` and `Catgory` binds cleanly, keeping the first and dropping the
+second without a word. The strictness has to be asked for —
+`Get<DeviceFilterSpec>(o => o.ErrorOnUnknownConfiguration = true)` throws naming
+every unrecognised key — so the type documents both halves rather than claiming
+a guarantee it only holds on one path, and the guide's example uses the strict
+form.
 
-**Tags are two properties, not one.** `IDeviceCriteria` has three tag
-operations, and a single `Tags` array cannot say which one it means. Guessing a
-default is worse than the if-ladder it replaces, because a spec that quietly
-means *any* where the author meant *all* selects the wrong device and reports no
-error. `AllTags` and `AnyTags` are separate and may both be set; `WithTag(x)` is
-`AllTags: [x]`, so it needs no third property. Null or empty is no criterion, not
-a criterion matching everything.
+**Equality is hand-written.** The compiler compares `string[]` by reference, so
+two specs bound from the same JSON would have been unequal — while the type
+advertises value semantics by being a record, and "did the bound configuration
+change?" is asked with `==`. ADR-0047 records this exact surprise on
+`DeviceInfo.Tags`; that one was mitigated by routing comparison through a diff
+helper, which a config DTO has no equivalent of. Tags compare as sets, Ordinal,
+with null and empty equal.
 
-`DeviceFilterSpec` is a plain record with a parameterless-constructible shape, so
-`IConfiguration.Get<T>()` and `System.Text.Json` bind it with no adapter. A
-source-generated `JsonSerializerContext` entry goes alongside the existing ones
-in `Serialization/` so it round-trips under AOT.
+**`Physicality` is a named enum, not `bool?`.** `"physicality": "Virtual"` reads
+correctly where `"physical": false` does not, and both fluent methods are
+one-liners over `BusType.Software` — a classification platform work may yet
+refine. An enum can gain a member. `Active` stays `bool?`, because
+`DeviceFilter.Active(bool)` genuinely takes a boolean.
 
-Public `HasAnyCriteria` lets a consumer validate a bound configuration before
-constructing a profile, and report the error against its own configuration key
-rather than against a `configure` parameter the operator never wrote. `FromSpec`
-throws with the spec's `ToString()` in the message rather than a delegate
-parameter name.
+**`Apply` refuses an empty spec.** A spec with nothing set is a no-op, and a
+no-op on a fresh filter is a filter matching every device — the exact shape a
+mistyped configuration binds to. `IConfiguration` cannot be made strict from
+here, so this is the one point in the library where that fail-open can be turned
+into an error, and it is.
 
-The delegate overloads stay. They are the better shape for filters written in C#,
-including any using `Where(...)`, which by construction cannot be expressed as
-data.
+**Empty tag arrays are skipped, not forwarded.** `WithAnyTag([])` means "match
+nothing"; an absent configuration value must not mean that. `Apply` branches.
 
-A test asserts that every data-expressible criterion has a corresponding spec
-property, so a criterion added later cannot silently skip the spec. **Its
-subject is `DeviceFilter`'s public surface, not `IDeviceCriteria`'s.** `Active`
-is the reason: it is deliberately not an `IDeviceCriteria` member (D1), because
-it is meaningless on a watcher — but it is perfectly expressible as data, and a
-test scoped to the interface would have missed it exactly as this ADR's first
-draft did. `Where(...)` is the only member excluded, and it is excluded by
-construction rather than by omission.
+#### What was deliberately left out
+
+**String comparison.** Every string criterion uses its `OrdinalIgnoreCase`
+default. Exposing it would put `CurrentCulture` within reach of a config file and
+make matching depend on machine locale, and no consumer in the tree overrides it.
+Additive to add later.
+
+**`DeviceWatcher.Apply`.** A spec can carry `Active`, `AllTags` and `AnyTags` —
+the three criteria a watcher must not honour (D1). A watcher-level `Apply` would
+either ignore four properties silently or throw on specs valid everywhere else.
+Bind a spec to a filter or a profile and hand the watcher a tracker.
+
+**`ToSpec()`, permanently.** A `DeviceFilter` keeps no record of which method
+produced which predicate — they collapse into one list — and a filter carrying a
+`Where` lambda has no data form. The conversion is one-way by construction, and
+saying so now is cheaper than being asked for a lossy version later.
+
+#### Cost
+
+Every future criterion now needs a spec property, an `Apply` branch, and a JSON
+consideration, enforced by test. That is the intended trade and not a surprise,
+but it is a tax on adding criteria and should be named as one.
+
+---
+
+<details>
+<summary>Original D2 sketch (superseded — covered 14 of 26 criteria)</summary>
+
+A `sealed record` with `Category`, `AllTags`, `AnyTags`, `DeviceName`,
+`Manufacturer`, `VendorId`, `ProductId`, `SerialNumber`, `Id`, `IdStartsWith`,
+`ContainerId`, `BusType`, `Active`, plus `HasAnyCriteria` and `ToString()`; with
+`DeviceFilter.Apply`, `DeviceQuery.Matching`, and `DeviceProfile.FromSpec`.
+
+Two further defects in the sketch beyond the missing properties:
+`HasAnyCriteria` was written `{ get; }`, a get-only auto-property that is
+permanently `false` and participates in the generated equality; and the query
+entry point was named `Matching` while the filter's was `Apply`, which the D1
+parity test would have flagged as a missing forwarder.
+
+</details>
 
 ### D3 — `OrderBy` is the only thing that buffers
 
