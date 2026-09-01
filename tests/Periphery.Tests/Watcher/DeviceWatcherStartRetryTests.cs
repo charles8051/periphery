@@ -23,12 +23,22 @@ public class DeviceWatcherStartRetryTests
             IsActive = isActive,
         };
 
+    private static (
+        DeviceWatcher Watcher,
+        FakeDeviceMonitorProvider Monitor,
+        FakeDeviceProvider Query
+    ) BuildAll(params DeviceInfo[] devices)
+    {
+        var monitor = new FakeDeviceMonitorProvider();
+        var query = new FakeDeviceProvider(devices);
+        return (new DeviceWatcher(query, monitor), monitor, query);
+    }
+
     private static (DeviceWatcher Watcher, FakeDeviceMonitorProvider Monitor) Build(
         params DeviceInfo[] devices
     )
     {
-        var monitor = new FakeDeviceMonitorProvider();
-        var watcher = new DeviceWatcher(new FakeDeviceProvider(devices), monitor);
+        var (watcher, monitor, _) = BuildAll(devices);
         return (watcher, monitor);
     }
 
@@ -167,5 +177,71 @@ public class DeviceWatcherStartRetryTests
 
         await watcher.StartAsync();
         Assert.Single(watcher.KnownDevices);
+    }
+
+    // ── Failures after the registration succeeded ──────────────────────
+
+    [Fact]
+    public async Task ASnapshotFailure_IsRetryable_WhenTheWatcherOwnsTheProvider()
+    {
+        // The production path: the watcher mints its own provider per attempt,
+        // so it owns one and disposes it on rollback. Registration SUCCEEDS here
+        // and the snapshot is what fails — the case a registration-only test
+        // cannot reach, and the one a reviewer correctly flagged as untested.
+        var query = new FakeDeviceProvider(MakeDevice("USB\\1"), MakeDevice("USB\\2"));
+        var minted = new List<FakeDeviceMonitorProvider>();
+        await using var watcher = new DeviceWatcher(
+            query,
+            () =>
+            {
+                var m = new FakeDeviceMonitorProvider();
+                minted.Add(m);
+                return m;
+            }
+        );
+
+        query.FailEnumerationWith = new InvalidOperationException("enumeration failed");
+        query.FailAfterYielding = 1;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => watcher.StartAsync());
+
+        // Rollback disposed the provider the attempt created.
+        Assert.Single(minted);
+        Assert.Equal(1, minted[0].DisposeCount);
+
+        // So the retry mints a fresh one and succeeds, even though the first
+        // attempt got as far as a completed registration.
+        await watcher.StartAsync();
+
+        Assert.Equal(2, minted.Count);
+        Assert.Equal(2, watcher.KnownDevices.Count);
+    }
+
+    [Fact]
+    public async Task ASnapshotFailure_WithACallerSuppliedProvider_IsNotRetryable()
+    {
+        // Known limitation, pinned rather than left to be discovered.
+        //
+        // A caller-supplied provider belongs to the caller, so rollback will not
+        // dispose it — disposing would leave the retry using a disposed instance.
+        // But IDeviceMonitorProvider has no stop or reset, and every real
+        // implementation latches its start ("Dispose and create a new monitor to
+        // restart"). So once the registration has succeeded, a later failure
+        // leaves that provider started and the retry cannot re-register it.
+        //
+        // Production is unaffected: there _monitorOverride is null, the watcher
+        // owns the provider, and the test above covers it.
+        var (watcher, _, query) = BuildAll(MakeDevice("USB\\1"), MakeDevice("USB\\2"));
+        await using var _ = watcher;
+
+        query.FailEnumerationWith = new InvalidOperationException("enumeration failed");
+        query.FailAfterYielding = 1;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => watcher.StartAsync());
+
+        var second = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            watcher.StartAsync()
+        );
+        Assert.Contains("Already started", second.Message, StringComparison.Ordinal);
     }
 }

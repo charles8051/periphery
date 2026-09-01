@@ -93,9 +93,17 @@ public sealed class DeviceWatcher : IAsyncDisposable
     private int _deactivatedEventCount;
     private int _disappearedEventCount;
 
-    // Provider overrides — set only via the internal test constructor.
+    // Provider overrides — set only via the injecting constructors.
     private readonly IDeviceProvider? _providerOverride;
     private readonly IDeviceMonitorProvider? _monitorOverride;
+
+    // Mints a monitor provider per start attempt, as production does via
+    // DeviceProviderFactory. Distinct from _monitorOverride: an override is one
+    // caller-owned instance the watcher must not dispose, whereas a factory
+    // hands the attempt an instance it owns and disposes on rollback. Internal
+    // so a test can exercise the owned-provider path, which is the production
+    // one and is otherwise unreachable without real OS providers.
+    private readonly Func<IDeviceMonitorProvider>? _monitorFactory;
 
     // Tracks device IDs for which we've fired Activated, so we can
     // cascade a Deactivated event when a device disappears.
@@ -128,6 +136,20 @@ public sealed class DeviceWatcher : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(monitor);
         _providerOverride = provider;
         _monitorOverride = monitor;
+    }
+
+    /// <summary>
+    /// Creates a watcher that mints a monitor provider per start attempt, the
+    /// way production does. Unlike the instance-injecting constructor, the
+    /// watcher <b>owns</b> what the factory returns and disposes it when an
+    /// attempt is rolled back.
+    /// </summary>
+    internal DeviceWatcher(IDeviceProvider provider, Func<IDeviceMonitorProvider> monitorFactory)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(monitorFactory);
+        _providerOverride = provider;
+        _monitorFactory = monitorFactory;
     }
 
     // ── Fluent filters ─────────────────────────────────────────────────
@@ -749,7 +771,12 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 try
                 {
                     // 1. Start event watchers FIRST so no events are lost
-                    provider = _monitorOverride ?? DeviceProviderFactory.GetMonitorProvider();
+                    provider =
+                        _monitorOverride
+                        ?? _monitorFactory?.Invoke()
+                        ?? DeviceProviderFactory.GetMonitorProvider();
+
+                    // Everything except a caller-supplied instance is ours.
                     ownsProvider = _monitorOverride is null;
 
                     provider.DeviceAppeared += OnProviderAppeared;
@@ -831,6 +858,17 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// <see cref="KnownDevices"/> documents itself as empty until a start
     /// settles, and a failed attempt must not leave it reporting a snapshot that
     /// never completed.
+    /// </para>
+    /// <para>
+    /// <b>Neither choice is clean, and the residue is known.</b> Keeping the ids
+    /// is right for a device that is still attached — the retry sees it again
+    /// and does not re-raise <see cref="Activated"/>. It is wrong for one
+    /// unplugged between the failure and the retry: the handlers are detached,
+    /// so no <see cref="Disappeared"/> can arrive to remove the id, and a later
+    /// replug is then suppressed as already-connected. Clearing swaps one fault
+    /// for the other. Reconciling the two properly means diffing the retry's
+    /// snapshot against what the failed attempt recorded, which belongs with the
+    /// rest of the cross-attempt state work rather than here.
     /// </para>
     /// </remarks>
     private async Task RollBackAttemptAsync(IDeviceMonitorProvider? provider, bool ownsProvider)
