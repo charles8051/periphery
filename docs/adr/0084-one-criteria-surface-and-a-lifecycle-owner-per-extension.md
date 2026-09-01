@@ -110,10 +110,17 @@ both. Nothing in the type's contract promises this. The class implements
 ### 4. `DeviceInfo` is 51 flat nullable properties
 
 Every property of every category lives on one record. A HID mouse carries
-`DisplayMaxAvgLuminanceInNits`, `DriveType`, `MacAddress`, and
-`HidMaxFeatureReportLength`, all null. Autocomplete stops being a discovery tool
-at that width, and the type does not tell a reader which properties can ever be
-populated together.
+`DisplayBounds`, `DriveType`, `MacAddress`, and `IPAddresses`, all null — four
+fields that are populated on *some* device, just never this one. Autocomplete
+stops being a discovery tool at that width, and the type does not tell a reader
+which properties can ever be populated together.
+
+A second, larger problem sits inside the first, and it is worth not conflating
+them. Issue `#93` establishes that six display fields — `DisplayUsageKind`,
+`DisplayDpi`, `DisplayPhysicalSizeInInches` and all three luminance fields —
+have no producer anywhere in `src/` and are null on **every** device on every
+platform. That is not surface in the wrong place. It is surface that describes
+nothing, and no amount of regrouping fixes it.
 
 The flat shape is deliberate and worth keeping. It serializes cleanly, it is
 trivially `with`-able, and it avoids a polymorphic hierarchy that would force a
@@ -352,18 +359,79 @@ public readonly struct NetworkFacet { }
 
 public static class DeviceInfoFacets
 {
-    public static bool TryAsDisplay(this DeviceInfo device, out DisplayFacet facet);
-    public static DisplayFacet? AsDisplay(this DeviceInfo device);
-    // one pair per facet
+    public static DisplayFacet AsDisplay(this DeviceInfo device);
+    public static UsbFacet     AsUsb(this DeviceInfo device);
+    // one accessor per facet — no predicate, see below
 }
 ```
 
-`TryAs*` returns false when the device carries none of that facet's properties.
 Facets are views over the same record: no copying beyond the struct, no
 allocation, no second source of truth. `DeviceInfo` remains the serialization
 shape and the only thing providers populate.
 
-Purely additive and optional. Callers who prefer the flat record keep using it.
+**D4 ships no predicate.** An earlier draft paired each facet with
+`TryAsDisplay(out …)`, first keyed on whether the facet's properties were
+populated and then — after that was correctly rejected — keyed on
+`Category`/`Tags`. Both are wrong, for different reasons, and the second is the
+instructive one.
+
+Keying on populated-ness reads the absence of a *reading* as the absence of a
+*capability*, which is the inference ADR-0073 exists to reject. A monitor whose
+enrichment did not run would report "not a display", and a caller would believe
+it.
+
+But keying on `Category`/`Tags` makes the predicate a **second spelling of a
+question the library already answers**. `DeviceTags.Carries` folds category and
+tags into one call today (ADR-0047, ADR-0051). A `TryAsDisplay` defined as
+`Carries` plus a struct forces every caller to decide which of two identical
+questions to ask, and every facet to define its own mapping — six more places for
+the answers to diverge.
+
+So classification stays exactly where it is, and D4 does only the thing that is
+actually missing:
+
+```csharp
+// classification — unchanged, one spelling
+if (DeviceTags.Carries(device, DeviceTags.Imaging)) { … }
+
+// grouping — what D4 adds
+var display = device.AsDisplay();
+if (display.Bounds is { } bounds) { … }
+```
+
+`As*` is total. It always returns a facet, because it is a **view, not a cast**.
+Reading `AsDisplay().Bounds` on a mouse yields null, which is exactly what
+reading `device.DisplayBounds` yields today — D4 changes how those fields are
+grouped, not what they say. That also keeps the two cases a predicate
+conflates properly distinct:
+
+| Situation | `DeviceTags.Carries` | Facet fields |
+| --- | --- | --- |
+| Not a display | false | null |
+| A display the OS did not describe (enrichment did not run) | true | null |
+| A described display | true | populated |
+
+The middle row is the one a predicate cannot express and the reason not to build
+one.
+
+**`DisplayFacet` cannot ship the six fields that have no producer.** Issue `#93`
+establishes that `DisplayUsageKind`, `DisplayDpi`,
+`DisplayPhysicalSizeInInches`, and all three luminance fields are populated by
+nothing anywhere in `src/` and are permanently null on every platform. A typed
+facade over them would make dead surface look deliberate and harder to remove. So
+D4 waits on `#93`, and takes whichever answer it reaches — a producer, or a
+deletion.
+
+Otherwise purely additive and optional. Callers who prefer the flat record keep
+using it.
+
+**What this does not do.** `DeviceInfo.Properties` is not the mechanism for this
+and is not extended by it. That bag is documented as intentionally narrow —
+inherently array-typed or purely diagnostic raw platform data, three well-known
+Windows keys — and its stated policy is that anything scalar and universally
+meaningful gets *promoted* to a typed field. That promotion rule is why the
+record is 51 wide. D4 changes how the promoted surface is *read*, and proposes no
+change to what gets promoted or to what the bag holds.
 
 ### D5 — `CameraDeviceProxy`, and a stall deadline on the session
 
@@ -575,6 +643,9 @@ frozen at whatever they last read.
   On a large box that is a few hundred records, and it is transient.
 - Six facet structs are six more types in the core namespace, for information
   already reachable.
+- D4 adds six struct types and an accessor each, for information already
+  reachable off the record. The grouping is the whole of the benefit, so it is
+  worth confirming the autocomplete problem is felt before paying for it.
 - `CameraDeviceProxy` adds a dependency from `Periphery.Camera` onto the core
   proxy machinery. `Periphery.Camera` already references core, so no new package
   edge.
@@ -624,7 +695,9 @@ where the two differ.
 1. **D1** — the interface, and the five gap closures it implies. Additive.
 2. **D2** — `DeviceFilterSpec` on top of D1's settled vocabulary. Additive.
 3. **D6 policy overload** — additive. The `_started` rollback ships with D3.
-4. **D4** — facets. Additive, independent of the rest.
+4. **D4** — facets. Additive, and independent of D1–D3 and D5–D6, but
+   **blocked on `#93`**: `DisplayFacet` cannot be specified until the six
+   display fields with no producer either get one or are deleted.
 5. **D3** — streaming terminals. Behavioural; lands on a major with the
    `_started` rollback.
 6. **D5** — `CameraDeviceProxy` and `StallTimeout`. Largest single piece,
@@ -645,7 +718,11 @@ than a fourth copy of one.
 - ADR-0008 — fluent tracker registration (`AddTracker` / `AddTrackers`)
 - ADR-0045 — substrate independence from Crossbar (the `IFrame` / `IRefCounted`
   participation protocol `#121` cites as unavailable to Periphery)
+- ADR-0047 — device tags vs multi-category; `Category` is OS subsystem identity,
+  `Tags` are capability annotations. D4's `TryAs*` answers from these
 - ADR-0051 — capability categories demoted to tags
+- ADR-0073 — Periphery reports observations, not verdicts. Why D4's predicate
+  cannot key on whether a property happens to be populated
 - ADR-0055 — injectable reconnect policy (`IRecoveryPolicy`), shipped in
   `DeviceProxyBase` with `ExponentialBackoffRecoveryPolicy.Default`
 - ADR-0060 — device reset and recovery escalation
@@ -663,9 +740,11 @@ than a fourth copy of one.
   `DeviceProxyBase`. Same duplication class as D1; worth doing before D5.
 - `#17` — teardown-time backend error mis-classified as a capture fault.
   Adjacent to `CameraStallException` classification.
-- `#16` — stale. It asks for ADR-0055's `IReconnectPolicy`, which shipped as
-  `IRecoveryPolicy`; `DeviceProxyBase` consults it and `ConnectionState` exists.
-  Should be closed.
+- `#93` — six `DeviceInfo` display properties have no producer and are
+  permanently null. Blocks D4's `DisplayFacet`.
+- `#16` — closed during this review. It asked for ADR-0055's `IReconnectPolicy`,
+  which shipped as `IRecoveryPolicy`; `DeviceProxyBase` consults it and
+  `ConnectionState` exists.
 
 ### Guides
 
