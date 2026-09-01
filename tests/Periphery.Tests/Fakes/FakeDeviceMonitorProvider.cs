@@ -9,6 +9,22 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
 {
     private bool _started;
 
+    /// <summary>
+    /// When set, <see cref="StartAsync"/> throws this instead of starting —
+    /// the registration-failure half of a start attempt. Cleared after it
+    /// throws once, so a retry proceeds normally.
+    /// </summary>
+    public Exception? FailNextStartWith { get; set; }
+
+    /// <summary>How many times <see cref="StartAsync"/> has been entered.</summary>
+    public int StartAttempts { get; private set; }
+
+    /// <summary>How many times <see cref="DisposeAsync"/> has been called.</summary>
+    public int DisposeCount { get; private set; }
+
+    /// <summary>Handlers currently attached to <see cref="DeviceAppeared"/>.</summary>
+    public int AppearedSubscriberCount => DeviceAppeared?.GetInvocationList().Length ?? 0;
+
     public event EventHandler<DeviceChangeEventArgs>? DeviceAppeared;
     public event EventHandler<DeviceChangeEventArgs>? DeviceDisappeared;
     public event EventHandler<DeviceChangeEventArgs>? DeviceActivated;
@@ -17,6 +33,14 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
 
     public Task StartAsync(DeviceFilter filter, CancellationToken ct = default)
     {
+        StartAttempts++;
+
+        if (FailNextStartWith is { } fault)
+        {
+            FailNextStartWith = null;
+            return Task.FromException(fault);
+        }
+
         if (_started)
             throw new InvalidOperationException("Already started");
 
@@ -74,6 +98,7 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
 
     public ValueTask DisposeAsync()
     {
+        DisposeCount++;
         _started = false;
         return ValueTask.CompletedTask;
     }
