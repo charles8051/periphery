@@ -50,6 +50,13 @@ public class CriteriaSurfaceParityTests
         [$"{nameof(DeviceWatcher)}.{nameof(DeviceFilter.WithAnyTag)}"] = "See WithTag.",
     };
 
+    /// <summary>
+    /// Shared context for reading nullable-reference annotations. Not
+    /// thread-safe, and xUnit runs the methods of one class serially, so one
+    /// instance for the class is correct.
+    /// </summary>
+    private static readonly NullabilityInfoContext Nullability = new();
+
     private static MethodInfo[] CriteriaOf(Type t) =>
         [
             .. t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
@@ -137,6 +144,17 @@ public class CriteriaSurfaceParityTests
                 var gotParams = got.IsDefined(typeof(ParamArrayAttribute), inherit: false);
                 if (wantParams != gotParams)
                     mismatches.Add($"{where}: params modifier present on one side only");
+
+                // Nullability is erased from ParameterType, so string and string?
+                // are the same runtime type and everything above would pass a
+                // forwarder that changed one to the other. NullabilityInfoContext
+                // reads the annotation attributes the compiler emitted.
+                var wantNull = Nullability.Create(want).WriteState;
+                var gotNull = Nullability.Create(got).WriteState;
+                if (wantNull != gotNull)
+                    mismatches.Add(
+                        $"{where}: nullability is {gotNull} on the forwarder, {wantNull} on DeviceFilter"
+                    );
             }
         }
 
@@ -162,6 +180,46 @@ public class CriteriaSurfaceParityTests
                 filterNames.Contains(methodName),
                 $"Exclusion '{key}' names '{methodName}', which DeviceFilter no longer declares. "
                     + "Remove the stale entry."
+            );
+        }
+    }
+
+    /// <summary>
+    /// An exclusion suppresses the parity check for one member on one surface.
+    /// If that member is later added anyway, the exclusion would go on
+    /// suppressing the check forever — and silently, on exactly the members that
+    /// are absent because adding them is a bug (see the tag entries).
+    /// </summary>
+    [Fact]
+    public void EveryExclusion_DescribesAMemberThatIsActuallyAbsent()
+    {
+        var surfaces = new[] { typeof(DeviceQuery), typeof(DeviceWatcher) }.ToDictionary(
+            t => t.Name,
+            StringComparer.Ordinal
+        );
+
+        foreach (var (key, reason) in Excluded)
+        {
+            var split = key.IndexOf('.');
+            var surfaceName = key[..split];
+            var methodName = key[(split + 1)..];
+
+            Assert.True(
+                surfaces.TryGetValue(surfaceName, out var surface),
+                $"Exclusion '{key}' names surface '{surfaceName}', which is not one of the "
+                    + $"surfaces under test ({string.Join(", ", surfaces.Keys)})."
+            );
+
+            var present = surface!
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Any(m => m.Name == methodName && m.ReturnType == surface && !m.IsSpecialName);
+
+            Assert.False(
+                present,
+                $"{surfaceName}.{methodName} now exists, but an exclusion still says it should not:"
+                    + $"{Environment.NewLine}  \"{reason}\"{Environment.NewLine}"
+                    + "Either that reason no longer holds — delete the exclusion so parity is "
+                    + "enforced — or the method was added in error and should be removed."
             );
         }
     }
