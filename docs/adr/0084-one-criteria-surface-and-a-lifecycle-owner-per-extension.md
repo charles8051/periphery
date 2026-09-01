@@ -344,11 +344,19 @@ behaviour for a config DTO, where the cause is a typo three layers up and the
 symptom is a device that never appears. `Apply` diverges deliberately, and the
 divergence is documented on both.
 
-**A misspelled member throws too.** `[JsonUnmappedMemberHandling(Disallow)]`,
-because the default is to bind a wrongly-cased document to an *empty* spec — and
-an empty spec applied to a filter matches every device on the box. The library's
-own guide used PascalCase keys, which `IConfiguration` accepts and
-`System.Text.Json` would have dropped silently.
+**A misspelled member throws on the JSON path.**
+`[JsonUnmappedMemberHandling(Disallow)]`, because the default is to bind a
+wrongly-cased document to an *empty* spec — and an empty spec applied to a
+filter matches every device on the box.
+
+That attribute means nothing to `IConfiguration`, which is case-insensitive and
+silently ignores keys it does not recognise. Measured: a document with
+`Category` and `Catgory` binds cleanly, keeping the first and dropping the
+second without a word. The strictness has to be asked for —
+`Get<DeviceFilterSpec>(o => o.ErrorOnUnknownConfiguration = true)` throws naming
+every unrecognised key — so the type documents both halves rather than claiming
+a guarantee it only holds on one path, and the guide's example uses the strict
+form.
 
 **Equality is hand-written.** The compiler compares `string[]` by reference, so
 two specs bound from the same JSON would have been unequal — while the type

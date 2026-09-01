@@ -7,35 +7,22 @@ This pattern shows how to define tracked devices in `appsettings.json`, deserial
 ## 1. Configuration
 
 ```json
-// appsettings.json
+// appsettings.json — keyed, so an overlay can override one entry by name
 {
   "DeviceTracking": {
-    "Devices": [
-      {
-        "Name": "PrimaryMouse",
-        "Category": "Usb",
-        "VendorId": "046D",
-        "ProductId": "C52B"
-      },
-      {
-        "Name": "Dock",
-        "Category": "Usb",
-        "SerialNumber": "DOCK-001"
-      },
-      {
-        "Name": "Headphones",
-        "Category": "Bluetooth",
-        "DeviceName": "AirPods"
-      },
-      {
-        "Name": "ExternalDisplay",
-        "Category": "Monitor",
-        "Manufacturer": "Dell"
-      }
-    ]
+    "Devices": {
+      "PrimaryMouse":    { "Category": "Usb",       "VendorId": "046D", "ProductId": "C52B" },
+      "Dock":            { "Category": "Usb",       "SerialNumber": "DOCK-001" },
+      "Headphones":      { "Category": "Bluetooth", "DeviceName": "AirPods" },
+      "ExternalDisplay": { "Category": "Monitor",   "Manufacturer": "Dell" }
+    }
   }
 }
 ```
+
+Each value binds straight to a `DeviceFilterSpec`; the key becomes the tracker
+name. A list would work too, but a dictionary is what lets a per-machine overlay
+override `PrimaryMouse` without restating the other three.
 
 ---
 
@@ -138,8 +125,12 @@ public sealed class DeviceTrackingService : IHostedService, IAsyncDisposable
         // They start at ActivityStatus.Unknown — "not yet enumerated", which
         // is distinct from Absent (ADR-0056). Events can be wired here; they
         // fire once the watcher starts and initial enumeration settles.
+        // Strict binding: ErrorOnUnknownConfiguration makes a misspelled key
+        // throw instead of binding to a spec that quietly drops the criterion.
+        // See "What the spec covers" above — this is the config-side equivalent
+        // of the JSON path's unmapped-member rejection.
         _trackers = options.Value.Devices
-            .Select(d => d.ToTracker())
+            .Select(kv => new DeviceTracker(DeviceProfile.FromSpec(kv.Value, kv.Key)))
             .ToArray();
 
         foreach (var tracker in _trackers)
@@ -279,7 +270,7 @@ mouse.Subscribe(new MyObserver());
 
 | Concern | How it's handled |
 |---|---|
-| **Serialization** | `DeviceDefinition` is a plain POCO — no lambdas, no internal state. JSON/YAML/TOML friendly. |
+| **Serialization** | `DeviceFilterSpec` is owned by the library and covers every criterion; a test enforces that. No hand-written DTO to fall behind. |
 | **Eager creation** | Trackers are created in the constructor, before the watcher exists. Events are wired once. |
 | **Single OS subscription** | `Devices.Watch().AddTrackers(trackers)` opens one SetupAPI/udev/IOKit subscription. Per-tracker matching happens in-memory. |
 | **Survivability** | Trackers outlive the watcher. If `StopAsync` / `DisposeAsync` is called, trackers go inert but subscribers remain. `StartAsync` re-attaches them to a fresh watcher. |
@@ -326,62 +317,42 @@ Single-profile devices (no `Profiles` array) continue to use the flat fields
 ### DTOs
 
 ```csharp
-public sealed class ProfileDefinition
-{
-    public string? Name { get; set; }
-    public DeviceCategory? Category { get; set; }
-    public string? DeviceName { get; set; }
-    public string? Manufacturer { get; set; }
-    public string? VendorId { get; set; }
-    public string? ProductId { get; set; }
-    public string? SerialNumber { get; set; }
-
-    public DeviceProfile ToProfile() => new(filter =>
-    {
-        if (Category.HasValue)   filter.OfCategory(Category.Value);
-        if (DeviceName is not null) filter.WithName(DeviceName);
-        if (Manufacturer is not null) filter.ByManufacturer(Manufacturer);
-        if (VendorId is not null) filter.WithUsbId(VendorId, ProductId);
-        if (SerialNumber is not null) filter.WithSerialNumber(SerialNumber);
-    }, name: Name);
-}
-
 public sealed class DeviceDefinition
 {
-    public required string Name { get; set; }
+    /// Profiles tried in order until one resolves to exactly one device.
+    /// Keyed so an overlay can add a higher-priority entry without restating
+    /// the base set; the key becomes DeviceProfile.Name and surfaces on
+    /// DeviceTracker.ActiveProfile, so diagnostics can report which one won.
+    public Dictionary<string, DeviceFilterSpec> Profiles { get; set; } = new();
 
-    // ── Single-profile shorthand ──────────────────────────────────────
-    public DeviceCategory? Category { get; set; }
-    public string? DeviceName { get; set; }
-    public string? Manufacturer { get; set; }
-    public string? VendorId { get; set; }
-    public string? ProductId { get; set; }
-    public string? SerialNumber { get; set; }
-    public BusType? BusType { get; set; }
+    public DeviceTracker ToTracker(string name) =>
+        new(name, [.. Profiles.Select(kv => DeviceProfile.FromSpec(kv.Value, kv.Key))]);
+}
 
-    // ── Multi-profile (takes precedence when non-empty) ───────────────
-    public List<ProfileDefinition> Profiles { get; set; } = [];
-
-    public DeviceTracker ToTracker()
-    {
-        if (Profiles.Count > 0)
-            return new DeviceTracker(Name, [.. Profiles.Select(p => p.ToProfile())]);
-
-        return new DeviceTracker(filter =>
-        {
-            if (Category.HasValue)      filter.OfCategory(Category.Value);
-            if (DeviceName is not null)  filter.WithName(DeviceName);
-            if (Manufacturer is not null) filter.ByManufacturer(Manufacturer);
-            if (VendorId is not null)    filter.WithUsbId(VendorId, ProductId);
-            if (SerialNumber is not null) filter.WithSerialNumber(SerialNumber);
-            if (BusType.HasValue)       filter.WithBusType(BusType.Value);
-        }, name: Name);
-    }
+public sealed class DeviceTrackingOptions
+{
+    public Dictionary<string, DeviceDefinition> Devices { get; set; } = new();
 }
 ```
 
-No changes are needed in `DeviceTrackingService` — `ToTracker()` already returns a
-`DeviceTracker`, regardless of whether it wraps one profile or many.
+```json
+{
+  "DeviceTracking": {
+    "Devices": {
+      "Mouse": {
+        "Profiles": {
+          "by-serial": { "Category": "Usb", "SerialNumber": "M-12345" },
+          "by-model":  { "Category": "Usb", "VendorId": "046D", "ProductId": "C52B" }
+        }
+      }
+    }
+  }
+}
+```
+
+There is no hand-written replay here and no if-ladder — `DeviceProfile.FromSpec`
+owns it, so a criterion added to `DeviceFilter` cannot silently go missing from
+your configuration layer.
 
 ### Reading resolved state
 

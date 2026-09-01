@@ -50,6 +50,24 @@ namespace Periphery;
 /// yields <c>["Usb","Hid"]</c>, because the override replaces index 0 only. Set
 /// tag arrays in one layer, or clear them explicitly.
 /// </para>
+/// <para>
+/// <b>A misspelled member is rejected on the JSON path only.</b> This type is
+/// declared <see cref="JsonUnmappedMemberHandling.Disallow"/>, so
+/// <c>System.Text.Json</c> throws on an unknown or wrongly-cased member rather
+/// than binding it to an empty spec that matches every device. That attribute
+/// means nothing to <c>IConfiguration</c>, which is case-insensitive and
+/// silently ignores keys it does not recognise — so <c>"catgory"</c> binds to a
+/// spec with no category and no error.
+/// </para>
+/// <para>
+/// Ask the binder for the same strictness explicitly:
+/// <code>
+/// config.Get&lt;DeviceFilterSpec&gt;(o =&gt; o.ErrorOnUnknownConfiguration = true);
+/// </code>
+/// It throws naming every unrecognised key. Prefer it wherever the
+/// configuration is operator-written, because the failure it prevents is a
+/// filter that silently matches more devices than intended.
+/// </para>
 /// </remarks>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DeviceFilterSpec
@@ -280,14 +298,16 @@ public sealed record DeviceFilterSpec
         return hash.ToHashCode();
     }
 
-    /// <summary>Null and empty are the same absent criterion; order does not matter.</summary>
+    /// <summary>
+    /// Null and empty are the same absent criterion; order does not matter, and
+    /// neither do duplicates — <c>["Printer"]</c> and
+    /// <c>["Printer","Printer"]</c> replay identically, so they compare equal.
+    /// </summary>
     private static bool TagsEqual(string[]? a, string[]? b)
     {
-        var left = a is { Length: > 0 } ? a : [];
-        var right = b is { Length: > 0 } ? b : [];
-        if (left.Length != right.Length)
-            return false;
-        return left.ToHashSet(StringComparer.Ordinal).SetEquals(right);
+        var left = (a is { Length: > 0 } ? a : []).ToHashSet(StringComparer.Ordinal);
+        var right = (b is { Length: > 0 } ? b : []).ToHashSet(StringComparer.Ordinal);
+        return left.SetEquals(right);
     }
 
     private static void AddTags(ref HashCode hash, string[]? tags)
@@ -297,11 +317,12 @@ public sealed record DeviceFilterSpec
             hash.Add(0);
             return;
         }
-        // Order-independent, to agree with TagsEqual.
+        // Order- and duplicate-independent, to agree with TagsEqual.
+        var distinct = tags.ToHashSet(StringComparer.Ordinal);
         var acc = 0;
-        foreach (var tag in tags)
+        foreach (var tag in distinct)
             acc ^= StringComparer.Ordinal.GetHashCode(tag);
-        hash.Add(tags.Length);
+        hash.Add(distinct.Count);
         hash.Add(acc);
     }
 

@@ -419,6 +419,64 @@ public class DeviceFilterSpecTests
     }
 
     [Fact]
+    public void ConfigurationSilentlyIgnoresAnUnknownKey_UnlessAskedNotTo()
+    {
+        // JsonUnmappedMemberHandling is a System.Text.Json attribute and means
+        // nothing to IConfiguration. A misspelled key therefore binds to a spec
+        // that quietly drops the criterion — a filter matching MORE devices than
+        // intended. The type's docs say so, and this pins both halves.
+        var json = """{ "Category": "Camera", "Catgory": "Usb" }""";
+        var config = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            .Build();
+
+        var lenient = config.Get<DeviceFilterSpec>();
+        Assert.Equal(DeviceCategory.Camera, lenient!.Category);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            config.Get<DeviceFilterSpec>(o => o.ErrorOnUnknownConfiguration = true)
+        );
+        Assert.Contains("Catgory", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EveryEnumProperty_DeserialisesByName_ThroughTheGeneratedContext()
+    {
+        // Only DriveType needed a property-level converter; the five Periphery
+        // enums carry a type-level one that survives Nullable<T> under source
+        // generation. This is the documented JSON shape, so it must round-trip.
+        var json = """
+            {"category":"Usb","busType":"USB","status":"OK","usbSpeed":"High",
+             "batteryStatus":"Charging","driveType":"Fixed","physicality":"Virtual"}
+            """;
+
+        var spec = JsonSerializer.Deserialize(
+            json,
+            DeviceFilterSpecJsonContext.Default.DeviceFilterSpec
+        );
+
+        Assert.NotNull(spec);
+        Assert.Equal(DeviceCategory.Usb, spec!.Category);
+        Assert.Equal(Periphery.BusType.USB, spec.BusType);
+        Assert.Equal(DeviceStatus.OK, spec.Status);
+        Assert.Equal(Periphery.UsbSpeed.High, spec.UsbSpeed);
+        Assert.Equal(Periphery.BatteryStatus.Charging, spec.BatteryStatus);
+        Assert.Equal(System.IO.DriveType.Fixed, spec.DriveType);
+        Assert.Equal(DevicePhysicality.Virtual, spec.Physicality);
+    }
+
+    [Fact]
+    public void DuplicateTags_AreEqualToTheDistinctSet()
+    {
+        // Duplicates replay identically, so set semantics must ignore them.
+        var a = new DeviceFilterSpec { AllTags = ["Printer"] };
+        var b = new DeviceFilterSpec { AllTags = ["Printer", "Printer"] };
+
+        Assert.Equal(a, b);
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
+    }
+
+    [Fact]
     public void TheTwoJsonContexts_AgreeOnOptions()
     {
         var spec = DeviceFilterSpecJsonContext.Default.Options;
