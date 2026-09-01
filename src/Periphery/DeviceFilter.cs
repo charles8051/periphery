@@ -362,12 +362,18 @@ public sealed class DeviceFilter
         ArgumentNullException.ThrowIfNull(tags);
         if (tags.Length == 0)
             return this;
-        for (int i = 0; i < tags.Length; i++)
-            TrackTag(tags[i]);
+        // Snapshot the caller's array. The predicate below outlives this call and
+        // would otherwise read whatever the caller's array holds at match time —
+        // so mutating it afterwards silently rewrote the filter's criteria, even
+        // on a DeviceWatcher that had already started and whose ThrowIfStarted
+        // guard had long since passed.
+        var snapshot = (string[])tags.Clone();
+        for (int i = 0; i < snapshot.Length; i++)
+            TrackTag(snapshot[i]);
         return Where(d =>
         {
-            for (int i = 0; i < tags.Length; i++)
-                if (!DeviceTags.Carries(d, tags[i])) return false;
+            for (int i = 0; i < snapshot.Length; i++)
+                if (!DeviceTags.Carries(d, snapshot[i])) return false;
             return true;
         });
     }
@@ -382,12 +388,15 @@ public sealed class DeviceFilter
         ArgumentNullException.ThrowIfNull(tags);
         if (tags.Length == 0)
             return Where(_ => false);
-        for (int i = 0; i < tags.Length; i++)
-            TrackTag(tags[i]);
+        // Snapshot — see WithAllTags for why the caller's array must not be
+        // captured by the predicate.
+        var snapshot = (string[])tags.Clone();
+        for (int i = 0; i < snapshot.Length; i++)
+            TrackTag(snapshot[i]);
         return Where(d =>
         {
-            for (int i = 0; i < tags.Length; i++)
-                if (DeviceTags.Carries(d, tags[i])) return true;
+            for (int i = 0; i < snapshot.Length; i++)
+                if (DeviceTags.Carries(d, snapshot[i])) return true;
             return false;
         });
     }
