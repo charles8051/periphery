@@ -110,16 +110,17 @@ both. Nothing in the type's contract promises this. The class implements
 ### 4. `DeviceInfo` is 51 flat nullable properties
 
 Every property of every category lives on one record. A HID mouse carries
-`DisplayMaxAvgLuminanceInNits`, `DriveType`, `MacAddress`, and
-`HidMaxFeatureReportLength`, all null. Autocomplete stops being a discovery tool
-at that width, and the type does not tell a reader which properties can ever be
-populated together.
+`DisplayBounds`, `DriveType`, `MacAddress`, and `IPAddresses`, all null — four
+fields that are populated on *some* device, just never this one. Autocomplete
+stops being a discovery tool at that width, and the type does not tell a reader
+which properties can ever be populated together.
 
-`DisplayMaxAvgLuminanceInNits` turns out to be the wrong example for the point,
-and the right one for a larger problem: issue `#93` establishes it has no
-producer anywhere in `src/`. It is not clutter on a mouse, it is null on every
-device on every platform, along with five other display fields. Some of the width
-is not misplaced properties but properties that describe nothing at all.
+A second, larger problem sits inside the first, and it is worth not conflating
+them. Issue `#93` establishes that six display fields — `DisplayUsageKind`,
+`DisplayDpi`, `DisplayPhysicalSizeInInches` and all three luminance fields —
+have no producer anywhere in `src/` and are null on **every** device on every
+platform. That is not surface in the wrong place. It is surface that describes
+nothing, and no amount of regrouping fixes it.
 
 The flat shape is deliberate and worth keeping. It serializes cleanly, it is
 trivially `with`-able, and it avoids a polymorphic hierarchy that would force a
@@ -358,9 +359,9 @@ public readonly struct NetworkFacet { }
 
 public static class DeviceInfoFacets
 {
-    public static bool TryAsDisplay(this DeviceInfo device, out DisplayFacet facet);
-    public static DisplayFacet? AsDisplay(this DeviceInfo device);
-    // one pair per facet
+    public static DisplayFacet AsDisplay(this DeviceInfo device);
+    public static UsbFacet     AsUsb(this DeviceInfo device);
+    // one accessor per facet — no predicate, see below
 }
 ```
 
@@ -368,35 +369,58 @@ Facets are views over the same record: no copying beyond the struct, no
 allocation, no second source of truth. `DeviceInfo` remains the serialization
 shape and the only thing providers populate.
 
-**`TryAs*` answers from `Category` and `Tags`, never from whether the properties
-happen to be populated.** This is the part worth being careful about, because
-the library already answers "what kind of thing is this device" twice, and a
-third answer that disagrees with the other two is worse than no answer.
+**D4 ships no predicate.** An earlier draft paired each facet with
+`TryAsDisplay(out …)`, first keyed on whether the facet's properties were
+populated and then — after that was correctly rejected — keyed on
+`Category`/`Tags`. Both are wrong, for different reasons, and the second is the
+instructive one.
 
-`Category` is the OS subsystem that surfaced the device and `Tags` are its
-capabilities (ADR-0047, ADR-0051), with `DeviceTags.Carries` already folding the
-category fallback into one call. `TryAsDisplay` is that question again, so it
-delegates to it.
+Keying on populated-ness reads the absence of a *reading* as the absence of a
+*capability*, which is the inference ADR-0073 exists to reject. A monitor whose
+enrichment did not run would report "not a display", and a caller would believe
+it.
 
-Keying the predicate on populated-ness instead would read the absence of a
-*reading* as the absence of a *capability* — the inference ADR-0073 rejects, and
-in this shape it produces a genuinely wrong answer: a monitor whose enrichment
-did not run would report `TryAsDisplay == false` and a caller would conclude it
-is not a display.
+But keying on `Category`/`Tags` makes the predicate a **second spelling of a
+question the library already answers**. `DeviceTags.Carries` folds category and
+tags into one call today (ADR-0047, ADR-0051). A `TryAsDisplay` defined as
+`Carries` plus a struct forces every caller to decide which of two identical
+questions to ask, and every facet to define its own mapping — six more places for
+the answers to diverge.
 
-Two consequences follow:
+So classification stays exactly where it is, and D4 does only the thing that is
+actually missing:
 
-- **A facet may come back with every field null.** That is a device the OS did
-  not describe, which is a real answer and a different one from "not a display".
-  Callers check the individual fields, which are nullable for exactly this
-  reason.
-- **`DisplayFacet` cannot ship the six fields that have no producer.** Issue
-  `#93` establishes that `DisplayUsageKind`, `DisplayDpi`,
-  `DisplayPhysicalSizeInInches`, and all three luminance fields are populated by
-  nothing anywhere in `src/` and are permanently null on every platform. A typed
-  facade over them would make dead surface look deliberate and harder to remove.
-  So D4 waits on `#93`, and takes whichever answer it reaches — a producer, or a
-  deletion.
+```csharp
+// classification — unchanged, one spelling
+if (DeviceTags.Carries(device, DeviceTags.Imaging)) { … }
+
+// grouping — what D4 adds
+var display = device.AsDisplay();
+if (display.Bounds is { } bounds) { … }
+```
+
+`As*` is total. It always returns a facet, because it is a **view, not a cast**.
+Reading `AsDisplay().Bounds` on a mouse yields null, which is exactly what
+reading `device.DisplayBounds` yields today — D4 changes how those fields are
+grouped, not what they say. That also keeps the two cases a predicate
+conflates properly distinct:
+
+| Situation | `DeviceTags.Carries` | Facet fields |
+| --- | --- | --- |
+| Not a display | false | null |
+| A display the OS did not describe (enrichment did not run) | true | null |
+| A described display | true | populated |
+
+The middle row is the one a predicate cannot express and the reason not to build
+one.
+
+**`DisplayFacet` cannot ship the six fields that have no producer.** Issue `#93`
+establishes that `DisplayUsageKind`, `DisplayDpi`,
+`DisplayPhysicalSizeInInches`, and all three luminance fields are populated by
+nothing anywhere in `src/` and are permanently null on every platform. A typed
+facade over them would make dead surface look deliberate and harder to remove. So
+D4 waits on `#93`, and takes whichever answer it reaches — a producer, or a
+deletion.
 
 Otherwise purely additive and optional. Callers who prefer the flat record keep
 using it.
@@ -619,10 +643,9 @@ frozen at whatever they last read.
   On a large box that is a few hundred records, and it is transient.
 - Six facet structs are six more types in the core namespace, for information
   already reachable.
-- D4's `TryAs*` is a third spelling of a classification question `Category` and
-  `Tags` already answer. Delegating to `DeviceTags.Carries` keeps the three from
-  disagreeing, but it is one more place a caller can ask, and the grouping is the
-  only thing it adds over asking directly.
+- D4 adds six struct types and an accessor each, for information already
+  reachable off the record. The grouping is the whole of the benefit, so it is
+  worth confirming the autocomplete problem is felt before paying for it.
 - `CameraDeviceProxy` adds a dependency from `Periphery.Camera` onto the core
   proxy machinery. `Periphery.Camera` already references core, so no new package
   edge.
