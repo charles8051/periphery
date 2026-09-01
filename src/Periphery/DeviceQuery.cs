@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -383,47 +384,147 @@ public sealed class DeviceQuery : IAsyncEnumerable<DeviceInfo>
 
     // ── IAsyncEnumerable ───────────────────────────────────────────────
 
-    public async IAsyncEnumerator<DeviceInfo> GetAsyncEnumerator(
-        CancellationToken ct = default)
+    /// <summary>
+    /// Enumerates matching devices.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b><see cref="OrderBy"/> is the only operator that buffers.</b> A sort
+    /// cannot name its first result without seeing every candidate; a limit can.
+    /// So a query with no <see cref="OrderBy"/> streams each match as the
+    /// provider yields it, and one with <see cref="Take(int)"/> alone stops the
+    /// source enumeration once it has produced that many.
+    /// </para>
+    /// <para>
+    /// That is what makes <see cref="FirstOrDefaultAsync"/> and
+    /// <see cref="AnyAsync"/> stop at the first match instead of walking every
+    /// device on the box. The walk is not free: on Windows each device costs a
+    /// cfgmgr32 property read, and monitor and battery enrichment are opted into
+    /// by the filter itself — so a <see cref="FirstOrDefaultAsync"/> for one
+    /// monitor previously paid a full-box walk with monitor enrichment on.
+    /// </para>
+    /// <para>
+    /// Streamed results come out in provider order, which is what the unordered
+    /// path already produced.
+    /// </para>
+    /// </remarks>
+    public async IAsyncEnumerator<DeviceInfo> GetAsyncEnumerator(CancellationToken ct = default)
     {
         _logger.LogDebug("Starting device query enumeration");
 
         var provider = _providerOverride ?? DeviceProviderFactory.GetProvider();
-        var stream = provider.EnumerateAsync(_filter, ct);
 
+        if (_orderBy is null)
+        {
+            await foreach (var device in StreamAsync(provider, ct).ConfigureAwait(false))
+                yield return device;
+
+            yield break;
+        }
+
+        await foreach (var device in SortedAsync(provider, ct).ConfigureAwait(false))
+            yield return device;
+    }
+
+    /// <summary>
+    /// The streaming path: yield each match as it arrives, and stop the source
+    /// once <see cref="Take(int)"/> has been satisfied.
+    /// </summary>
+    private async IAsyncEnumerable<DeviceInfo> StreamAsync(
+        IDeviceProvider provider,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        int totalEnumerated = 0;
+        int yieldedCount = 0;
+
+        try
+        {
+            await foreach (
+                var device in provider
+                    .EnumerateAsync(_filter, ct)
+                    .WithCancellation(ct)
+                    .ConfigureAwait(false)
+            )
+            {
+                totalEnumerated++;
+
+                // Provider-side narrowing is a hint only; Matches is the truth.
+                if (!_filter.Matches(device))
+                    continue;
+
+                _logger.LogTrace(
+                    "Device matched filter: {DeviceId} ({DeviceName})",
+                    device.Id,
+                    device.Name ?? "(unnamed)");
+
+                yieldedCount++;
+                yield return device;
+
+                // Leaving the loop here disposes the provider's enumerator
+                // through this await foreach's finally. Draining it instead
+                // would make the limit free of nothing, which is exactly what
+                // the old unconditional buffer did.
+                if (_limit.HasValue && yieldedCount >= _limit.Value)
+                    yield break;
+            }
+        }
+        finally
+        {
+            // Also runs when the caller breaks early, so the numbers describe
+            // what was actually touched rather than what a full walk would have.
+            _logger.LogInformation(
+                "Device query completed (streamed). Enumerated: {TotalEnumerated}, Yielded: {YieldedCount}",
+                totalEnumerated,
+                yieldedCount);
+        }
+    }
+
+    /// <summary>
+    /// The buffering path, used only when <see cref="OrderBy"/> is present:
+    /// materialise every match, sort, then limit.
+    /// </summary>
+    private async IAsyncEnumerable<DeviceInfo> SortedAsync(
+        IDeviceProvider provider,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
         var buffer = new List<DeviceInfo>();
         int totalEnumerated = 0;
 
-        await foreach (var device in stream.WithCancellation(ct).ConfigureAwait(false))
+        await foreach (
+            var device in provider
+                .EnumerateAsync(_filter, ct)
+                .WithCancellation(ct)
+                .ConfigureAwait(false)
+        )
         {
             totalEnumerated++;
 
-            // All filtering happens in-memory via Matches()
             if (_filter.Matches(device))
             {
                 buffer.Add(device);
-                _logger.LogTrace("Device matched filter: {DeviceId} ({DeviceName})", 
-                    device.Id, device.Name ?? "(unnamed)");
+                _logger.LogTrace(
+                    "Device matched filter: {DeviceId} ({DeviceName})",
+                    device.Id,
+                    device.Name ?? "(unnamed)");
             }
         }
 
         _logger.LogDebug(
-            "Query enumeration completed. Total: {TotalEnumerated}, Matched: {MatchedCount}", 
-            totalEnumerated, buffer.Count);
+            "Query enumeration completed. Total: {TotalEnumerated}, Matched: {MatchedCount}",
+            totalEnumerated,
+            buffer.Count);
 
-        // Use ordinal string comparison so that sort order is deterministic and
-        // culture-independent (matches StringComparison.Ordinal semantics).
-        var keyComparer = Comparer<object?>.Create(static (x, y) =>
-            x is string sx && y is string sy
-                ? string.Compare(sx, sy, StringComparison.Ordinal)
-                : Comparer<object?>.Default.Compare(x, y));
+        // Ordinal string comparison so the order is deterministic and
+        // culture-independent.
+        var keyComparer = Comparer<object?>.Create(
+            static (x, y) =>
+                x is string sx && y is string sy
+                    ? string.Compare(sx, sy, StringComparison.Ordinal)
+                    : Comparer<object?>.Default.Compare(x, y));
 
-        IEnumerable<DeviceInfo> results = _orderBy switch
-        {
-            not null when _descending => buffer.OrderByDescending(d => _orderBy(d), keyComparer),
-            not null => buffer.OrderBy(d => _orderBy(d), keyComparer),
-            _ => buffer
-        };
+        IEnumerable<DeviceInfo> results = _descending
+            ? buffer.OrderByDescending(d => _orderBy!(d), keyComparer)
+            : buffer.OrderBy(d => _orderBy!(d), keyComparer);
 
         if (_limit.HasValue)
         {
@@ -439,7 +540,9 @@ public sealed class DeviceQuery : IAsyncEnumerable<DeviceInfo>
         }
 
         _logger.LogInformation(
-            "Device query completed. Enumerated: {TotalEnumerated}, Matched: {MatchedCount}, Yielded: {YieldedCount}", 
-            totalEnumerated, buffer.Count, yieldedCount);
+            "Device query completed (sorted). Enumerated: {TotalEnumerated}, Matched: {MatchedCount}, Yielded: {YieldedCount}",
+            totalEnumerated,
+            buffer.Count,
+            yieldedCount);
     }
 }
