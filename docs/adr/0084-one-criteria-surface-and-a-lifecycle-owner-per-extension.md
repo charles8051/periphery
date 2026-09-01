@@ -115,6 +115,12 @@ Every property of every category lives on one record. A HID mouse carries
 at that width, and the type does not tell a reader which properties can ever be
 populated together.
 
+`DisplayMaxAvgLuminanceInNits` turns out to be the wrong example for the point,
+and the right one for a larger problem: issue `#93` establishes it has no
+producer anywhere in `src/`. It is not clutter on a mouse, it is null on every
+device on every platform, along with five other display fields. Some of the width
+is not misplaced properties but properties that describe nothing at all.
+
 The flat shape is deliberate and worth keeping. It serializes cleanly, it is
 trivially `with`-able, and it avoids a polymorphic hierarchy that would force a
 cast at every call site. The problem is that it is the only shape offered. There
@@ -358,12 +364,50 @@ public static class DeviceInfoFacets
 }
 ```
 
-`TryAs*` returns false when the device carries none of that facet's properties.
 Facets are views over the same record: no copying beyond the struct, no
 allocation, no second source of truth. `DeviceInfo` remains the serialization
 shape and the only thing providers populate.
 
-Purely additive and optional. Callers who prefer the flat record keep using it.
+**`TryAs*` answers from `Category` and `Tags`, never from whether the properties
+happen to be populated.** This is the part worth being careful about, because
+the library already answers "what kind of thing is this device" twice, and a
+third answer that disagrees with the other two is worse than no answer.
+
+`Category` is the OS subsystem that surfaced the device and `Tags` are its
+capabilities (ADR-0047, ADR-0051), with `DeviceTags.Carries` already folding the
+category fallback into one call. `TryAsDisplay` is that question again, so it
+delegates to it.
+
+Keying the predicate on populated-ness instead would read the absence of a
+*reading* as the absence of a *capability* — the inference ADR-0073 rejects, and
+in this shape it produces a genuinely wrong answer: a monitor whose enrichment
+did not run would report `TryAsDisplay == false` and a caller would conclude it
+is not a display.
+
+Two consequences follow:
+
+- **A facet may come back with every field null.** That is a device the OS did
+  not describe, which is a real answer and a different one from "not a display".
+  Callers check the individual fields, which are nullable for exactly this
+  reason.
+- **`DisplayFacet` cannot ship the six fields that have no producer.** Issue
+  `#93` establishes that `DisplayUsageKind`, `DisplayDpi`,
+  `DisplayPhysicalSizeInInches`, and all three luminance fields are populated by
+  nothing anywhere in `src/` and are permanently null on every platform. A typed
+  facade over them would make dead surface look deliberate and harder to remove.
+  So D4 waits on `#93`, and takes whichever answer it reaches — a producer, or a
+  deletion.
+
+Otherwise purely additive and optional. Callers who prefer the flat record keep
+using it.
+
+**What this does not do.** `DeviceInfo.Properties` is not the mechanism for this
+and is not extended by it. That bag is documented as intentionally narrow —
+inherently array-typed or purely diagnostic raw platform data, three well-known
+Windows keys — and its stated policy is that anything scalar and universally
+meaningful gets *promoted* to a typed field. That promotion rule is why the
+record is 51 wide. D4 changes how the promoted surface is *read*, and proposes no
+change to what gets promoted or to what the bag holds.
 
 ### D5 — `CameraDeviceProxy`, and a stall deadline on the session
 
@@ -575,6 +619,10 @@ frozen at whatever they last read.
   On a large box that is a few hundred records, and it is transient.
 - Six facet structs are six more types in the core namespace, for information
   already reachable.
+- D4's `TryAs*` is a third spelling of a classification question `Category` and
+  `Tags` already answer. Delegating to `DeviceTags.Carries` keeps the three from
+  disagreeing, but it is one more place a caller can ask, and the grouping is the
+  only thing it adds over asking directly.
 - `CameraDeviceProxy` adds a dependency from `Periphery.Camera` onto the core
   proxy machinery. `Periphery.Camera` already references core, so no new package
   edge.
@@ -624,7 +672,9 @@ where the two differ.
 1. **D1** — the interface, and the five gap closures it implies. Additive.
 2. **D2** — `DeviceFilterSpec` on top of D1's settled vocabulary. Additive.
 3. **D6 policy overload** — additive. The `_started` rollback ships with D3.
-4. **D4** — facets. Additive, independent of the rest.
+4. **D4** — facets. Additive, and independent of D1–D3 and D5–D6, but
+   **blocked on `#93`**: `DisplayFacet` cannot be specified until the six
+   display fields with no producer either get one or are deleted.
 5. **D3** — streaming terminals. Behavioural; lands on a major with the
    `_started` rollback.
 6. **D5** — `CameraDeviceProxy` and `StallTimeout`. Largest single piece,
@@ -645,7 +695,11 @@ than a fourth copy of one.
 - ADR-0008 — fluent tracker registration (`AddTracker` / `AddTrackers`)
 - ADR-0045 — substrate independence from Crossbar (the `IFrame` / `IRefCounted`
   participation protocol `#121` cites as unavailable to Periphery)
+- ADR-0047 — device tags vs multi-category; `Category` is OS subsystem identity,
+  `Tags` are capability annotations. D4's `TryAs*` answers from these
 - ADR-0051 — capability categories demoted to tags
+- ADR-0073 — Periphery reports observations, not verdicts. Why D4's predicate
+  cannot key on whether a property happens to be populated
 - ADR-0055 — injectable reconnect policy (`IRecoveryPolicy`), shipped in
   `DeviceProxyBase` with `ExponentialBackoffRecoveryPolicy.Default`
 - ADR-0060 — device reset and recovery escalation
@@ -663,9 +717,11 @@ than a fourth copy of one.
   `DeviceProxyBase`. Same duplication class as D1; worth doing before D5.
 - `#17` — teardown-time backend error mis-classified as a capture fault.
   Adjacent to `CameraStallException` classification.
-- `#16` — stale. It asks for ADR-0055's `IReconnectPolicy`, which shipped as
-  `IRecoveryPolicy`; `DeviceProxyBase` consults it and `ConnectionState` exists.
-  Should be closed.
+- `#93` — six `DeviceInfo` display properties have no producer and are
+  permanently null. Blocks D4's `DisplayFacet`.
+- `#16` — closed during this review. It asked for ADR-0055's `IReconnectPolicy`,
+  which shipped as `IRecoveryPolicy`; `DeviceProxyBase` consults it and
+  `ConnectionState` exists.
 
 ### Guides
 
