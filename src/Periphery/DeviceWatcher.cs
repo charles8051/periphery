@@ -57,6 +57,23 @@ namespace Periphery;
 /// <see cref="DisposeAsync"/> is idempotent and thread-safe.
 /// </description></item>
 /// </list>
+/// <para><b>No tag filters, deliberately.</b> <see cref="DeviceFilter.WithTag(string)"/>,
+/// <see cref="DeviceFilter.WithAllTags(string[])"/> and
+/// <see cref="DeviceFilter.WithAnyTag(string[])"/> exist on
+/// <see cref="DeviceFilter"/> and <see cref="DeviceQuery"/> but have no
+/// watcher-level counterpart, because a watcher would match them
+/// asymmetrically.</para>
+/// <para>Tags are produced by the enrichment pipeline. The Windows monitor
+/// provider seeds its last-known-device cache with the plain unenriched build
+/// and skips enrichment to keep startup cheap, and that cached record is what a
+/// removal event carries. A watcher filtered on a tag would therefore see
+/// <see cref="Appeared"/> — the startup snapshot runs the query provider, which
+/// does enrich — and never see <see cref="Disappeared"/>, leaking the device as
+/// permanently present. Linux and macOS enrich inside their single device build
+/// and do not have the asymmetry, so the feature would also be
+/// platform-divergent. Filter a watcher on
+/// <see cref="OfCategory(DeviceCategory)"/> or another unenriched field, and
+/// apply tag predicates to the devices it reports.</para>
 /// </remarks>
 public sealed class DeviceWatcher : IAsyncDisposable
 {
@@ -188,6 +205,48 @@ public sealed class DeviceWatcher : IAsyncDisposable
         ThrowIfDisposed();
         ThrowIfStarted();
         _filter.WithSerialNumber(serialNumber);
+        return this;
+    }
+
+    /// <summary>
+    /// Keep only devices whose <see cref="DeviceInfo.Id"/> starts with
+    /// <paramref name="prefix"/>. Useful for matching by hardware model rather
+    /// than instance — for example, <c>"DISPLAY\\MS_0003\\"</c> matches every
+    /// Microsoft-EDID monitor of model <c>MS_0003</c> regardless of which
+    /// per-machine instance hash Windows assigned.
+    /// </summary>
+    /// <remarks>
+    /// Safe on every event path: <see cref="DeviceInfo.Id"/> is carried by the
+    /// unenriched device build the monitor providers use for their last-known
+    /// cache, so arrivals and departures match symmetrically. Contrast the tag
+    /// filters, which are deliberately absent — see the type remarks.
+    /// </remarks>
+    public DeviceWatcher WithIdStartsWith(string prefix, StringComparison comparison = StringComparison.OrdinalIgnoreCase)
+    {
+        ThrowIfDisposed();
+        ThrowIfStarted();
+        _filter.WithIdStartsWith(prefix, comparison);
+        return this;
+    }
+
+    /// <summary>
+    /// Keep only devices whose <see cref="DeviceInfo.ContainerId"/> matches
+    /// <paramref name="containerId"/> — the Windows PnP grouping of every
+    /// interface belonging to one physical device. On platforms that do not
+    /// populate <see cref="DeviceInfo.ContainerId"/> (Linux, macOS) this filter
+    /// never matches. Not durable across Bluetooth re-pairing (ADR-0083).
+    /// </summary>
+    /// <remarks>
+    /// Populated by the unenriched build on every Windows path, so it matches
+    /// symmetrically on arrival and departure. The one exception is a removal
+    /// for a device that was never cached, where the provider synthesises an
+    /// id-only <see cref="DeviceInfo"/> with a null container id.
+    /// </remarks>
+    public DeviceWatcher WithContainerId(Guid containerId)
+    {
+        ThrowIfDisposed();
+        ThrowIfStarted();
+        _filter.WithContainerId(containerId);
         return this;
     }
 

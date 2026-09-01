@@ -190,7 +190,96 @@ and drifts from the library independently.
 
 ## Decision
 
-### D1 — One criteria definition, three terminals
+### D1 — Superseded: no interface. Parity by test, and two gaps of five
+
+**This decision was implemented and the interface was not built.** Three
+independent reviews of the implementation plan refuted every benefit claimed
+below, and two of them found a correctness bug the plan would have shipped.
+The original text is kept after the revision, because the reasoning that was
+wrong is more useful than a silent edit.
+
+#### What was measured
+
+Each claim was compiled and run, not reasoned about.
+
+**The interface does not enforce the parity that matters.** A C# interface
+constrains arity, parameter types and return type. It does **not** constrain
+default values, `params`, parameter names, or nullability — and an implementing
+class may declare a *different* default with no diagnostic at all:
+
+```
+q.WithName("x")                                  ->  Ordinal            (class default)
+((IDeviceCriteria<DeviceQuery>)q).WithName("x")  ->  OrdinalIgnoreCase  (interface default)
+```
+
+Same call, different behaviour, chosen by static type. Those four axes are
+exactly where three hand-copied forwarder sets drift, so the interface would
+have guarded everything except the likely failure.
+
+**`<inheritdoc/>` does not dedupe the docs.** Roslyn does not expand it; the
+literal tag is written into the generated XML, and `Periphery.csproj` ships that
+file in the package. Converting the fluent surface to `<inheritdoc/>` would
+replace real prose with an unresolved tag for every consumer not reading it
+through an IDE.
+
+**"A type meaning something filterable" already exists, and the interface cannot
+be it.** `DeviceWatcherWaitSource` does `Devices.Watch().Where(filter.Matches)`
+— that is the polymorphic case, solved by `DeviceFilter` plus `Matches`. Every
+filterable-parameter site in the tree takes `DeviceFilter`. And a self-typed
+generic interface yields no existential type: there is no
+`IDeviceCriteria<?>` in C#, so every consumer must itself become generic in
+`TSelf`.
+
+#### The gaps were not all accidental
+
+Three of the five are load-bearing omissions, and closing them would have
+shipped a Windows-only bug.
+
+Tags are produced by the enrichment pipeline. `WindowsDeviceMonitorProvider`
+seeds its last-known-device cache with the plain unenriched build and says so in
+a comment that enumerates what watcher filters may match on — tags are not in
+that list. That cached record is what a removal event carries, and
+`DeviceWatcher` gates every event on `_filter.Matches`. So a watcher filtered
+`WithTag(DeviceTags.Printer)` would fire `Appeared` (the startup snapshot runs
+the query provider, which *does* enrich) and never fire `Disappeared`, leaking
+the device as permanently present. Linux and macOS enrich inside their single
+device build, so the feature would also have been platform-divergent.
+
+`Active` is likewise deliberate, and for a better reason than the original text
+gave. A watcher's filter is evaluated against **post-transition** state: the
+`Deactivated` handler runs when `IsActive` is already `false`, so a watcher
+filtered `Active(true)` would suppress the very event it was watching for.
+
+#### What was done instead
+
+1. **No `IDeviceCriteria<TSelf>`.** No new public type.
+2. **Two gaps closed, not five** — `WithIdStartsWith` and `WithContainerId` on
+   `DeviceQuery` and `DeviceWatcher`. Both are carried by the unenriched build
+   on every path, so both match symmetrically.
+3. **The three tag filters stay off `DeviceWatcher`**, with the asymmetry
+   documented on the type.
+4. **A parity test replaces the interface**, asserting both that every
+   `DeviceFilter` criterion is present on the other two surfaces *or* carries a
+   written reason for its absence, and that every forwarder matches on the four
+   axes an interface would not have checked.
+5. **A capture bug fixed on the way past.** `WithAllTags`/`WithAnyTag` closed
+   over the caller's `params` array rather than snapshotting it, so mutating
+   that array afterwards silently rewrote a filter's criteria — including on a
+   started `DeviceWatcher`, whose configure-time guard had already passed.
+
+The exclusion list in that test is strictly more expressive than an interface:
+it records *why* a member is absent, which an interface cannot.
+
+#### Consequence for D2
+
+D2 is no longer blocked on D1. Its text already requires the parity test to be
+scoped to `DeviceFilter`'s public surface rather than the interface's, and that
+test now exists.
+
+---
+
+<details>
+<summary>Original D1 as proposed (superseded)</summary>
 
 Extract the shared criteria vocabulary into a single generic interface
 implemented by all three types.
@@ -209,27 +298,15 @@ public interface IDeviceCriteria<out TSelf>
     TSelf WithContainerId(Guid containerId);
     // ... the full shared set
 }
-
-public sealed class DeviceQuery   : IDeviceCriteria<DeviceQuery>,   IAsyncEnumerable<DeviceInfo> { }
-public sealed class DeviceFilter  : IDeviceCriteria<DeviceFilter> { }
-public sealed class DeviceWatcher : IDeviceCriteria<DeviceWatcher>, IAsyncDisposable { }
 ```
 
-Every criterion is declared once. `DeviceQuery` and `DeviceWatcher` implement it
-by delegating to their inner `DeviceFilter`, which is what they already do.
-Adding a criterion becomes one interface member plus one `DeviceFilter`
-implementation.
+*Claimed:* every criterion declared once; adding one becomes one interface
+member plus one `DeviceFilter` implementation; the five accidental gaps close as
+a consequence. The first is false for a plain interface — an interface declares
+no bodies, so all three types still write a forwarder. The third is false for
+three of the five.
 
-Terminals stay on the concrete types, because they are what distinguishes them:
-`OrderBy`/`Take`/`ToListAsync` on `DeviceQuery`, `Matches` on `DeviceFilter`,
-`AddTracker`/`StartAsync`/events on `DeviceWatcher`.
-
-The five accidental gaps close as a consequence. `Active` stays off
-`DeviceWatcher` deliberately — it is not an `IDeviceCriteria` member but a
-`DeviceQuery`/`DeviceFilter` one, and the watcher expresses activation through
-its `Activated`/`Deactivated` edges instead.
-
-Source-compatible. No existing call site changes.
+</details>
 
 ### D2 — A bindable `DeviceFilterSpec`
 

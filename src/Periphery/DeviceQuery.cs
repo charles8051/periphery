@@ -124,6 +124,32 @@ public sealed class DeviceQuery : IAsyncEnumerable<DeviceInfo>
         return this;
     }
 
+    /// <summary>
+    /// Keep only devices whose <see cref="DeviceInfo.Id"/> starts with
+    /// <paramref name="prefix"/>. Useful for matching by hardware model rather
+    /// than instance — for example, <c>"DISPLAY\\MS_0003\\"</c> matches every
+    /// Microsoft-EDID monitor of model <c>MS_0003</c> regardless of which
+    /// per-machine instance hash Windows assigned.
+    /// </summary>
+    public DeviceQuery WithIdStartsWith(string prefix, StringComparison comparison = StringComparison.OrdinalIgnoreCase)
+    {
+        _filter.WithIdStartsWith(prefix, comparison);
+        return this;
+    }
+
+    /// <summary>
+    /// Keep only devices whose <see cref="DeviceInfo.ContainerId"/> matches
+    /// <paramref name="containerId"/> — the Windows PnP grouping of every
+    /// interface belonging to one physical device. On platforms that do not
+    /// populate <see cref="DeviceInfo.ContainerId"/> (Linux, macOS) this filter
+    /// never matches. Not durable across Bluetooth re-pairing (ADR-0083).
+    /// </summary>
+    public DeviceQuery WithContainerId(Guid containerId)
+    {
+        _filter.WithContainerId(containerId);
+        return this;
+    }
+
     /// <summary>Keep only devices on the specified bus type.</summary>
     public DeviceQuery WithBusType(BusType busType)
     {
