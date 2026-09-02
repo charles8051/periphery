@@ -240,14 +240,47 @@ which does not exist yet, and it is unavailable under read protection. Deferred,
 
 ---
 
+## Decision 11 — Open the port per probe cycle, and do not close it between the probe and the flash it triggers
+
+**Decision.** A probe cycle opens the port, syncs, identifies, and closes. The port is free
+between cycles. When a cycle decides to flash, it **keeps that same open handle** and flashes on
+it rather than closing and reopening.
+
+**Why.** The choice was framed as open-per-cycle against holding the port for the whole armed
+session, and the only real argument for holding was the race: the part can change between the
+probe that decided to flash and the open that flashes it. But that is not an argument for
+holding *across* cycles. It is an argument for not closing *within* one.
+`Stm32SerialProgrammer` is already both the prober and the flasher — probing is
+`OpenAsync` + `IdentifyAsync`, flashing is `FlashAsync` on the same instance — so a cycle that
+decides to flash simply declines to dispose. The race disappears and the port still goes free
+the moment the cycle ends.
+
+What remained for holding was reopen cost, which at a ~1 Hz cadence is noise, and reopen
+*flakiness*, which is unmeasured (ADR-0062 §8) and which open-per-cycle is the design that
+surfaces rather than hides.
+
+Against holding, and decisive: an armed session that locks a port for hours locks out the
+operator's terminal and every other tool on that bench, with no way to share and no obvious
+way to walk it back once consumers depend on it. A held handle is also what leaks when the
+process dies badly — a stuck COM handle on Windows can need a replug to clear. And the change
+is one-way: open-per-cycle can become holding later, behind the same policy. Holding cannot
+cheaply become open-per-cycle.
+
+**A caveat that will age.** The race is nearly content-free today, because the probe learns
+nothing device-specific — every STM32 that ACKs looks alike, and re-probing a swapped board
+reaches the same decision. It becomes a real race when Decision 10's UID upgrade lands and the
+probe starts learning an identity the flash then assumes. Not closing within the cycle covers
+that case too, which is why this is the shape to build now rather than the one to revisit then.
+
+---
+
 ## Not decided here
 
 - **Which front-ends expose the port set.** The CLI shape is assumed to be
   `--port COM7 --port COM9`; the GUI equivalent is untouched.
-- **Whether the armed session holds the port open between cycles.** Open-per-cycle is simpler
-  and lets other tools use the port while armed; a long-lived hold removes the reset race
-  between the deciding probe and the flash that follows it. See
-  [ADR-0062](../../../adr/0062-periphery-serial-backend-provider.md) §9.
+- **The three constants.** Probe cadence, probe timeout, and how many consecutive silences mean
+  a board has left. Decisions 9 and 10 fix the shape and give orders of magnitude (~1 Hz, a few
+  hundred milliseconds); the values want a real fixture, not an argument.
 - **ESP32.** Its modern parts enumerate as a USB family and are passive; the fixture question
   reaches it only on the legacy bridged path.
 - **Nothing here is verified against hardware.** The AN3155 flasher itself has never flashed a

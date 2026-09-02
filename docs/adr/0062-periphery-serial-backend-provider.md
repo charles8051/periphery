@@ -311,7 +311,7 @@ a decision made for the wrong reason.
   The underlying operations are synchronous property writes in both `System.IO.Ports` and
   `RJCP.SerialPortStream`. Worth revisiting when the backends are written.
 
-### 9. A continuous probe loop is a second claim on the port, and §1 does not yet answer it
+### 9. A continuous probe loop is a second claim on the port; §1 settled which layer owns it, not for how long
 
 Added 2026-09-02, alongside the [autoflash ADR](../feature-specs/firmware-flashing/autoflash/adr.md)
 amendment that admits probe-identified targets to autoflash on operator-named ports.
@@ -332,9 +332,17 @@ Two shapes, and `ISerialPort`'s lifecycle has to support whichever wins:
   its whole duration — the strongest form of §1's claim, and the one most likely to surprise an
   operator who still has a terminal open on that port.
 
-The second is probably right for a fixture and definitely wrong as a default for a shared bench.
-Recording it here rather than deciding it: the choice belongs with whoever writes `ISerialPort`'s
-open/dispose semantics, and it is the first requirement that distinguishes them.
+**Settled as open-per-cycle** ([autoflash adr.md](../feature-specs/firmware-flashing/autoflash/adr.md)
+Decision 11), with the refinement that dissolves the choice: the race is not a reason to hold the
+port *across* cycles, only a reason not to close it *within* one. A cycle that decides to flash
+keeps its handle and flashes on it. The port is free between cycles, and a long-lived exclusive
+claim over a shared bench never has to be justified.
+
+What that asks of `ISerialPort` is the weaker requirement, and the useful one: open and dispose
+must be cheap and repeatable at a ~1 Hz cadence, and a dispose must actually release the handle
+rather than leave it claimed for the next open. No session-scoped ownership, no lease, no sharing
+model. If reopen turns out to be too slow or too flaky on a real bridge, holding is still
+reachable behind the same policy — the reverse would not have been.
 
 It also adds to §8's unmeasured list. **How fast a bridge can be reopened** — CH340 and CP210x
 drivers do not all release a handle promptly on close, and a probe cadence in the hundreds of
