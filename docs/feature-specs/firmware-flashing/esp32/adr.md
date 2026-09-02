@@ -178,8 +178,10 @@ general piece first.
 the only half that is actually safe to schedule. DFU covers S2/S3/P4 only, in a mode the board has
 to be strapped into (GPIO0 low, pulse RESET); on Windows Espressif's own guide says the WinUSB
 driver "has to be installed for the device to work properly"; `Periphery.Usb` has no macOS backend;
-the payload container is unverified; and USB-OTG re-enumerates mid-sequence, so the programmer
-cannot keep its pre-reset handle.
+the payload container is unverified; and USB-OTG is expected to re-enumerate mid-sequence,
+which would mean the programmer cannot keep its pre-reset handle. That last one is inference
+from how USB-OTG mode switches generally behave, not something observed here — it sets the
+implementation gate, and OQ-6 is where it is settled.
 
 Two drafts of this ADR overstated that in the same direction. The first called path C "available
 today"; the second narrowed it to Linux but still read as available, while the same table admitted
