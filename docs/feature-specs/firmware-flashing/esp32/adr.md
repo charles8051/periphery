@@ -22,7 +22,9 @@ It is not. Every ESP32 part from the S2 onward has a USB peripheral on-die, and
 bulk transfers that peripheral needs. This ADR records the decisions that follow from that,
 plus the licensing constraint that shapes how the protocol code may be written at all.
 
-Nothing here is measured on hardware yet. See [What is not yet measured](#what-is-not-yet-measured).
+Nothing here is measured on hardware. Two facts *are* sourced from Espressif's own documentation
+rather than assumed — the DFU-mode id range and the Windows driver requirement — and they made the
+DFU path's reach smaller, not larger. See [What is not yet measured](#what-is-not-yet-measured).
 See [`spec.md`](spec.md).
 
 ---
@@ -111,7 +113,7 @@ Apache-2.0 sources or written in-house. It is not `esptool`'s.
 
 ## Decision 5 - Implement from the published protocol spec; `esp-serial-flasher` is the only code reference; `esptool` is off-limits
 
-**Decision.** Three rules, recorded in the spec as RULE-L1 through RULE-L3:
+**Decision.** Four rules, recorded in the spec as RULE-L1 through RULE-L4:
 
 - Implement from [Espressif's per-chip serial-protocol documentation][serial-protocol], and
   cross-check against [`espressif/esp-serial-flasher`][esp-serial-flasher] (**Apache-2.0**) only.
@@ -119,6 +121,9 @@ Apache-2.0 sources or written in-house. It is not `esptool`'s.
 - Capture test vectors from the wire, not from source. Running `esptool` against real hardware and
   recording SLIP frames produces facts about the protocol; GPL-2.0 governs the program, not the
   bytes it puts on a wire. Transcribing its `COMMAND_*` tables into C# does not have that defence.
+
+- Apache-2.0 attribution is mandatory in the change that introduces copied or adapted source
+  (RULE-L4, below), not a judgment made later.
 
 Chip-table constants — magic register values, flash offsets, memory maps — come from the Technical
 Reference Manuals, which is where they are documented as facts.
@@ -137,9 +142,19 @@ question in thirty seconds — chip-specific quirks, retry heuristics, the undoc
 of those will have to be recovered by experiment on hardware instead. That is the price of the
 license, and it is worth naming honestly rather than discovering during review.
 
-**Attribution is deferred, not waived.** If the implementation ends up closely tracking
-`esp-serial-flasher`'s structure, Apache-2.0 §4 attribution applies and `THIRD-PARTY-NOTICES`
-gains an entry. If it only reads the published spec, it does not. Decided once the core exists.
+**Attribution is immediate, not deferred.** An earlier draft of this decision said a
+`THIRD-PARTY-NOTICES` entry was needed only if the implementation "tracked `esp-serial-flasher`
+substantially," decided once the core existed. That is wrong, and it is wrong in the direction
+that ships unattributed code: Apache-2.0 §4's conditions attach on redistribution of the
+licensed material, not on a later judgment about how much of it there was. A developer can
+adapt one helper, ship it, and have the review conclude it was not substantial — and the
+obligation was breached the moment the package was published.
+
+RULE-L4 replaces it. The PR that introduces any copied or adapted source records the exact
+upstream commit, preserves the Apache `LICENSE` and `NOTICE` material, and adds the
+`THIRD-PARTY-NOTICES` entry **in the same change**. The only exemption is an implementation
+written from the published spec alone, and it has to be claimed explicitly in the PR to count.
+When in doubt, attribute — the cost is a paragraph.
 
 ---
 
@@ -159,41 +174,67 @@ protocol core, and the STM32 package's existing tests are the regression gate fo
 Shipping something that flashes a real S3 early is worth more than shipping the larger, more
 general piece first.
 
-**What this costs.** The DFU path covers only S2/S3/P4 in USB-OTG mode, which is a mode the board
-has to be strapped into. It is not the common case. Phase 1 is a beachhead, not the feature.
+**What this costs.** Less reach than "first working flash" suggests. DFU covers only S2/S3/P4,
+in a mode the board has to be strapped into (GPIO0 low, pulse RESET), and on Windows Espressif's
+own guide says the WinUSB driver "has to be installed for the device to work properly" — their
+package or Zadig. So phase 1 lands a real flash on Linux and macOS and an operator-installs-a-driver
+flash on Windows. It is a beachhead, not the feature, and the phrase "available today" in an
+earlier draft of the spec's transport table was doing more work than the evidence supported.
 
 ---
 
-## Decision 7 - Modern ESP32s are `Passive` and therefore autoflash-eligible; the classic parts stay `Probe`
+## Decision 7 - A `0x303A` id identifies a family and a mode, not a part, so the USB providers ship `Probe`
 
-**Decision.** The USB providers declare `IdentificationMode.Passive`. A future
-`Periphery.Bootloader.Esp32.Serial` declares `Probe`.
+**Decision.** Every ESP32 provider declares `IdentificationMode.Probe`, USB included. `Passive`
+is available to a provider only once its match is a verified, specific id set, and no ESP32 path
+has one today. The chip resolved from the magic register after opening is a **gate**: where a
+caller has named a target chip, a mismatch aborts before any write.
 
-**Why.** The [autoflash spec](../autoflash/spec.md)'s gate is whether identity is knowable without
-touching the device. Espressif VID `0x303A` is the chip's own USB peripheral — the VID/PID *is*
-the target, exactly as `0483:DF11` is an STM32 in DFU. The reason ESP32 was assumed to be `Probe`
-is the bridge case: a CP210x/CH340/FTDI VID names the bridge, and finding out what is behind it
-means poking it with sync bytes. That reasoning is sound and still applies to the classic parts.
-It simply does not apply to a chip that enumerates as itself.
+**Why — and what the first draft of this decision got wrong.** The draft said modern ESP32s are
+`Passive` because "the VID/PID *is* the target, exactly as `0483:DF11` is an STM32 in DFU." That
+overstates what the id carries. `303A:1001` is the **USB-Serial-JTAG peripheral**, shared across
+C3, S3, C6, H2, and P4; Espressif's own udev rule for DFU mode is the range `303a:00??`. So the
+id says "an Espressif chip in ROM download mode on this peripheral" — a family and a mode. It
+does not say which part, which means it does not carry the flash geometry, the status-byte
+length, the image offsets, or the security state.
 
-**What this costs.** Nothing yet, but it widens the unattended-flashing surface to a new family,
-and autoflash is the feature where a wrong identity call is destructive. Decision 8's guards are
-what make this safe to say.
+Worse, the draft contradicted itself: Decision 8 and the spec's requirements both make a
+magic-register read mandatory *before writing*, which is an admission that opening the device is
+what establishes identity. A design cannot claim passive identification and simultaneously
+require an active read to know what it is talking to.
+
+The bridge contrast survives and is still worth stating — a CP210x id tells you nothing at all,
+where `0x303A` tells you the family and the mode. That is a better starting point. It is not
+part identity, and the gap between those two is exactly where an unattended flash goes wrong.
+
+**What this costs.** Nothing that matters yet. Every flash in phases 1–3 is an explicit operator
+action, and `Probe` is precisely the mode meaning "confirm identity before writing." Autoflash
+eligibility becomes a separate decision, taken on measured ids rather than inferred from the
+chips having native USB — recorded as OQ-9 in [`spec.md`](spec.md) and amended here when the
+measurement exists.
 
 ---
 
 ## Decision 8 - Refuse encrypted and secure-boot targets; do not guard the bootloader region
 
 **Decision.** `GET_SECURITY_INFO` is read during identification. If flash encryption or secure
-boot is enabled, the programmer fails **before writing a byte**, unless the operator passes an
-explicit override. Writing the second-stage bootloader region gets no such guard. An unrecognised
-chip magic is a hard failure, not a fallback to defaults.
+boot is enabled, the programmer fails **before writing a byte** — and it fails identically when
+the query is unsupported, times out, or does not decode. An undetermined security state is
+refused exactly like an enabled one. There is no general `--force` that reaches this gate; an
+override, if one is ever justified, is a distinct narrowly-named flag. Writing the second-stage
+bootloader region gets no such guard. An unrecognised chip magic is a hard failure, not a
+fallback to defaults.
 
 **Why.** The two halves are asymmetric, and getting the asymmetry right is the whole point.
 
 Writing plaintext to a device with flash encryption enabled produces an unbootable device that the
 ROM loader cannot repair from outside — that is a real brick, and it is the ESP32 analogue of the
-STM32 Read-Unprotect operation ADR-0061 singled out for a guard.
+STM32 Read-Unprotect operation ADR-0061 singled out for a guard. A guard that reads "refuse when
+the answer is yes" leaves the far more likely failure — an older ROM where the query is
+unsupported, or a decode that does not match the table — running straight through it into a
+plaintext write. Refusing the unknown is the only version of this gate that holds, and keeping
+the override out of the general force flag is what stops the gate being routed around by an
+operator working past an unrelated problem.
 
 Writing a bad application image, or even a bad second-stage bootloader, is **recoverable**. The
 ROM loader cannot be overwritten and is entered by strapping pin or by the USB peripheral, so the
@@ -240,8 +281,13 @@ unknowns, in the order they should be resolved:
   `libusb_set_auto_detach_kernel_driver`. Both halves are read off the source, not observed. If
   Windows needs Zadig-style rebinding, the USB-Serial-JTAG path is Linux-only in practice.
   **This single measurement decides the shape of the largest phase.**
-- **The S2/S3 DFU-mode PIDs**, and whether Espressif's DFU descriptors carry WCID so Windows binds
-  WinUSB without operator intervention. Unverified. If not, the DFU path inherits the problem above.
+- **The specific S2/S3 DFU-mode PIDs.** *Partly answered from documentation, and the answer is
+  worse than assumed.* Espressif's DFU guide gives the udev rule as the range `303a:00??`, not a
+  single id, and says outright that on Windows the WinUSB driver "has to be installed for the
+  device to work properly" — their driver package or Zadig. So the DFU path inherits the driver
+  problem above and there is no WCID auto-binding to hope for. What is still unmeasured is which
+  PID each part actually presents, which is what a registry match needs and what Decision 7 holds
+  `Probe` until.
 - **Reset-into-download sequences** per USB path, including the USB-OTG re-enumeration mid-sequence
   that the shell has to survive.
 - **Stub-free throughput** on USB-Serial-JTAG. Decision 4's cost is argued, not timed.

@@ -46,22 +46,26 @@ things, and they have completely different availability in this codebase.
 | Path | Chips | Protocol | Periphery transport | Identification | Available today |
 |---|---|---|---|---|---|
 | **A — UART bridge** | all, incl. classic ESP32 / ESP8266 | esptool ROM, SLIP over UART | `Periphery.Serial` | `Probe` | **No** — no `Periphery.Serial` ([ADR-0062](../../../adr/0062-periphery-serial-backend-provider.md) is Proposed, no code) |
-| **B — USB-Serial-JTAG** | C3, S3, C6, H2, P4 | esptool ROM, SLIP over CDC bulk endpoints | `Periphery.Usb` bulk | `Passive` | **Yes on Linux**; Windows gated on OQ-1 |
-| **C — USB-OTG DFU** | S2, S3, P4 | USB DFU 1.1, DfuSe-format file | `Periphery.Usb` control | `Passive` | **Yes**, gated on OQ-2 |
+| **B — USB-Serial-JTAG** | C3, S3, C6, H2, P4 | esptool ROM, SLIP over CDC bulk endpoints | `Periphery.Usb` bulk | family + mode (OQ-9) | **Linux, probably.** Windows unmeasured — OQ-1 |
+| **C — USB-OTG DFU** | S2, S3, P4 | USB DFU 1.1; payload container **unverified** (OQ-10) | `Periphery.Usb` control | family + mode (OQ-9) | **Linux only** (no macOS USB backend, OQ-5). Windows needs an operator-installed WinUSB driver — [Espressif's DFU guide][esp-dfu] says so outright |
 
 Three consequences fall out of that table.
 
 1. **Paths B and C need no new dependency and no new transport package.** `Periphery.Usb`
    already exposes `ControlTransferAsync`, `BulkReadAsync`, and `BulkWriteAsync`
    ([`UsbDevice.cs`](../../../../src/Periphery.Usb/UsbDevice.cs)).
-2. **Paths B and C are `IdentificationMode.Passive`.** Espressif VID `0x303A` names the chip
-   itself, not a bridge, so modern ESP32s are eligible for unattended autoflash — unlike the
-   bridge-behind-a-CP210x case the [autoflash spec](../autoflash/spec.md) permanently excludes.
-   ADR-0061's roadmap table filed ESP32 under the serial lane; for the modern parts that is
-   no longer the right lane.
+2. **Paths B and C identify a family and a mode without touching the device** — Espressif VID
+   `0x303A` in ROM download mode, not a CP210x that says nothing about what is behind it. That
+   is a materially better starting point than the bridge case the
+   [autoflash spec](../autoflash/spec.md) excludes, but it is **not** part identity: `303A:1001`
+   is shared across C3/S3/C6/H2/P4. See [Identification model](#identification-model) for what
+   that does and does not license. ADR-0061's roadmap table filed ESP32 under the serial lane;
+   for the modern parts that is no longer the right lane.
 3. **Path C is the `Periphery.Bootloader.Dfu` extraction DEC-005 was waiting for.** It is
    also the smallest path to a first working flash, because the generic DFU layer already
    exists inside [`Periphery.Bootloader.Stm32.Usb`](../../../../src/Periphery.Bootloader.Stm32.Usb/).
+   It is a beachhead and not the feature: DFU mode is entered by strapping GPIO0 and holding
+   RESET, and on Windows it needs a driver the operator installs.
 
 ---
 
@@ -75,7 +79,7 @@ problem; it is a relicensing problem discovered after the fact.
 |---|---|---|
 | [Espressif serial-protocol docs][serial-protocol] | documentation | **Primary specification.** Implement from this. |
 | Chip Technical Reference Manuals / datasheets | documentation | **Primary source for constants** — magic register values, flash offsets, memory maps. |
-| [`espressif/esp-serial-flasher`][esp-serial-flasher] | **Apache-2.0** | **Permitted reference implementation.** Apache-2.0 is compatible with distributing a PolyForm-licensed derivative, subject to attribution and NOTICE obligations. |
+| [`espressif/esp-serial-flasher`][esp-serial-flasher] | **Apache-2.0** | **Permitted reference implementation**, under RULE-L4. Apache-2.0 permits redistribution in a PolyForm-licensed work; its §4 notice conditions are **not** optional. |
 | [`espressif/esptool`][esptool] | **GPL-2.0** | **Do not read as a source for code.** Do not copy, port, transliterate, or derive constants from its Python source. |
 | `esptool`'s `flasher_stub` binaries | **GPL-2.0** | **Never vendored.** See [Stub policy](#stub-policy). |
 | Packets captured from a running `esptool` | not covered by GPL | **Permitted as test vectors.** GPL-2.0 governs the program, not the bytes it puts on a wire. |
@@ -92,6 +96,14 @@ Three rules follow.
 - **RULE-L3 — capture test vectors from the wire, not from source.** Running `esptool`
   against real hardware and recording the SLIP frames produces facts about the protocol.
   Transcribing its `COMMAND_*` tables into C# does not.
+- **RULE-L4 — Apache-2.0 attribution is mandatory the moment any source is copied or adapted,
+  not a judgment call made later.** If a single helper, structure, or modified file comes from
+  `esp-serial-flasher`, the PR that introduces it records the exact upstream commit, preserves
+  the Apache `LICENSE` and `NOTICE` material, and adds the `THIRD-PARTY-NOTICES` entry in the
+  same change. Apache-2.0 §4's conditions attach on redistribution; there is no
+  "substantial enough" threshold to reason about. The **only** exemption is an implementation
+  written from the published spec alone, and that exemption has to be stated in the PR to
+  count. When in doubt, attribute.
 
 Nothing about the *protocol itself* is encumbered. Espressif publishes it as a specification
 precisely so third parties can implement it, and ships an Apache-2.0 implementation of it.
@@ -99,6 +111,7 @@ precisely so third parties can implement it, and ships an Apache-2.0 implementat
 [serial-protocol]: https://docs.espressif.com/projects/esptool/en/latest/esp32s3/advanced-topics/serial-protocol.html
 [esp-serial-flasher]: https://github.com/espressif/esp-serial-flasher
 [esptool]: https://github.com/espressif/esptool
+[esp-dfu]: https://docs.espressif.com/projects/esp-idf/en/stable/esp32s2/api-guides/dfu.html
 
 ---
 
@@ -124,7 +137,7 @@ precisely so third parties can implement it, and ships an Apache-2.0 implementat
 | `Periphery.Bootloader.Dfu` | **New:** the generic DFU 1.1 client extracted from `Periphery.Bootloader.Stm32.Usb` — `DfuState`, `DfuStatusCode`, `DfuStatus`, `DfuRequest`, `DfuFunctionalDescriptor`, the transport seam, and the GETSTATUS poll loop. ST's command layer stays behind in the STM32 package. |
 | `Periphery.Bootloader.Stm32.Usb` | **Refactor, no behaviour change:** consume `Periphery.Bootloader.Dfu` instead of its private copy. Its existing tests are the regression gate. |
 | `Periphery.Bootloader.Esp32` | **New:** the pure esptool-ROM protocol core — SLIP codec, command union, response decode, chip table, flash planner — plus the `IEsp32Transport` seam. Transport-free (DEC-002 family core). |
-| `Periphery.Bootloader.Esp32.Usb` | **New:** both USB providers. `UsbSerialJtagTransport` (bulk, path B) and an `Esp32DfuProgrammer` over `Periphery.Bootloader.Dfu` (path C), disambiguated by PID ([`adr.md`](adr.md) Decision 3). |
+| `Periphery.Bootloader.Esp32.Usb` | **New:** both USB providers. `UsbSerialJtagTransport` (bulk, path B) and an `Esp32DfuProgrammer` over `Periphery.Bootloader.Dfu` (path C), disambiguated by PID ([`adr.md`](adr.md) Decision 3). Both ship `Probe` until OQ-1/OQ-2 are measured. |
 | `Periphery.Bootloader.Esp32.Serial` | **Deferred:** a `SerialEsp32Transport` over `Periphery.Serial`. Nothing to build until ADR-0062 ships. |
 | `Periphery.FlashAnything.Cli` / `.Gui` | **Small:** register the new providers (alongside [`Program.cs:25`](../../../../src/Periphery.FlashAnything.Cli/Program.cs)); a repeatable `--file <path>@<offset>` argument. |
 | `tests/Periphery.Bootloader.Esp32.Tests` | **New:** SLIP round-trips, command golden bytes, response decode across status-byte lengths, planner assertions, and a `FakeEsp32Transport` scripting sync/retry/error sequences. Zero hardware. |
@@ -145,10 +158,15 @@ precisely so third parties can implement it, and ships an Apache-2.0 implementat
 - [ ] **Multi-offset images.** Accept the three-artifact layout (second-stage bootloader,
       partition table at `0x8000`, application at `0x10000`) as well as a single merged binary.
 - [ ] **Verify by MD5.** `SPI_FLASH_MD5` implements `FlashOptions.Verify` natively — no read-back.
-- [ ] **Refuse an encrypted or secure-boot target.** See [Safety rules](#safety-rules).
+- [ ] **Refuse an encrypted or secure-boot target, and refuse equally when the security state
+      cannot be determined.** See [Safety rules](#safety-rules).
 - [ ] **Report progress** through the existing `FlashProgress` / `FlashPhase` contract.
 - [ ] **Explain a driver-binding failure.** On Windows, "this device is bound to `usbser.sys`
       and cannot be claimed" must be the message, not an opaque open error.
+- [ ] **Ship the USB providers as `Probe`.** No `Passive` declaration until the ids are
+      measured; see [Identification model](#identification-model).
+- [ ] **Attribute Apache-2.0 material in the change that introduces it** (RULE-L4), not in a
+      later review pass.
 - [ ] **No new runtime dependency, and no GPL artifact.** No third-party package, no vendored
       binary blob ([ADR-0024](../../../adr/0024-extension-package-pattern.md), RULE-L2).
 - [ ] **AOT-clean** under `PublishAot`, like every other `Periphery.Bootloader.*` package.
@@ -267,15 +285,17 @@ public sealed class Esp32Programmer : IFirmwareProgrammer
     public ImmutableArray<FirmwareFormat> AcceptedFormats { get; } // RawBinary, EspApplication, Elf
 }
 
-// Providers, both in Periphery.Bootloader.Esp32.Usb
-public sealed class Esp32UsbSerialJtagProvider : IBootloaderProvider  // 303A:1001
+// Providers, both in Periphery.Bootloader.Esp32.Usb.
+// Probe, not Passive: 303A:1001 is shared across C3/S3/C6/H2/P4 and the DFU ids are a
+// range (303a:00??), so neither match is part identity yet. See Identification model.
+public sealed class Esp32UsbSerialJtagProvider : IBootloaderProvider  // 303A:1001 - family + mode
 {
-    public IdentificationMode Identification => IdentificationMode.Passive;
+    public IdentificationMode Identification => IdentificationMode.Probe;
 }
 
-public sealed class Esp32UsbDfuProvider : IBootloaderProvider          // 303A:xxxx - see OQ-2
+public sealed class Esp32UsbDfuProvider : IBootloaderProvider          // 303A:00?? - unverified, OQ-2
 {
-    public IdentificationMode Identification => IdentificationMode.Passive;
+    public IdentificationMode Identification => IdentificationMode.Probe;
 }
 ```
 
@@ -328,13 +348,31 @@ Two things close it:
 
 ## Identification model
 
-Modern ESP32s are `IdentificationMode.Passive`. Espressif VID `0x303A` is the chip's own USB
-peripheral, so the VID/PID *is* the target, satisfying the [autoflash spec](../autoflash/spec.md)'s
-load-bearing gate. Detection still does not touch the device.
+**A `0x303A` PID identifies a family and a mode, not a part.** `303A:1001` is the USB-Serial-JTAG
+peripheral and is shared across C3, S3, C6, H2, and P4; Espressif's own udev rule for DFU mode is
+the range `303a:00??`. What the VID/PID tells you without touching the device is "an Espressif
+chip sitting in ROM download mode on this USB peripheral." It does not tell you the flash
+geometry, the status-byte length, the image offsets, or the security state — which is exactly why
+[Requirements](#requirements) makes a magic-register read mandatory before any write.
 
-The classic ESP32 behind a CP210x/CH340/FTDI bridge stays `Probe` and is never auto-flashed.
-That is the same rule, applied to a genuinely different situation, and it lands on the right
-side both times.
+That is a real distinction from the bridge case, and a smaller one than the first draft of this
+spec claimed. Three consequences:
+
+- **The USB providers ship as `IdentificationMode.Probe`, not `Passive`, until the identities are
+  measured.** A provider may declare `Passive` only once its match is a verified, specific id set,
+  which OQ-1 and OQ-2 have not yet established for either path. `Probe` costs nothing today: every
+  flash in phases 1–3 is an explicit operator action anyway, and `Probe` is precisely the mode
+  that means "identity needs confirming before writing."
+- **Autoflash eligibility is a separate, later decision** with its own evidence, not a corollary
+  of the chips having native USB. Revisit only when the ids are measured, amending
+  [`adr.md`](adr.md) Decision 7 with what was observed.
+- **The chip resolved from the magic register is a gate, not metadata.** Where a caller has named
+  a target chip, a mismatch aborts before any write. That is what stops a family-level match from
+  becoming a family-level flash.
+
+The classic ESP32 behind a CP210x/CH340/FTDI bridge is `Probe` for the original reason: the
+VID/PID names the bridge and says nothing about what is behind it. The modern parts reach the
+same mode by a shorter route, not by a different rule.
 
 ---
 
@@ -342,11 +380,15 @@ side both times.
 
 Flashing bricks things. The ESP32 case has one genuinely dangerous mode and one reassuring one.
 
-1. **Refuse an encrypted or secure-boot target.** `GET_SECURITY_INFO` reports flash encryption
-   and secure-boot state. Writing plaintext to a device with flash encryption enabled produces
-   an unbootable device that the ROM loader cannot repair from the outside. The programmer
-   **fails before writing a byte** when either is set, unless the operator passes an explicit
-   override. This is the ESP32 analogue of the STM32 Read-Unprotect guard.
+1. **Refuse an encrypted or secure-boot target, and fail closed when the answer is unavailable.**
+   `GET_SECURITY_INFO` reports flash encryption and secure-boot state. Writing plaintext to a
+   device with flash encryption enabled produces an unbootable device that the ROM loader
+   cannot repair from the outside. The programmer **fails before writing a byte** when either
+   is set — **and equally when the query is unsupported, times out, or does not decode.** "We
+   could not determine the security state" is refused exactly like "the security state is on";
+   an unknown is never read as a no. There is deliberately **no general `--force`** reaching
+   this gate: any override is a distinct, narrowly-named flag added only when a real use case
+   demands it. This is the ESP32 analogue of the STM32 Read-Unprotect guard.
 2. **Download mode is in ROM, so an app-flash mistake is recoverable.** The ROM loader cannot
    be overwritten and is entered by strapping pin or by the USB peripheral, so a bad application
    image — or a bad second-stage bootloader — is re-flashable. Writing the bootloader region
@@ -407,9 +449,13 @@ Phases 0 through 3 need no new dependency, no `Periphery.Serial`, and no vendore
   `libusb_set_auto_detach_kernel_driver`. If Windows needs Zadig-style rebinding, path B is
   Linux-only in practice, because that is not something a fleet operator can be asked to do.
   **This is one afternoon on the bench with a C3 and an S3, and it decides the shape of phase 3.**
-- **OQ-2 — DFU PIDs and Windows auto-binding.** The S2 and S3 DFU-mode PIDs are **unverified**
-  and must be read off real hardware. Separately: do Espressif's DFU descriptors carry WCID, so
-  Windows binds WinUSB automatically? If not, path C has OQ-1's problem too.
+- **OQ-2 — the exact DFU-mode ids.** *Half answered.* Espressif's
+  [DFU guide][esp-dfu] gives the udev rule as the **range** `303a:00??`, not a single PID, and
+  states plainly that on Windows "the WinUSB driver is the recommended driver which has to be
+  installed for the device to work properly" (their driver package or Zadig). So path C **does**
+  carry OQ-1's driver problem, and there is no WCID auto-binding to hope for. What remains
+  unmeasured is the specific PID each part presents, which is what a `BootloaderRegistry` match
+  needs and what [Identification model](#identification-model) holds `Probe` until.
 - **OQ-3 — ~~two USB leaves, one transport name~~.** *Resolved* — [`adr.md`](adr.md) Decision 3.
   Both USB protocols ship in one `Periphery.Bootloader.Esp32.Usb`, disambiguated by PID.
 - **OQ-4 — driver-binding metadata.** [ADR-0038](../../../adr/0038-periphery-usb.md) deferred a
@@ -425,10 +471,20 @@ Phases 0 through 3 need no new dependency, no `Periphery.Serial`, and no vendore
   correlation is the existing machinery for that.
 - **OQ-7 — compression.** Is `FLASH_DEFL_*` worth it stub-free, given USB-Serial-JTAG's
   throughput? Measure before implementing. The planner can add it later without a shape change.
-- **OQ-8 — attribution scope.** If the implementation ends up closely tracking
-  `esp-serial-flasher`'s structure, Apache-2.0 §4 attribution applies and a
-  `THIRD-PARTY-NOTICES` entry is required. If it only reads the published protocol spec, it
-  does not. Decide once the core is written, not before.
+- **OQ-8 — ~~attribution scope~~.** *Resolved* — RULE-L4 and [`adr.md`](adr.md) Decision 5.
+  Attribution is mandatory in the change that introduces copied or adapted source, not a later
+  judgment about how substantial it was.
+- **OQ-9 — does family-level identity ever justify autoflash?** Deliberately left open. The
+  honest answer needs the measured ids from OQ-1 and OQ-2 plus a decision about whether
+  "an Espressif chip in download mode, chip confirmed by magic register after opening" clears
+  a bar written for "the VID/PID *is* the target." Until then the providers are `Probe` and the
+  question does not block anything.
+- **OQ-10 — the ESP32 DFU payload container.** The first draft asserted "DfuSe-format file."
+  That was unverified and probably wrong: DfuSe is ST's proprietary extension, not part of USB
+  DFU 1.1, and Espressif's DFU guide does not name it. `idf.py dfu` produces a `dfu.bin` whose
+  container is not documented on that page. Determine — from Espressif's tooling or from a
+  capture — whether `Esp32DfuProgrammer` downloads raw segments or a wrapped container, before
+  phase 1 writes a byte. Getting this wrong makes the device reject the transfer.
 
 ---
 
