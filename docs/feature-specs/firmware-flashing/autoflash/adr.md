@@ -323,6 +323,12 @@ gives the departure/arrival transition this decision otherwise only infers; a bo
 lifts off the pins never releases the gate, whatever the protocol does. `--repeat=silence` is
 the fallback for a fixture with nothing wired, and it carries the residual above.
 
+A seated line is not an identification. It says something is in the fixture, not that the
+something is an STM32 — a GPS wired to a bound bridge can hold CTS asserted all day and still
+get `0x7F` once per cycle. Nothing about presence detect narrows *who gets probed*; that is
+Decision 8's job, done by the bound bridge and stated in the arm confirmation. Presence detect
+answers only *has this board left*, which is the question the gate asks.
+
 The line is not required, because requiring it would rule out every fixture already built
 without one. It is the supported way to get replacement-safety before the UID lands, and a
 fixture being designed now should wire it.
