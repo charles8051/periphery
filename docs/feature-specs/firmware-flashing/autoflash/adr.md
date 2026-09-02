@@ -312,6 +312,21 @@ Three things narrow it, and none closes it:
 3. **A strapped BOOT0 that also spontaneously resets is a bench misconfiguration**, and this
    design assumes the fixture does not have one. That is a precondition, not a guarantee.
 
+**A fixture can supply a real presence signal, and that is the only thing that closes this.**
+Silence is inference. A hardware present-detect line is observation: wire the fixture's
+board-seated sense to the bridge's CTS, DSR, or DCD input, and the host reads the transition
+directly — both `RJCP.SerialPortStream` and the BCL `SerialPort` expose those inputs, so
+nothing new is needed below `ISerialPort` to read one.
+
+So `--repeat` takes a presence source. `--repeat=cts` (or `dsr`, `dcd`) gates on the line and
+gives the departure/arrival transition this decision otherwise only infers; a board that never
+lifts off the pins never releases the gate, whatever the protocol does. `--repeat=silence` is
+the fallback for a fixture with nothing wired, and it carries the residual above.
+
+The line is not required, because requiring it would rule out every fixture already built
+without one. It is the supported way to get replacement-safety before the UID lands, and a
+fixture being designed now should wire it.
+
 **So the loop is bounded by default.** One flash per bound bridge per armed session, which is
 Decision 5's original guarantee unchanged. Re-arming a bridge after its board departs is
 opt-in — `--repeat` — and that flag is the operator saying *this is a fixture and I intend to
@@ -322,9 +337,9 @@ That does not make departure-gating correct. It bounds what being wrong costs: o
 re-flash of a board that was just flashed with the same image, on a bench the operator
 explicitly put into repeat mode, recorded in the session audit like every other outcome.
 
-Replacement-safety proper needs the UID below, or an operator confirm per board. Until then
-departure-gating is a heuristic that fits an attended-adjacent fixture, and it should not be
-described as more.
+Replacement-safety proper needs a present-detect line, the UID below, or an operator confirm
+per board. Under `--repeat=silence` specifically, departure-gating is a heuristic that fits an
+attended-adjacent fixture, and it should not be described as more.
 
 **The upgrade, when a chip database exists.** STM32 parts carry a 96-bit unique id in system
 memory, readable with AN3155 Read Memory (`0x11`) — at `0x1FFF7A10` on F4, `0x1FFFF7E8` on F1,
