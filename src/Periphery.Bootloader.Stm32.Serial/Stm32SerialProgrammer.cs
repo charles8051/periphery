@@ -40,6 +40,7 @@ namespace Periphery.Bootloader.Stm32.Serial;
 public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 {
     private const byte Ack = 0x79;
+    private const byte Nack = 0x1F;
 
     private readonly Stm32BootloaderClient _client;
     private readonly ITransceiver _transceiver;
@@ -399,13 +400,19 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
                 "started. Read protection and an invalid jump address both cause this.", ex);
         }
 
+        // The address stage answers before it jumps, so its reply is read as one byte rather than
+        // waited on for an ACK. That distinction is the whole point: a NACK and a silent part are
+        // different outcomes, and matching on ACK alone collapses them into "no ACK arrived",
+        // which is how a refused jump used to be reported as a started application.
         var address = AddressFrame(jumpAddress);
-
+        byte? reply = null;
         try
         {
-            await WithTimeout(_options.CommandTimeout, ct,
-                t => _transceiver.SendReceivePerfectMatch(address, new byte[] { Ack }, t))
+            var answer = await WithTimeout(_options.CommandTimeout, ct,
+                t => _transceiver.SendReceiveExactly(address, 1, t))
                 .ConfigureAwait(false);
+            if (answer.Length > 0)
+                reply = answer.Span[0];
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -413,8 +420,18 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         }
         catch
         {
-            // The part jumped to the application — nothing left to answer. Expected.
+            // Nothing came back. AN3155 has the ACK precede the jump, so in principle it should
+            // always arrive — but a part that resets promptly, or a USB-serial bridge that drops
+            // the byte as the line settles, loses it. Silence is not evidence of refusal, and
+            // failing a flash that actually succeeded is the worse error, so it reads as a jump.
         }
+
+        if (reply == Nack)
+            throw new Stm32SerialException(
+                $"the bootloader refused the jump address 0x{jumpAddress:X8} (NACK). Anything already " +
+                "written is intact, but the device is still in the bootloader. The usual cause is no " +
+                "valid stack pointer at that address — an image flashed at the wrong base, or an " +
+                "erased application region.");
     }
 
     // AN3155 addresses are big-endian and carry an XOR checksum byte. Built in a sync helper

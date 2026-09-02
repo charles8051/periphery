@@ -146,6 +146,36 @@ public class Stm32SerialFailureTests
     }
 
     [Fact]
+    public async Task Flash_fails_when_the_bootloader_NACKs_the_jump_address()
+    {
+        // The stage the first fix missed. AN3155 3.4 has the part answer the address frame before
+        // it jumps, so a NACK there means it did not jump — and matching on ACK alone made that
+        // indistinguishable from a part that jumped and stopped answering.
+        await using var device = new FakeStm32Bootloader { RefuseGoAddress = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+
+        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+
+        Assert.False(result.Success);
+        Assert.Contains("refused the jump address 0x08000000", result.Error);
+    }
+
+    [Fact]
+    public async Task A_silent_part_after_the_address_frame_still_counts_as_a_jump()
+    {
+        // The other half of that distinction, and the reason a missing ACK is not a hard failure:
+        // a part that resets promptly can lose the byte. Silence must not fail a flash that
+        // actually succeeded. This device ACKs the Go command, takes the address frame, and then
+        // says nothing at all.
+        await using var device = new FakeStm32Bootloader { SilentOnGoAddress = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+
+        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+
+        Assert.True(result.Success, result.Error);
+    }
+
+    [Fact]
     public async Task A_normal_flash_still_leaves_cleanly()
     {
         // The counterpart: splitting Go into its two round trips must not break the happy path.

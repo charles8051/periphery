@@ -40,8 +40,20 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// <summary>The BCD protocol version reported by Get.</summary>
     public byte ProtocolVersion { get; init; } = 0x31;
 
-    /// <summary>NACK the Go command instead of ACKing it — a read-protected or mis-addressed part.</summary>
+    /// <summary>NACK the Go command instead of ACKing it — a read-protected part.</summary>
     public bool RefuseGo { get; init; }
+
+    /// <summary>
+    /// ACK the Go command but NACK the address frame — the part rejecting the jump target, e.g.
+    /// no valid stack pointer there.
+    /// </summary>
+    public bool RefuseGoAddress { get; init; }
+
+    /// <summary>
+    /// ACK the Go command, consume the address frame, and then say nothing — a part that jumps
+    /// promptly enough that its ACK is lost, or a bridge that drops it as the line settles.
+    /// </summary>
+    public bool SilentOnGoAddress { get; init; }
 
     /// <summary>
     /// Stop answering and close the pipe after this many commands — the cable-unplugged case.
@@ -220,7 +232,9 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
         await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
         await ReadExactAsync(reader, 5, ct).ConfigureAwait(false);
-        await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
+        if (SilentOnGoAddress)
+            return;
+        await SendAsync(writer, new[] { RefuseGoAddress ? Nack : Ack }, ct).ConfigureAwait(false);
     }
 
     private static uint ReadBigEndian(byte[] frame) =>
