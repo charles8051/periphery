@@ -21,6 +21,17 @@ internal class FakeDeviceProvider : IDeviceProvider
     /// <summary>How many devices to yield before <see cref="FailEnumerationWith"/> throws.</summary>
     public int FailAfterYielding { get; set; }
 
+    /// <summary>
+    /// How many devices this provider actually produced. The point of a
+    /// streaming query is that a consumer which stops early leaves this below
+    /// the total, so asserting on a query's results alone would not catch a
+    /// regression back to a full walk.
+    /// </summary>
+    public int Yielded { get; private set; }
+
+    /// <summary>True once enumeration reached the end of the device list.</summary>
+    public bool EnumeratedToCompletion { get; private set; }
+
     public FakeDeviceProvider(params DeviceInfo[] devices)
     {
         _devices = devices.ToList();
@@ -56,8 +67,11 @@ internal class FakeDeviceProvider : IDeviceProvider
             )
                 continue;
 
+            Yielded++;
             yield return device;
         }
+
+        EnumeratedToCompletion = true;
     }
 
     public static FakeDeviceProvider WithUsbDevices() =>

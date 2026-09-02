@@ -444,6 +444,31 @@ the failure the current buffer already has. `GetAsyncEnumerator` is an iterator,
 so `await foreach`'s own disposal covers the caller-breaks-early case; the
 `Take` path needs the same discipline on its own exit.
 
+**Implemented.** `GetAsyncEnumerator` splits into two private iterators —
+`StreamAsync` when there is no `OrderBy`, `SortedAsync` when there is — rather
+than branching inside one method, so neither path can accidentally acquire the
+other's cost. `yield break` inside the `await foreach` runs its `finally`, which
+disposes the provider's enumerator, so the limit stops the walk rather than
+merely truncating its output.
+
+Two details worth recording, because both were assumptions until they were
+checked:
+
+- **The limit is checked *after* yielding**, which is only safe because
+  `Take` already rejects zero and negative (`ThrowIfNegativeOrZero`). A
+  pre-yield check would have to observe an *n+1*th match to know it was done,
+  producing one device more than necessary. A test pins the validation that
+  makes the post-check sound, since removing it would silently make `Take(0)`
+  return one item.
+- **The completion log moved into a `finally`**, so a caller that breaks early
+  still reports what was actually touched rather than nothing at all.
+
+The tests assert on how many devices the *provider* was asked to produce, not on
+the query's results. Results alone would pass just as happily against the old
+unconditional buffer, which walked everything and then discarded all but the
+first — so a results-only test would not have caught the regression it exists to
+prevent.
+
 Ordering of streamed results is provider order, which is what the current
 unordered path already yields. This changes only when items are produced and how
 many devices are touched, both of which the `IAsyncEnumerable` contract already
