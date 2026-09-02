@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- ADR-0061 phase 3 (STM32 USART / AN3155). IsPackable=false while the platform
+         contract is still in-progress, matching the .Usb sibling. -->
+    <IsPackable>false</IsPackable>
+    <Description>STM32 UART bootloader flasher (ST AN3155): a pure planner, an AN3155 shell over the CallAndResponse Stm32BootloaderClient, and an IFirmwareProgrammer / IBootloaderProvider adapter. ADR-0061.</Description>
+
+    <!-- This package departs from ADR-0061 DEC-006 in one way, deliberately.
+
+         DEC-006 says: depend on CallAndResponse core + Protocol.Stm32Bootloader, and write
+         a ~10-line IDuplexPipe over Periphery.Serial rather than referencing
+         CallAndResponse.Transport.Serial, which is the only RJCP-pulling package. That path
+         is blocked - Periphery.Serial does not exist yet (ADR-0062 is Proposed).
+
+         So this builds against Transport.Serial for now. The cost is the one DEC-006 named:
+         RJCP.SerialPortStream is a third-party runtime dependency in the flashing path. It is
+         contained - RJCP is reachable only through Stm32SerialProgrammer.OpenAsync, and the
+         protocol shell takes an IDuplexPipe, so a BCL or Periphery.Serial transport is a
+         constructor argument away rather than a rewrite.
+
+         AOT survives it, which was not obvious: IsAotCompatible is claimed below, and
+         `dotnet publish -p:PublishAot=true` of Periphery.FlashAnything.Cli - which references
+         this package - links with zero IL trim warnings. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Firmware\Periphery.Firmware.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CallAndResponse" Version="2.0.0-alpha.6" />
+    <PackageReference Include="CallAndResponse.Protocol.Stm32Bootloader" Version="2.0.0-alpha.6" />
+    <PackageReference Include="CallAndResponse.Transport.Serial" Version="2.0.0-alpha.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Bootloader.Stm32.Serial.Tests" />
+  </ItemGroup>
+
+</Project>
