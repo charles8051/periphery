@@ -85,6 +85,47 @@ public class Stm32SerialFailureTests
         Assert.Equal(Stm32SerialPlan.MaxErasePages, erase.PageCount);
     }
 
+    [Fact]
+    public void Plan_refuses_a_segment_below_the_flash_base()
+    {
+        // The erase guard does not cover this: an image entirely below flash base yields a page
+        // count of zero, so no erase step is emitted and the writes went out anyway — at addresses
+        // in system memory, SRAM, or the option bytes. A bad option-byte write is the one thing on
+        // this part that cannot be undone from outside.
+        var image = FirmwareImage.FromBytes(0x07FF0000, new byte[16]);
+
+        var ex = Assert.Throws<Stm32SerialException>(
+            () => Stm32SerialPlan.Plan(image, Stm32SerialOptions.Default, FlashOptions.Default));
+
+        Assert.Contains("below the flash base", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_refuses_a_segment_that_runs_past_the_end_of_the_address_space()
+    {
+        // uint arithmetic wraps here, and a wrapped end reads as a small one — which is how such a
+        // segment used to slip past the page-count ceiling entirely.
+        var image = FirmwareImage.FromBytes(0xFFFFFF00, new byte[0x200]);
+
+        var ex = Assert.Throws<Stm32SerialException>(
+            () => Stm32SerialPlan.Plan(image, Stm32SerialOptions.Default, FlashOptions.Default));
+
+        Assert.Contains("past the end of the 32-bit address space", ex.Message);
+    }
+
+    [Fact]
+    public async Task Flash_refuses_a_below_base_image_without_writing_anything()
+    {
+        await using var device = new FakeStm32Bootloader();
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+
+        var result = await programmer.FlashAsync(Payload(0x00000000, 16), FlashOptions.Default);
+
+        Assert.False(result.Success);
+        Assert.Contains("below the flash base", result.Error);
+        Assert.Empty(device.ErasedPageCounts);
+    }
+
     // ── Finding 3: protocol limits are enforced where the caller can see them ──
 
     [Theory]
@@ -173,6 +214,22 @@ public class Stm32SerialFailureTests
         var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
 
         Assert.True(result.Success, result.Error);
+    }
+
+    [Fact]
+    public async Task Flash_fails_when_the_line_drops_during_the_Go_address_stage()
+    {
+        // Silence after the address frame reads as a jump, but a transport failure is not silence.
+        // The cable came out after the command was ACKed, so the part's post-Go state is unknown —
+        // reporting a successful flash would be a guess. This device ACKs the Go command and then
+        // closes the pipe instead of answering the address frame.
+        await using var device = new FakeStm32Bootloader { DisconnectOnGoAddress = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+
+        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+
+        Assert.False(result.Success);
+        Assert.Contains("transport closed mid-command", result.Error);
     }
 
     [Fact]

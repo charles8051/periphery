@@ -418,12 +418,16 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             throw;
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // Nothing came back. AN3155 has the ACK precede the jump, so in principle it should
-            // always arrive — but a part that resets promptly, or a USB-serial bridge that drops
-            // the byte as the line settles, loses it. Silence is not evidence of refusal, and
-            // failing a flash that actually succeeded is the worse error, so it reads as a jump.
+            // Our own deadline: the part said nothing. AN3155 has the ACK precede the jump, so in
+            // principle it should always arrive — but a part that resets promptly, or a USB-serial
+            // bridge that drops the byte as the line settles, loses it. Silence is not evidence of
+            // refusal, and failing a flash that actually succeeded is the worse error.
+            //
+            // Only the deadline is caught. A Stm32SerialException here is a converted transport
+            // failure — the cable came out after the command was ACKed — and that is not silence:
+            // the part's post-Go state is unknown, so it propagates and fails the flash.
         }
 
         if (reply == Nack)

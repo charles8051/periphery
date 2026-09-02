@@ -56,6 +56,12 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     public bool SilentOnGoAddress { get; init; }
 
     /// <summary>
+    /// ACK the Go command, take the address frame, then drop the line instead of answering — the
+    /// cable coming out after the jump was accepted, leaving the part's state unknown.
+    /// </summary>
+    public bool DisconnectOnGoAddress { get; init; }
+
+    /// <summary>
     /// Stop answering and close the pipe after this many commands — the cable-unplugged case.
     /// </summary>
     public int? DisconnectAfterCommands { get; init; }
@@ -232,6 +238,8 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
         await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
         await ReadExactAsync(reader, 5, ct).ConfigureAwait(false);
+        if (DisconnectOnGoAddress)
+            throw new OperationCanceledException("line dropped");   // unwinds; the finally closes the pipe
         if (SilentOnGoAddress)
             return;
         await SendAsync(writer, new[] { RefuseGoAddress ? Nack : Ack }, ct).ConfigureAwait(false);
