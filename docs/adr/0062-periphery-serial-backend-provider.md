@@ -314,7 +314,8 @@ a decision made for the wrong reason.
 ### 9. A continuous probe loop is a second claim on the port; §1 settled which layer owns it, not for how long
 
 Added 2026-09-02, alongside the [autoflash ADR](../feature-specs/firmware-flashing/autoflash/adr.md)
-amendment that admits probe-identified targets to autoflash on operator-named ports.
+amendment that admits probe-identified targets to autoflash on bridges the operator bound at
+arm time.
 
 That amendment introduces something §1 did not consider: a loop that opens a port, sends the
 AN3155 sync byte, and closes — on a cadence, for as long as autoflash stays armed. §1 settled

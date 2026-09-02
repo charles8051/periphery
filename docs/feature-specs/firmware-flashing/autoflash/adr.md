@@ -128,9 +128,10 @@ folded by the pure reducer.
 
 ---
 
-# Amendment (2026-09-02): probe-identified autoflash, scoped to a named port
+# Amendment (2026-09-02): probe-identified autoflash, scoped to an operator-bound port
 
-Decisions 8–10 amend Decisions 4, 1, and 5 respectively. Nothing above is rewritten.
+Decisions 8–10 amend Decisions 4, 1, and 5 respectively. Decision 11 amends nothing; it is a
+new decision this amendment introduces. Nothing above is rewritten.
 
 **What prompted it.** `Periphery.Bootloader.Stm32.Serial` merged ([#153](https://github.com/charles8051/periphery/pull/153),
 `6fd0e9d`), so the STM32 system UART bootloader is now a flashable family in FlashAnything.
@@ -146,54 +147,90 @@ COM port that appears. `spec.md` already named the way out, and this amendment i
 
 ---
 
-## Decision 8 — Probe families may autoflash, but only on ports the operator named (amends Decision 4)
+## Decision 8 — Probe families may autoflash, but only on a bridge the operator bound (amends Decision 4)
 
-**Decision.** `AutoflashConfig` gains a set of `SerialPortName`. A `Probe` target is eligible
-only when its port is in that set; the set is empty for passive families and required for
-probe families (an arm that omits it is refused at arm time, not silently disarmed).
-`AutoflashPolicy.Decide`'s rule 2 becomes a scope check rather than a ban:
+**Decision.** `AutoflashConfig` gains a set of **bridge identities**, not COM names. An
+identity is the USB-serial bridge's `VendorId` + `ProductId` + `LocationPath`, plus
+`SerialNumber` when the bridge exposes one — the `ByLocationPath` correlation safety rule 4
+already uses. The operator names `COM7` at arm time; the arm resolves it to the identity of
+the bridge currently behind it and binds *that*. A `Probe` target is eligible only when the
+bridge it sits behind matches a bound identity; the set is empty for passive families and
+required for probe families (an arm that omits it is refused at arm time, not silently
+disarmed). `AutoflashPolicy.Decide`'s rule 2 becomes a scope check rather than a ban:
 
 ```csharp
 if (detected.Identification != IdentificationMode.Passive
-    && (detected.PortName is not { } port || !armed.Ports.Contains(port)))
-    return new AutoflashAction.Skip("probe-identified and not on an armed port");
+    && (detected.Bridge is not { } bridge || !armed.Bridges.Contains(bridge)))
+    return new AutoflashAction.Skip("probe-identified and not on a bound bridge");
 ```
 
-`FlashTargetView` gains `PortName` so the policy has the input. Passive families are
+`FlashTargetView` gains the bridge identity so the policy has the input. Passive families are
 unaffected: with an empty set the expression short-circuits on the first clause and every
 existing decision-table case keeps its meaning.
+
+**Why an identity and not the COM name.** A COM name is not an identity, and treating it as
+one silently transfers the operator's consent to hardware they never saw. Windows recycles
+COM numbers: unplug the bound bridge, plug in a GPS receiver, and the OS can hand it `COM7`.
+A loop authorized against the *string* keeps probing, and now sends `0x7F` to the GPS. The
+operator consented to a bench, not to a number, and the number is the part that moves. Binding
+the identity makes the failure loud instead: the bound bridge is gone, so the loop stops. If
+the name resolves to an identity that is not the bound one, the loop refuses and says so
+rather than probing.
 
 **Why.** Decision 4 rests on identity being knowable without touching the device. For serial
 that is false — a bridge's VID/PID names the bridge — and the amendment does not pretend
 otherwise. What it changes is *where consent comes from*. For DFU, `0483:DF11` is the
 operator's consent, supplied by the device. For serial there is no such signal, so the
-operator supplies it directly by naming the port at arm time. `--port COM7` is a statement
-about the bench: *this port is wired to a target I intend to flash*. That is narrower than
+operator supplies it directly by pointing at a bridge at arm time. `--port COM7` is a statement
+about the bench: *this fixture is wired to a target I intend to flash*. That is narrower than
 what the manual path already permits, since the manual path lets an operator flash any port
 on the machine.
 
-The set, not a single port, because a multi-fixture bench is the case that motivated this and
-one arm per port would multiply the armed sessions rather than the targets.
+The set, not a single bridge, because a multi-fixture bench is the case that motivated this and
+one arm per fixture would multiply the armed sessions rather than the targets.
 
-**Consequence, accepted.** A port in the set that is *not* an STM32 receives `0x7F` at 8E1,
-once per probe cycle, until disarm. If something else is wired there — a GPS module, a motor
-controller — it receives a stray byte on that cadence. Scoping to a named port reduces this
-hazard to one the operator chose. It does not remove it, and it is the price of the feature.
+**Consequence, accepted — and it must be shown, not just recorded here.** A bound bridge with
+something other than an STM32 behind it receives `0x7F` at 8E1, once per probe cycle, until
+disarm. If a GPS module or a motor controller is wired there, it gets a stray byte on that
+cadence. Binding to a bridge the operator chose reduces this hazard; it does not remove it.
+
+Decision 3 makes the dangerous behaviour deliberate and visible, and that obligation extends
+here: **the arm confirmation must enumerate every bound port with the bridge behind it, and
+state that probing sends bytes to whatever is attached.** Naming only the image and family —
+what the confirmation says today — lets an operator accept this consequence without being
+told it exists. Disarm stops every loop.
 
 ---
 
 ## Decision 9 — A per-port probe loop, because hotplug does not fire for a swapped board (amends Decision 1)
 
-**Decision.** While armed on a probe family, the service runs one probe loop per armed port:
+**Decision.** While armed on a probe family, the service runs one probe loop per bound bridge:
 open, AN3155 sync, read the chip id, close on failure. A transition absent → present emits
 `TargetDetected`; N consecutive silences emit `TargetRemoved`. The probe deadline is its own
 short timeout, separate from `Stm32SerialOptions.CommandTimeout`.
+
+**The loop owns detection for probe families.** A watcher appearance for a bound bridge
+*registers and starts the loop, and emits nothing*. Only the loop may emit `TargetDetected`
+for a probe target.
+
+This ownership rule is not optional tidiness. `OnTrackerState` already emits `TargetDetected`
+for any device the registry matches, and `Stm32SerialBootloaderProvider.CanHandle` claims
+every device carrying a `PortName` — so a bridge and board plugged in together would produce
+a watcher detection *and* a probe detection for the same physical target. `MaybeAutoflash`
+fires on first detection, so the two paths race: a double flash, a flash dispatched before the
+probe has established there is an STM32 there at all, or two opens of one COM port. Routing
+every probe-family detection through the loop leaves one lifecycle per target and one place
+that decides a target exists.
+
+A single scheduler iterating the bound bridges, rather than an independent task per bridge,
+is the shape to prefer for the same reason: one thing to start, stop on disarm, and reason
+about. Left to implementation.
 
 **Why.** Decision 1 forbids a second discovery path, and this does not add one. The
 `DeviceWatcher` still discovers *ports*; the probe loop resolves what is *behind* a port the
 watcher already found. It is an identification stage on an existing target, not a parallel
 enumeration — it never learns about a port the watcher did not report, and it starts only for
-ports in the armed set.
+bridges in the armed set.
 
 It is needed because there are two arrival shapes and only one produces a device event:
 
@@ -231,6 +268,32 @@ it is the only key available.
 
 Departure-gating also matches how the bench is actually operated: drop a board in, it flashes,
 lift it out, the next one flashes. The gate is the operator's hand, and the loop observes it.
+
+**Where this is a heuristic, stated plainly.** Silence is not proof a board left, and the
+flash *itself manufactures the silence*: `LeaveAfterFlash` issues Go, the part jumps to the
+application, and it stops answering AN3155 while sitting right where it was. That is the
+expected end of every successful flash, so the gate opens on every success by design. A board
+that then re-enters the bootloader — BOOT0 still strapped and something resets it — reads as
+an arrival and is flashed again. Nothing available today distinguishes that from a
+replacement board.
+
+Three things narrow it, and none closes it:
+
+1. **Require `LeaveAfterFlash` for probe autoflash.** A flashed part that stays in the
+   bootloader keeps answering, never goes silent, and never releases its own gate — but it
+   also never lets the next board in. Leaving is what makes silence mean *finished*.
+2. **Distinguish the sync answer.** AN3155 §3.1 ACKs the first `0x7F` since reset and NACKs a
+   later one, so a NACK means *this part has not reset since we last spoke to it* and an ACK
+   means it has. That separates a part sitting untouched from one that arrived or restarted.
+   It does not separate an arrival from a re-strapped reset. Note that `SyncAsync` currently
+   collapses both answers into success, deliberately — a probe wanting this signal has to
+   stop doing that.
+3. **A strapped BOOT0 that also spontaneously resets is a bench misconfiguration**, and this
+   design assumes the fixture does not have one. That is a precondition, not a guarantee.
+
+Replacement-safety proper needs the UID below, or an operator confirm per board. Until then
+departure-gating is a heuristic that fits an attended-adjacent fixture, and it should not be
+described as more.
 
 **The upgrade, when a chip database exists.** STM32 parts carry a 96-bit unique id in system
 memory, readable with AN3155 Read Memory (`0x11`) — at `0x1FFF7A10` on F4, `0x1FFFF7E8` on F1,
@@ -276,8 +339,10 @@ that case too, which is why this is the shape to build now rather than the one t
 
 ## Not decided here
 
-- **Which front-ends expose the port set.** The CLI shape is assumed to be
-  `--port COM7 --port COM9`; the GUI equivalent is untouched.
+- **The arm affordance in each front-end.** Decision 8 fixes what the confirmation must say —
+  every bound port, the bridge behind it, and that probing sends bytes to whatever is attached.
+  How each front-end presents that is open; the CLI shape is assumed to be
+  `--port COM7 --port COM9`, and the GUI equivalent is untouched.
 - **The three constants.** Probe cadence, probe timeout, and how many consecutive silences mean
   a board has left. Decisions 9 and 10 fix the shape and give orders of magnitude (~1 Hz, a few
   hundred milliseconds); the values want a real fixture, not an argument.

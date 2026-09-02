@@ -290,7 +290,8 @@ lane and [`adr.md`](adr.md) Decision 4.
       Debounce window vs. serial-based dedupe — which per family?
 - [x] **Probe-based autoflash (serial).** *Decided, not yet implemented.* Deferred entirely from
       v1; the per-port probe-and-confirm flow this bullet asked for is now [`adr.md`](adr.md)
-      Decisions 8-10 (arm binds a port set, a per-port probe loop, departure-gated dedupe). The
+      Decisions 8-11 (arm binds a bridge identity, a per-bridge probe loop that owns detection,
+      departure-gated dedupe, open-per-probe-cycle). The
       safety rules below still describe shipped behaviour: until those land, probe targets are
       never auto-flashed.
 - [ ] **Multi-arm.** v1 arms a single family/image at a time. Arming several families at once
