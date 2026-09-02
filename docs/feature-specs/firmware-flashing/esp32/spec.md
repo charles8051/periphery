@@ -43,17 +43,24 @@ loader, the wire protocol `esptool` speaks, publicly specified per-chip in
 [Espressif's serial-protocol documentation][serial-protocol]. The **transport** is three
 things, and they have completely different availability in this codebase.
 
-| Path | Chips | Protocol | Periphery transport | Identification | Available today |
+The last column is deliberately **transport reachability** — whether Periphery can open and talk
+to the device at all — and not "you can flash this today." **No path has a verified end-to-end
+flash.** Reaching a device is necessary and nowhere near sufficient: path C still has an unverified
+payload container (OQ-10) and path B and C both have unverified reset-and-reopen behaviour (OQ-6).
+
+| Path | Chips | Protocol | Periphery transport | Identification | Transport reachable |
 |---|---|---|---|---|---|
-| **A — UART bridge** | all, incl. classic ESP32 / ESP8266 | esptool ROM, SLIP over UART | `Periphery.Serial` | `Probe` | **No** — no `Periphery.Serial` ([ADR-0062](../../../adr/0062-periphery-serial-backend-provider.md) is Proposed, no code) |
-| **B — USB-Serial-JTAG** | C3, S3, C6, H2, P4 | esptool ROM, SLIP over CDC bulk endpoints | `Periphery.Usb` bulk | family + mode (OQ-9) | **Linux, probably.** Windows unmeasured — OQ-1 |
-| **C — USB-OTG DFU** | S2, S3, P4 | USB DFU 1.1; payload container **unverified** (OQ-10) | `Periphery.Usb` control | family + mode (OQ-9) | **Linux only** (no macOS USB backend, OQ-5). Windows needs an operator-installed WinUSB driver — [Espressif's DFU guide][esp-dfu] says so outright |
+| **A — UART bridge** | all, incl. classic ESP32 / ESP8266 | esptool ROM, SLIP over UART | `Periphery.Serial` | `Probe` | **No.** No `Periphery.Serial` at all ([ADR-0062](../../../adr/0062-periphery-serial-backend-provider.md) is Proposed, no code) |
+| **B — USB-Serial-JTAG** | C3, S3, C6, H2, P4 | esptool ROM, SLIP over CDC bulk endpoints | `Periphery.Usb` bulk | family + mode (OQ-9) | **Expected on Linux**, unmeasured. Windows is OQ-1; no macOS backend (OQ-5) |
+| **C — USB-OTG DFU** | S2, S3, P4 | USB DFU 1.1; payload container **unverified** (OQ-10) | `Periphery.Usb` control | family + mode (OQ-9) | **Expected on Linux**, unmeasured. Windows needs an operator-installed WinUSB driver ([Espressif's DFU guide][esp-dfu]); no macOS backend (OQ-5) |
 
 Three consequences fall out of that table.
 
-1. **Paths B and C need no new dependency and no new transport package.** `Periphery.Usb`
+1. **Paths B and C need no new dependency and no new transport package** — which is a statement
+   about what is *missing*, not about what is *proven*. `Periphery.Usb`
    already exposes `ControlTransferAsync`, `BulkReadAsync`, and `BulkWriteAsync`
-   ([`UsbDevice.cs`](../../../../src/Periphery.Usb/UsbDevice.cs)).
+   ([`UsbDevice.cs`](../../../../src/Periphery.Usb/UsbDevice.cs)), so nothing has to be built
+   before trying. Whether it works is [what has not been measured](#open-questions).
 2. **Paths B and C identify a family and a mode without touching the device** — Espressif VID
    `0x303A` in ROM download mode, not a CP210x that says nothing about what is behind it. That
    is a materially better starting point than the bridge case the
@@ -61,11 +68,13 @@ Three consequences fall out of that table.
    is shared across C3/S3/C6/H2/P4. See [Identification model](#identification-model) for what
    that does and does not license. ADR-0061's roadmap table filed ESP32 under the serial lane;
    for the modern parts that is no longer the right lane.
-3. **Path C is the `Periphery.Bootloader.Dfu` extraction DEC-005 was waiting for.** It is
-   also the smallest path to a first working flash, because the generic DFU layer already
-   exists inside [`Periphery.Bootloader.Stm32.Usb`](../../../../src/Periphery.Bootloader.Stm32.Usb/).
-   It is a beachhead and not the feature: DFU mode is entered by strapping GPIO0 and holding
-   RESET, and on Windows it needs a driver the operator installs.
+3. **Path C is the `Periphery.Bootloader.Dfu` extraction DEC-005 was waiting for**, and the
+   shortest route to *attempting* a flash, because the generic DFU layer already exists inside
+   [`Periphery.Bootloader.Stm32.Usb`](../../../../src/Periphery.Bootloader.Stm32.Usb/). Shortest
+   is not short: DFU mode is entered by strapping GPIO0 and holding RESET, Windows needs a driver
+   the operator installs, the payload container is unverified (OQ-10), and USB-OTG re-enumerates
+   mid-sequence so the programmer cannot keep its pre-reset handle (OQ-6). Phase 1 is a beachhead
+   whose landing is not yet confirmed.
 
 ---
 
@@ -424,10 +433,12 @@ Independently shippable phases, no time estimates.
 
 - **Phase 0 — image model.** `FirmwareFormat.EspApplication` + `0xE9` sniff; multi-offset load;
   the `--file <path>@<offset>` CLI surface. Useful on its own, no ESP32 code required.
-- **Phase 1 — DFU extraction + first flash.** Extract `Periphery.Bootloader.Dfu` from the STM32
-  package (its existing tests are the regression gate), then `Esp32UsbDfuProvider` for S2/S3.
-  Smallest path to a working ESP32 flash: no new transport, no new protocol core, and it pays
-  off DEC-005 as designed.
+- **Phase 1 — DFU extraction, then an attempt at the DFU path.** Extract
+  `Periphery.Bootloader.Dfu` from the STM32 package (its existing tests are the regression gate) —
+  that half is pure refactor and carries no hardware risk. Then `Esp32UsbDfuProvider` for S2/S3,
+  which is **gated on OQ-10 and OQ-6**: settle the payload container and the reset-and-reopen
+  sequence before writing the programmer, or it will be built against a guess. It pays off
+  DEC-005 as designed and needs no new transport or protocol core.
 - **Phase 2 — the protocol core.** `Periphery.Bootloader.Esp32`: SLIP, commands, responses,
   chip table, planner, seam. Entirely pure, entirely testable, valuable regardless of which
   transport lands. This is the bulk of the work.

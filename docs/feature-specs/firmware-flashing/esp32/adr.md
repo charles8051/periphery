@@ -174,12 +174,19 @@ protocol core, and the STM32 package's existing tests are the regression gate fo
 Shipping something that flashes a real S3 early is worth more than shipping the larger, more
 general piece first.
 
-**What this costs.** Less reach than "first working flash" suggests. DFU covers only S2/S3/P4,
-in a mode the board has to be strapped into (GPIO0 low, pulse RESET), and on Windows Espressif's
-own guide says the WinUSB driver "has to be installed for the device to work properly" — their
-package or Zadig. So phase 1 lands a real flash on Linux and macOS and an operator-installs-a-driver
-flash on Windows. It is a beachhead, not the feature, and the phrase "available today" in an
-earlier draft of the spec's transport table was doing more work than the evidence supported.
+**What this costs.** Much less reach than "first working flash" suggests, and the extraction is
+the only half that is actually safe to schedule. DFU covers S2/S3/P4 only, in a mode the board has
+to be strapped into (GPIO0 low, pulse RESET); on Windows Espressif's own guide says the WinUSB
+driver "has to be installed for the device to work properly"; `Periphery.Usb` has no macOS backend;
+the payload container is unverified; and USB-OTG re-enumerates mid-sequence, so the programmer
+cannot keep its pre-reset handle.
+
+Two drafts of this ADR overstated that in the same direction. The first called path C "available
+today"; the second narrowed it to Linux but still read as available, while the same table admitted
+the payload container was unverified. Reaching a device is not flashing it. What phase 1 can
+promise is the DFU extraction — pure refactor, gated by the STM32 package's existing tests — plus
+an *attempt* at the DFU path that is itself gated on measuring the payload container and the
+reset-and-reopen sequence first.
 
 ---
 
