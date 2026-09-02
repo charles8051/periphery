@@ -72,9 +72,11 @@ Three consequences fall out of that table.
    shortest route to *attempting* a flash, because the generic DFU layer already exists inside
    [`Periphery.Bootloader.Stm32.Usb`](../../../../src/Periphery.Bootloader.Stm32.Usb/). Shortest
    is not short: DFU mode is entered by strapping GPIO0 and holding RESET, Windows needs a driver
-   the operator installs, the payload container is unverified (OQ-10), and USB-OTG re-enumerates
-   mid-sequence so the programmer cannot keep its pre-reset handle (OQ-6). Phase 1 is a beachhead
-   whose landing is not yet confirmed.
+   the operator installs, the payload container is unverified (OQ-10), and USB-OTG is *expected* to
+   re-enumerate mid-sequence — which, if it does, means the programmer cannot keep its pre-reset
+   handle. That expectation is reasoning from how USB-OTG mode switches generally behave, not an
+   observation, and OQ-6 is where it gets settled. Phase 1 is a beachhead whose landing is not yet
+   confirmed.
 
 ---
 
