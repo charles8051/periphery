@@ -1,7 +1,7 @@
 ---
 title: "ADR-0062: Periphery.Serial — backend-provider model (BCL / RJCP), superseding the single native implementation"
 status: "Proposed"
-status_note: "Not implemented - there is no `Periphery.Serial` package. It does NOT block the AN3155 serial bootloader: `Periphery.Bootloader.Stm32.Serial` was built and tested without it on branch claude/stm32-uart-bootloader-flashanything-df7d55 (2026-09-02, not yet merged). See the Amendment."
+status_note: "Not implemented - there is no `Periphery.Serial` package. It does NOT block the AN3155 serial bootloader: `Periphery.Bootloader.Stm32.Serial` was built and tested without it, and merged 2026-09-02 (#153, `6fd0e9d`). See the Amendment."
 date: "2026-06-16"
 authors: "@charles8051"
 tags: ["architecture", "decision", "serial", "extension", "uart", "backend-provider", "rjcp", "system-io-ports", "periphery-serial"]
@@ -177,8 +177,8 @@ Two things happened after this ADR was written.
 1. **A serial bootloader flasher was built without `Periphery.Serial`.**
    `Periphery.Bootloader.Stm32.Serial` implements AN3155 against
    `CallAndResponse.Transport.Serial` and its `RJCP.SerialPortStream`. Discovery came from
-   `DeviceInfo.PortName`, which lives in Periphery core and never needed this package. It is on
-   branch `claude/stm32-uart-bootloader-flashanything-df7d55` and **not yet merged**: 23 tests
+   `DeviceInfo.PortName`, which lives in Periphery core and never needed this package. Merged
+   2026-09-02 as [#153](https://github.com/charles8051/periphery/pull/153) (`6fd0e9d`): 42 tests
    against an in-memory AN3155 device emulator, an AOT publish with zero trim warnings, and no
    flash verified against real hardware. What it establishes is reachability of the transport,
    which is exactly the claim at issue here.
@@ -310,3 +310,32 @@ a decision made for the wrong reason.
 - **Whether `SetDtrAsync`/`SetRtsAsync` should be async at all.** DEC-002 declares them `Task`-returning.
   The underlying operations are synchronous property writes in both `System.IO.Ports` and
   `RJCP.SerialPortStream`. Worth revisiting when the backends are written.
+
+### 9. A continuous probe loop is a second claim on the port, and §1 does not yet answer it
+
+Added 2026-09-02, alongside the [autoflash ADR](../feature-specs/firmware-flashing/autoflash/adr.md)
+amendment that admits probe-identified targets to autoflash on operator-named ports.
+
+That amendment introduces something §1 did not consider: a loop that opens a port, sends the
+AN3155 sync byte, and closes — on a cadence, for as long as autoflash stays armed. §1 settled
+*which layer* owns a port. It did not settle **for how long**, and a probe loop makes that the
+live question.
+
+Two shapes, and `ISerialPort`'s lifecycle has to support whichever wins:
+
+- **Open per cycle.** The port is held only for the length of one probe, so other tools on the
+  bench can use it between cycles and a crashed session leaves nothing claimed. It pays an
+  open/close per cycle, and it has a race: the part can reset between the probe that decided to
+  flash and the open that flashes it, so the flash lands on a device state nobody inspected.
+- **Hold for the armed session.** One open, reused by the probes and by the flash that follows,
+  which removes that race outright. It also makes an armed session exclusive over the port for
+  its whole duration — the strongest form of §1's claim, and the one most likely to surprise an
+  operator who still has a terminal open on that port.
+
+The second is probably right for a fixture and definitely wrong as a default for a shared bench.
+Recording it here rather than deciding it: the choice belongs with whoever writes `ISerialPort`'s
+open/dispose semantics, and it is the first requirement that distinguishes them.
+
+It also adds to §8's unmeasured list. **How fast a bridge can be reopened** — CH340 and CP210x
+drivers do not all release a handle promptly on close, and a probe cadence in the hundreds of
+milliseconds is exactly where a slow release shows up as a spurious "no device."
