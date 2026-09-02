@@ -168,6 +168,19 @@ if (detected.Identification != IdentificationMode.Passive
 unaffected: with an empty set the expression short-circuits on the first clause and every
 existing decision-table case keeps its meaning.
 
+**A disconnect breaks the bind.** If the bound bridge stops being present, the loop stops and
+stays stopped. It does not resume when a bridge matching the identity comes back; the operator
+re-arms. This is what makes the identity sufficient rather than merely better than a string.
+
+Without it the identity is still guessable hardware. `LocationPath` names the USB socket, not
+the physical bridge, and `VendorId` + `ProductId` names the model — so an identical bridge in
+the same socket produces the same identity and would inherit the authorization. That is not a
+corner case: CH340s commonly expose no `SerialNumber` at all, so on the most ordinary bridge
+on the bench the composite is all there is. Refusing to arm on a serial-less bridge would rule
+out that hardware entirely, which is too much. Breaking the bind on disconnect closes the same
+hole from the other side, because swapping a bridge requires unplugging one — and it costs the
+operator a re-arm only in the case where something was physically changed.
+
 **Why an identity and not the COM name.** A COM name is not an identity, and treating it as
 one silently transfers the operator's consent to hardware they never saw. Windows recycles
 COM numbers: unplug the bound bridge, plug in a GPS receiver, and the OS can hand it `COM7`.
@@ -222,9 +235,17 @@ probe has established there is an STM32 there at all, or two opens of one COM po
 every probe-family detection through the loop leaves one lifecycle per target and one place
 that decides a target exists.
 
-A single scheduler iterating the bound bridges, rather than an independent task per bridge,
-is the shape to prefer for the same reason: one thing to start, stop on disarm, and reason
-about. Left to implementation.
+**Probing suspends while a flash runs on that bridge.** One state machine per bound bridge,
+holding the port handle, in exactly one of: probing, flashing, or stopped. A flash takes
+ownership from the probe cycle that dispatched it (Decision 11 hands over the open handle) and
+the cadence does not tick again on that bridge until the flash finishes.
+
+Without that, Decision 9's cadence and Decision 11's spanning handle fight each other: the
+next cycle either tries to open a port the flash still owns, or reuses the handle and injects
+`0x7F` into the middle of a Write Memory sequence. A flash long enough to outlast N cycles
+would also read as N silences and emit `TargetRemoved` for the target being flashed at that
+moment. One state machine per bridge is also simply less machinery than a cadence plus a lock,
+which is the reason to prefer it over bolting exclusion onto two independent loops.
 
 **Why.** Decision 1 forbids a second discovery path, and this does not add one. The
 `DeviceWatcher` still discovers *ports*; the probe loop resolves what is *behind* a port the
@@ -290,6 +311,16 @@ Three things narrow it, and none closes it:
    stop doing that.
 3. **A strapped BOOT0 that also spontaneously resets is a bench misconfiguration**, and this
    design assumes the fixture does not have one. That is a precondition, not a guarantee.
+
+**So the loop is bounded by default.** One flash per bound bridge per armed session, which is
+Decision 5's original guarantee unchanged. Re-arming a bridge after its board departs is
+opt-in — `--repeat` — and that flag is the operator saying *this is a fixture and I intend to
+flash a succession of boards through it*. Without it a board that re-enters the bootloader
+cannot be flashed a second time, whatever the gate thinks it saw.
+
+That does not make departure-gating correct. It bounds what being wrong costs: one unintended
+re-flash of a board that was just flashed with the same image, on a bench the operator
+explicitly put into repeat mode, recorded in the session audit like every other outcome.
 
 Replacement-safety proper needs the UID below, or an operator confirm per board. Until then
 departure-gating is a heuristic that fits an attended-adjacent fixture, and it should not be
