@@ -22,6 +22,13 @@ internal static class Stm32SerialPlan
     /// <summary>Base of STM32 internal flash, and the address page 0 starts at.</summary>
     public const uint FlashBase = 0x08000000;
 
+    /// <summary>
+    /// Most pages one Extended Erase can address. The command carries the page count as a
+    /// half-word, and AN3155 §3.7 reserves the values from 0xFFFD upward for mass and bank erase,
+    /// so the largest usable count is 0xFFF0 with headroom below the reserved range.
+    /// </summary>
+    public const int MaxErasePages = 0xFFF0;
+
     public static ImmutableArray<Stm32SerialStep> Plan(FirmwareImage image, Stm32SerialOptions serial, FlashOptions options)
     {
         ArgumentNullException.ThrowIfNull(image);
@@ -35,6 +42,19 @@ internal static class Stm32SerialPlan
         if (options.Erase != EraseMode.None)
         {
             int pages = PageCountToCover(image, serial.ErasePageSize);
+
+            // Refuse rather than truncate. The shell narrows this count to a ushort for the wire,
+            // so an out-of-range value would wrap silently and erase an arbitrary, unrelated number
+            // of pages — and the nearest wrap is 0, which erases one page and then writes into
+            // un-erased flash. Verify would catch that; --no-verify would not.
+            if (pages > MaxErasePages)
+                throw new Stm32SerialException(
+                    $"the image reaches 0x{FlashBase + (uint)((long)pages * serial.ErasePageSize):X8}, " +
+                    $"which is {pages} pages of {serial.ErasePageSize} bytes above 0x{FlashBase:X8} — " +
+                    $"more than the {MaxErasePages} an Extended Erase can address. " +
+                    "Usually this means a segment outside main flash (option bytes or system memory), " +
+                    "or a --base that does not match the part. Erase separately and flash with EraseMode.None.");
+
             if (pages > 0)
                 steps.Add(new Stm32SerialStep.ErasePages(pages));
         }

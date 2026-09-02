@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.IO.Pipelines;
 using System.Linq;
@@ -114,22 +115,24 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             throw new Stm32SerialException(
                 $"device '{device.Name ?? device.Id.Value}' has no serial port name, so there is nothing to open.");
 
-        // AN3155 section 2: 8 data bits, even parity, 1 stop bit. Not configurable.
-        var port = new RjcpPorts.SerialPortStream(portName.Value)
-        {
-            BaudRate = opts.BaudRate,
-            DataBits = 8,
-            Parity = RjcpPorts.Parity.Even,
-            StopBits = RjcpPorts.StopBits.One,
-        };
-
+        // Construction, configuration and Open all inside the guard: a rejected property value
+        // fails the same way a refused Open does, and the half-built port is still disposed.
+        RjcpPorts.SerialPortStream? port = null;
         try
         {
+            // AN3155 section 2: 8 data bits, even parity, 1 stop bit. Not configurable.
+            port = new RjcpPorts.SerialPortStream(portName.Value)
+            {
+                BaudRate = opts.BaudRate,
+                DataBits = 8,
+                Parity = RjcpPorts.Parity.Even,
+                StopBits = RjcpPorts.StopBits.One,
+            };
             port.Open();
         }
         catch (Exception ex)
         {
-            port.Dispose();
+            port?.Dispose();
             throw new Stm32SerialException($"could not open {portName.Value}: {ex.Message}", ex);
         }
 
@@ -264,11 +267,6 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             return FlashResult.Fail(new Stm32SerialException(
                 "the bootloader stopped answering (command timed out).", ex));
         }
-        catch (InvalidOperationException ex)
-        {
-            // The AN3155 client's own protocol failures surface as InvalidOperationException.
-            return FlashResult.Fail(ex);
-        }
     }
 
     /// <inheritdoc />
@@ -375,14 +373,38 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             "(read-back mismatch — the write did not land correctly).");
     }
 
+    // AN3155 section 3.6 is two round trips: the command is ACKed, then the address frame is ACKed
+    // and the part jumps. Driven as two steps rather than through the client's Go so the two
+    // outcomes can be told apart — a refusal of the command is a real failure, while silence after
+    // the address frame is what a successful jump looks like. Swallowing both, as this did, reports
+    // a device still sitting in the bootloader as a started application.
     private async Task GoAsync(uint jumpAddress, CancellationToken ct)
     {
-        // AN3155 section 3.6: Go ACKs, then the part jumps and stops answering the bootloader. A
-        // timeout or transport error after the command was accepted is the expected outcome of a
-        // successful leave, not a fault.
         try
         {
-            await WithTimeout(_options.CommandTimeout, ct, t => _client.Go(jumpAddress, t))
+            await WithTimeout(_options.CommandTimeout, ct,
+                t => _transceiver.SendReceivePerfectMatch(
+                    new byte[] { (byte)Stm32BootloaderCommand.Go, 0xDE }, new byte[] { Ack }, t))
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new Stm32SerialException(
+                "the bootloader refused Go — no ACK to the command. Anything already written is " +
+                "intact, but the device is still in the bootloader and the application was not " +
+                "started. Read protection and an invalid jump address both cause this.", ex);
+        }
+
+        var address = AddressFrame(jumpAddress);
+
+        try
+        {
+            await WithTimeout(_options.CommandTimeout, ct,
+                t => _transceiver.SendReceivePerfectMatch(address, new byte[] { Ack }, t))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -391,11 +413,22 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         }
         catch
         {
-            // Device jumped to the application — nothing left to talk to.
+            // The part jumped to the application — nothing left to answer. Expected.
         }
     }
 
-    // Every command goes through here, and the two things it does are both required.
+    // AN3155 addresses are big-endian and carry an XOR checksum byte. Built in a sync helper
+    // because the net8.0 target compiles as C# 12, which does not allow a Span local in an async
+    // method.
+    private static byte[] AddressFrame(uint address)
+    {
+        var frame = new byte[5];
+        BinaryPrimitives.WriteUInt32BigEndian(frame, address);
+        frame[4] = (byte)(frame[0] ^ frame[1] ^ frame[2] ^ frame[3]);
+        return frame;
+    }
+
+    // Every command goes through here, and the three things it does are all required.
     //
     // The deadline: the transceiver waits for a frame indefinitely, so without one a device that
     // stops answering hangs the flash rather than failing it.
@@ -406,12 +439,25 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     // accumulated buffer for its match, so it would satisfy itself on the stale ACK and return
     // before the device had answered at all. Discarding what is buffered before each command is
     // what keeps a reply matched to its own command.
+    //
+    // The conversion: this is the boundary where a foreign failure becomes a Stm32SerialException,
+    // so callers can catch one type instead of enumerating the set the transport and protocol
+    // libraries happen to throw. Enumerating is how a mid-flash unplug escaped FlashAsync
+    // uncaught — TransceiverTransportException derives straight from Exception and was not on the
+    // list. Converting here means every command gets it, not just the ones someone remembered.
     private async Task<T> WithTimeout<T>(TimeSpan timeout, CancellationToken ct, Func<CancellationToken, Task<T>> action)
     {
         DrainStaleBytes();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
-        return await action(cts.Token).ConfigureAwait(false);
+        try
+        {
+            return await action(cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (Convertible(ex))
+        {
+            throw Convert(ex);
+        }
     }
 
     private async Task WithTimeout(TimeSpan timeout, CancellationToken ct, Func<CancellationToken, Task> action)
@@ -419,8 +465,28 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         DrainStaleBytes();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
-        await action(cts.Token).ConfigureAwait(false);
+        try
+        {
+            await action(cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (Convertible(ex))
+        {
+            throw Convert(ex);
+        }
     }
+
+    // Cancellation is deliberately not converted: the caller's token and our command deadline are
+    // both signalled that way and both are handled as cancellation upstream.
+    private static bool Convertible(Exception ex) =>
+        ex is TransceiverTransportException or InvalidOperationException or ArgumentException;
+
+    private static Stm32SerialException Convert(Exception ex) => ex switch
+    {
+        TransceiverTransportException => new Stm32SerialException(
+            "the serial transport closed mid-command — the cable was unplugged, or the port was " +
+            "closed underneath the flash.", ex),
+        _ => new Stm32SerialException($"the bootloader rejected a command: {ex.Message}", ex),
+    };
 
     /// <summary>
     /// Discards whatever is already buffered on the read side — a previous reply's trailing ACK,

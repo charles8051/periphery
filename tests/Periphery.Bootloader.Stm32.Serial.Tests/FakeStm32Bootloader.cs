@@ -40,6 +40,16 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// <summary>The BCD protocol version reported by Get.</summary>
     public byte ProtocolVersion { get; init; } = 0x31;
 
+    /// <summary>NACK the Go command instead of ACKing it — a read-protected or mis-addressed part.</summary>
+    public bool RefuseGo { get; init; }
+
+    /// <summary>
+    /// Stop answering and close the pipe after this many commands — the cable-unplugged case.
+    /// </summary>
+    public int? DisconnectAfterCommands { get; init; }
+
+    private int _commandsHandled;
+
     public PipeReader Input => _toHost.Reader;
     public PipeWriter Output => _toDevice.Writer;
 
@@ -81,7 +91,11 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
         {
             while (!ct.IsCancellationRequested)
             {
+                if (_commandsHandled == DisconnectAfterCommands)
+                    break;   // the finally completes the writer — the host sees the pipe close
+
                 byte command = await ReadByteAsync(reader, ct).ConfigureAwait(false);
+                _commandsHandled++;
 
                 if (command == 0x7F)
                 {
@@ -196,6 +210,14 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
     private async Task GoAsync(PipeReader reader, PipeWriter writer, CancellationToken ct)
     {
+        if (RefuseGo)
+        {
+            // AN3155 NACKs Go on a read-protected part or an invalid jump address. The host waits
+            // for an ACK that never comes and its command deadline fires.
+            await SendAsync(writer, new[] { Nack }, ct).ConfigureAwait(false);
+            return;
+        }
+
         await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
         await ReadExactAsync(reader, 5, ct).ConfigureAwait(false);
         await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
