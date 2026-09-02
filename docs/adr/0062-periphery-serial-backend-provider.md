@@ -1,7 +1,7 @@
 ---
 title: "ADR-0062: Periphery.Serial — backend-provider model (BCL / RJCP), superseding the single native implementation"
 status: "Proposed"
-status_note: "Not implemented - there is no `Periphery.Serial` package. Blocks the AN3155 serial bootloader in [ADR-0061](0061-firmware-flashing-platform.md)."
+status_note: "Not implemented - there is no `Periphery.Serial` package. It does NOT block the AN3155 serial bootloader: `Periphery.Bootloader.Stm32.Serial` was built and tested without it on branch claude/stm32-uart-bootloader-flashanything-df7d55 (2026-09-02, not yet merged). See the Amendment."
 date: "2026-06-16"
 authors: "@charles8051"
 tags: ["architecture", "decision", "serial", "extension", "uart", "backend-provider", "rjcp", "system-io-ports", "periphery-serial"]
@@ -167,3 +167,146 @@ because it is isolated, opt-in, and clearly labelled.
 - [ADR-0028 — Periphery.Serial (single native impl)](0028-periphery-serial-extension.md) — **superseded by this ADR**; its boundary, pipe surface, options, and native platform tables are retained as the `.Native` reference.
 - [ADR-0024 — Extension package pattern](0024-extension-package-pattern.md) — the sealed-class Layer-1 (here deviated to `ISerialPort`, sanctioned) and the no-third-party-deps rule (preserved via opt-in isolation, DEC-005).
 - [ADR-0061 — Firmware-flashing platform](0061-firmware-flashing-platform.md) — the first consumer; `Periphery.Bootloader.Stm32.Serial` / `.Esp32.Serial` depend on the `Periphery.Serial` abstraction.
+
+---
+
+## Amendment (2026-09-02): Periphery owns the port, and `ISerialPort` is a pipe
+
+Two things happened after this ADR was written.
+
+1. **A serial bootloader flasher was built without `Periphery.Serial`.**
+   `Periphery.Bootloader.Stm32.Serial` implements AN3155 against
+   `CallAndResponse.Transport.Serial` and its `RJCP.SerialPortStream`. Discovery came from
+   `DeviceInfo.PortName`, which lives in Periphery core and never needed this package. It is on
+   branch `claude/stm32-uart-bootloader-flashanything-df7d55` and **not yet merged**: 23 tests
+   against an in-memory AN3155 device emulator, an AOT publish with zero trim warnings, and no
+   flash verified against real hardware. What it establishes is reachability of the transport,
+   which is exactly the claim at issue here.
+2. **`call-and-response` is splitting its serial transport into RJCP and BCL backends**
+   (in flight at the time of writing). That is the same backend-provider axis DEC-003 defines
+   here, one layer down.
+
+The question is whether Periphery should mirror that split. It should not — and not because
+Periphery should defer to it. Because a serial transport does not belong in a framing library at
+all, and the two libraries do not need to know about each other.
+
+---
+
+### 1. A serial port is an exclusive open, so exactly one layer may own it
+
+This constraint is absent from the original ADR and it is the decisive one.
+
+A COM port cannot be opened twice. An application that flashes a target *and* uses a serial
+peripheral through Periphery would, under a mirrored split, hold `Periphery.Serial.RJCP` and
+`call-and-response`'s RJCP backend in the same process — two wrappers over the same
+`SerialPortStream`, contending for one handle.
+
+Owning a device handle is Periphery's job. `call-and-response` is a framing library: it turns a
+byte stream into frames. It has no model of a device, no discovery, and no lifecycle, and its core
+references no device API of any kind. The port belongs on the Periphery side of that line.
+
+### 2. Two backend axes over the same two libraries can disagree
+
+`Periphery.Serial.Bcl` alongside `call-and-response`'s RJCP backend pulls RJCP into the process
+regardless. That is not a partial erosion of DEC-003's zero-third-party-dep guarantee but the whole
+of it: a consumer who must forbid third-party deps would have to police two package families to get
+a promise this ADR offers as a property of one.
+
+### 3. DEC-002 amended — `ISerialPort` implements `IDuplexPipe`, and that removes the dependency edge
+
+DEC-002 already gives the abstraction the pipe surface:
+
+```csharp
+PipeReader Reader { get; }
+PipeWriter Writer { get; }
+```
+
+`System.IO.Pipelines.IDuplexPipe` is exactly `{ PipeReader Input; PipeWriter Output; }`. Declaring
+the interface as
+
+```csharp
+public interface ISerialPort : IDuplexPipe, IAsyncDisposable
+```
+
+costs two lines. `Reader`/`Writer` are retained as the domain-readable names; `Input`/`Output` are
+the interface implementation.
+
+**The payoff is not convenience, it is the absence of a dependency.** `IDuplexPipe` is a BCL type.
+Periphery produces one; `call-and-response` consumes one; **neither package references the other**.
+No adapter, no second open, and no direction of dependency to argue about. A bootloader package
+takes an `ISerialPort` from whichever backend the application composed and hands it straight to a
+`Transceiver`.
+
+This also settles a question [ADR-0061](0061-firmware-flashing-platform.md) DEC-006 left implicit.
+DEC-006 asks for "a thin `SerialDuplexPipe : IDuplexPipe` over `Periphery.Serial`'s pipe surface
+(~10 lines)". There is nothing to write.
+
+### 4. DEC-003 affirmed as written — two backends, and they live here
+
+`Periphery.Serial.Bcl` and `Periphery.Serial.RJCP` are built as DEC-003 specifies. What changes is
+the recommendation to `call-and-response`: **it should ship no serial transport package.**
+
+The code is not so much moving as merging. `CallAndResponse.Transport.Serial` is one file of 132
+lines, and its substance is a background read pump on a dedicated thread — needed because
+`PipeReader.Create(stream)` forwards its own cancellation token into every `ReadAsync`, so a
+consumer timeout cancels the *serial read* rather than the pipe read. `RjcpSerialPort` needs that
+same pump for that same reason. If both packages exist it is written twice, in two repositories,
+and the RJCP dependency is declared twice.
+
+**What this costs.** A standalone `call-and-response` consumer — Modbus over a serial port, no
+Periphery — loses a package they have today. Mitigated in section 5, and it is a real cost, not a
+free simplification.
+
+### 5. `call-and-response` keeps a `StreamDuplexPipe` in its core
+
+Not a Periphery decision, but the recommendation this amendment is paired with: put a
+`StreamDuplexPipe` in the `CallAndResponse` core package, BCL-only, with the same pump. Any
+`Stream` becomes a transport — TCP, named pipes, `SerialPort.BaseStream`.
+
+That is the library's own reasoning. Its ADR-0015 DEC-007 says a transport earns a package only
+when the adaptation is non-trivial — "a background pump, a framing quirk, a vendor SDK that is not
+stream-shaped" — and POS-003 claims transports become nearly free. A core `StreamDuplexPipe` makes
+that true, and leaves `call-and-response` with **zero third-party dependencies in every package**.
+
+The RJCP-specific part is the part that is not stream-generic, and it is the part that comes here.
+
+### 6. DEC-005 stands as written
+
+DEC-005 says RJCP is "quarantined in `Periphery.Serial.RJCP`, an explicit opt-in." Under this
+amendment that is exactly what happens, and Periphery enforces it rather than inheriting it. The
+isolation claim needs no weakening.
+
+### 7. `Periphery.Serial` becomes required, and the migration must not re-block what already works
+
+The original ADR treats `Periphery.Serial` as the enabler for serial flashing. Point 1 above shows
+the IO is reachable without it. This amendment nevertheless makes the package **required for the
+target design** — it is where the port, the pump, and the third-party isolation live.
+
+That creates a hazard worth naming. The `status_note` used to claim this ADR blocks the AN3155
+serial bootloader; it did not, and the branch above is the proof. Adopting this amendment must not
+turn that false claim into a true one by fiat. `Periphery.Bootloader.Stm32.Serial` ships as it is,
+against `CallAndResponse.Transport.Serial`, and migrates to `ISerialPort` **when
+`Periphery.Serial` exists** — not before, and the migration is a constructor-argument change
+because the programmer already takes an `IDuplexPipe`.
+
+The ESP32 feature spec's path-A row carries the same overstatement, reading "Transport reachable:
+**No.** No `Periphery.Serial` at all." Path A is reachable today at the cost of the RJCP
+dependency. That table belongs to
+[the ESP32 spec](../feature-specs/firmware-flashing/esp32/spec.md) and is corrected there.
+
+### 8. Out of scope, and not yet measured
+
+**Out of scope.** `CallAndResponse.Transport.BleNordicUart` is not covered by this reasoning. It is
+40 lines, it is a pipe pair the caller drives from both ends rather than a device handle, and
+Periphery's Bluetooth state is poll-only on Windows. Moving it by symmetry with serial would be
+a decision made for the wrong reason.
+
+**Not yet measured.**
+
+- **Control-line changes while a read pump is in flight.** Setting `DtrEnable`, `RtsEnable`, or
+  `BaudRate` on an open port while a background `ReadAsync` is outstanding. The ESP32 reset dance
+  needs exactly this, on every serial path. These are separate ioctls from a read and are expected
+  to work; that expectation is untested, and it sets the shape of `ISerialPort`'s DTR/RTS methods.
+- **Whether `SetDtrAsync`/`SetRtsAsync` should be async at all.** DEC-002 declares them `Task`-returning.
+  The underlying operations are synchronous property writes in both `System.IO.Ports` and
+  `RJCP.SerialPortStream`. Worth revisiting when the backends are written.
