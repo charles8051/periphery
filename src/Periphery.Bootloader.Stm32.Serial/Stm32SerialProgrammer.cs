@@ -145,6 +145,48 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
         var pipe = new CnrSerial.SerialDuplexPipe(port);
         var programmer = new Stm32SerialProgrammer(device, pipe, opts, logger, pipeOwner: pipe, portOwner: port);
+        return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Completes the AN3155 handshake over a pipe the caller already owns, and returns a
+    /// programmer ready to use. The transport is untouched by <see cref="DisposeAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="OpenAsync"/> opens a port for you and owns it. That is wrong for a caller who
+    /// has to keep the port across more than one operation — a probe loop holds its handle from
+    /// the cycle that detects a target through the flash that follows (autoflash adr.md Decision
+    /// 11), and reading a present-detect line for <c>--repeat=cts</c> needs the port object rather
+    /// than the pipe over it. Such a caller can already build the programmer through the public
+    /// constructor, but that constructor deliberately does not talk to the device, so there was no
+    /// way to complete the handshake.
+    /// </para>
+    /// <para>
+    /// On failure the programmer is disposed, which does <i>not</i> close the caller's transport.
+    /// Ownership is unchanged: whoever created the pipe still closes it.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="Stm32SerialException">Nothing answered the sync byte.</exception>
+    public static async Task<Stm32SerialProgrammer> ConnectAsync(
+        DeviceInfo device,
+        IDuplexPipe pipe,
+        Stm32SerialOptions? options = null,
+        ILogger<Transceiver>? logger = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(pipe);
+
+        var programmer = new Stm32SerialProgrammer(device, pipe, options, logger);
+        return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
+    }
+
+    // Shared by both factories so a synced programmer is the only kind either can hand back, and
+    // a handshake failure never leaks a half-built one.
+    private static async Task<Stm32SerialProgrammer> SyncOrDisposeAsync(
+        Stm32SerialProgrammer programmer, CancellationToken ct)
+    {
         try
         {
             await programmer.SyncAsync(ct).ConfigureAwait(false);
