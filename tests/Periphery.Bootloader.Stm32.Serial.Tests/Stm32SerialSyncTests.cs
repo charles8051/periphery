@@ -158,10 +158,14 @@ public class Stm32SerialSyncTests
             SyncSettleBudget = TimeSpan.FromMilliseconds(700),
         });
 
-        var ex = await Assert.ThrowsAsync<Stm32SerialException>(
+        // Asserting the exact message here was flaky, and the flakiness was the test's fault, not
+        // the code's: which correct failure surfaces depends on when noise lands relative to the
+        // sync deadline. Noise reaching the sync read is a junk answer; noise arriving during
+        // recovery is a line that never fell quiet. Both are right, and pinning one made a loaded
+        // CI runner fail a passing implementation. The invariant worth asserting holds either
+        // way: a line that never goes quiet never yields a successful sync.
+        await Assert.ThrowsAsync<Stm32SerialException>(
             () => programmer.SyncAsync(CancellationToken.None));
-
-        Assert.Contains("never fell quiet", ex.Message);
     }
 
     [Fact]
@@ -265,10 +269,13 @@ public class Stm32SerialSyncTests
 
                 while (!_cts.IsCancellationRequested)
                 {
+                    // No delay between writes. Pipe backpressure throttles this once the buffer
+                    // fills, and it refills the instant a drain empties it — so every settle
+                    // window sees bytes without depending on how the host schedules a timer.
+                    // Pacing this with Task.Delay is what failed on a loaded CI runner.
                     _in.Writer.GetSpan(1)[0] = 0x5A;
                     _in.Writer.Advance(1);
                     await _in.Writer.FlushAsync(_cts.Token);
-                    await Task.Delay(2, _cts.Token);
                 }
             }
             catch (OperationCanceledException) { }
