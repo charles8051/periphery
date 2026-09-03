@@ -335,7 +335,14 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         // answer, or the tail of a reply longer than the one byte we asked for, can still be on
         // the wire — and a recovery byte sent into that arrives interleaved, which is how a
         // recoverable timeout becomes a desynchronised session. Wait, then drain, then act.
-        await SettleAsync(ct).ConfigureAwait(false);
+        if (!await SettleAsync(ct).ConfigureAwait(false))
+            throw new Stm32SerialException(
+                $"the line never fell quiet for {_options.SyncSettle.TotalMilliseconds:F0} ms " +
+                $"within {_options.SyncSettleBudget.TotalSeconds:F1} s, so the handshake could not " +
+                "establish a command boundary to recover from. Something is transmitting " +
+                "continuously — check the baud rate, and that the port is not shared with another " +
+                "program or wired to a device that talks unprompted.");
+
         await NudgeAsync(unchecked((byte)~SyncByte), ct).ConfigureAwait(false);
 
         // Each failed Get leaves at most one byte pending (its first byte completes the stray
@@ -348,7 +355,9 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             if (await RespondsToGetAsync(ct).ConfigureAwait(false))
                 return;
 
-            await SettleAsync(ct).ConfigureAwait(false);
+            if (!await SettleAsync(ct).ConfigureAwait(false))
+                break;
+
             await NudgeAsync(0xFF, ct).ConfigureAwait(false);
         }
 
@@ -389,11 +398,12 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// Lets the line fall quiet, then clears it. Used only on the handshake's recovery path,
     /// where a cancelled read may leave the part still talking.
     /// </summary>
-    private async Task SettleAsync(CancellationToken ct)
+    /// <returns><see langword="true"/> if a full window passed with nothing arriving.</returns>
+    private async Task<bool> SettleAsync(CancellationToken ct)
     {
         DrainStaleBytes();
         if (_options.SyncSettle <= TimeSpan.Zero)
-            return;
+            return true;
 
         // Drain until a whole window passes with nothing arriving, rather than draining once
         // after a fixed wait. Waiting a fixed interval and then draining assumes the line is
@@ -406,11 +416,13 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             await Task.Delay(_options.SyncSettle, ct).ConfigureAwait(false);
             if (!DrainStaleBytes())
-                return;
+                return true;
         }
 
-        // Budget exhausted: something is talking continuously. Not silence, and not a boundary
-        // we can establish by waiting — the Get proof that follows is what decides.
+        // Budget exhausted with the line still talking. Do not transmit into that: a recovery
+        // byte sent while bytes are still arriving is the very interleaving this method exists to
+        // prevent, and no answer we got back could be attributed to it. Report instead.
+        return false;
     }
 
     /// <summary>
@@ -429,6 +441,10 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Stm32SerialException ex) when (IsTransportFailure(ex))
+        {
+            throw;   // a dead port is not a quiet one
         }
         catch
         {
@@ -451,6 +467,12 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (Stm32SerialException ex) when (IsTransportFailure(ex))
+        {
+            // The port died mid-proof. Retrying cannot help and reporting "the bootloader did not
+            // answer Get" would blame the part for a broken connection.
             throw;
         }
         catch
@@ -651,6 +673,16 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
     // Cancellation is deliberately not converted: the caller's token and our command deadline are
     // both signalled that way and both are handled as cancellation upstream.
+    /// <summary>
+    /// Whether a converted failure was the transport dying rather than the protocol misbehaving.
+    /// <see cref="Convert"/> keeps the original as the inner exception, which is the only thing
+    /// separating "the cable came out" from "that reply did not parse" once both are
+    /// <see cref="Stm32SerialException"/>. The handshake needs that distinction: a protocol
+    /// failure is worth retrying, a dead port is not.
+    /// </summary>
+    private static bool IsTransportFailure(Stm32SerialException ex) =>
+        ex.InnerException is TransceiverTransportException;
+
     private static bool Convertible(Exception ex) =>
         ex is TransceiverTransportException or InvalidOperationException or ArgumentException;
 

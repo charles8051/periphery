@@ -142,6 +142,29 @@ public class Stm32SerialSyncTests
     }
 
     [Fact]
+    public async Task Sync_refuses_to_transmit_into_a_line_that_never_falls_quiet()
+    {
+        // Draining until idle only helps if idle ever happens. When the budget runs out with
+        // bytes still arriving, the old code transmitted anyway — which is precisely the
+        // interleaving the settle exists to prevent, and no answer coming back could then be
+        // attributed to what we sent. Refusing is the only honest option; the error names the
+        // likely causes rather than blaming the part for not answering.
+        await using var pipe = new ChatteringPipe(silenceAfterFirstWrite: TimeSpan.FromMilliseconds(250));
+        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Stm32SerialOptions.Default with
+        {
+            SyncTimeout = TimeSpan.FromMilliseconds(200),
+            CommandTimeout = TimeSpan.FromMilliseconds(200),
+            SyncSettle = TimeSpan.FromMilliseconds(100),
+            SyncSettleBudget = TimeSpan.FromMilliseconds(700),
+        });
+
+        var ex = await Assert.ThrowsAsync<Stm32SerialException>(
+            () => programmer.SyncAsync(CancellationToken.None));
+
+        Assert.Contains("never fell quiet", ex.Message);
+    }
+
+    [Fact]
     public async Task Sync_reports_a_transport_failure_rather_than_calling_it_silence()
     {
         // A closed port or a pulled cable is not a quiet part, and the two need opposite
@@ -198,6 +221,54 @@ public class Stm32SerialSyncTests
                     }
                     _out.Reader.AdvanceTo(read.Buffer.End);
                     if (read.IsCompleted) break;
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+
+        public PipeReader Input => _in.Reader;
+        public PipeWriter Output => _out.Writer;
+
+        public async ValueTask DisposeAsync()
+        {
+            _cts.Cancel();
+            try { await _loop; } catch (OperationCanceledException) { }
+            _cts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Stays silent until the sync byte has been sent and its deadline has passed, then transmits
+    /// without pause — a device talking unprompted, a wrong baud rate turning noise into bytes, or
+    /// another program on the same port.
+    /// <para>
+    /// The chatter is anchored to the first byte written, not to construction. Anchoring it to
+    /// wall-clock made the test racy: the handshake's first settle window could open and close
+    /// before the chatter had started, so the line looked quiet and a different failure surfaced.
+    /// </para>
+    /// </summary>
+    private sealed class ChatteringPipe : IDuplexPipe, IAsyncDisposable
+    {
+        private readonly Pipe _in = new();
+        private readonly Pipe _out = new();
+        private readonly CancellationTokenSource _cts = new();
+        private readonly Task _loop;
+
+        public ChatteringPipe(TimeSpan silenceAfterFirstWrite) => _loop = Task.Run(async () =>
+        {
+            try
+            {
+                // Wait for the sync byte itself, then out-wait its deadline.
+                var first = await _out.Reader.ReadAsync(_cts.Token);
+                _out.Reader.AdvanceTo(first.Buffer.End);
+                await Task.Delay(silenceAfterFirstWrite, _cts.Token);
+
+                while (!_cts.IsCancellationRequested)
+                {
+                    _in.Writer.GetSpan(1)[0] = 0x5A;
+                    _in.Writer.Advance(1);
+                    await _in.Writer.FlushAsync(_cts.Token);
+                    await Task.Delay(2, _cts.Token);
                 }
             }
             catch (OperationCanceledException) { }
