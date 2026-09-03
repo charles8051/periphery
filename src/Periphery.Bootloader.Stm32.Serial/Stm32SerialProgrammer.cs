@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.IO;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Threading;
@@ -12,8 +13,8 @@ using CallAndResponse;
 using CallAndResponse.Protocol.Stm32Bootloader;
 using Microsoft.Extensions.Logging;
 using Periphery.Firmware;
-using CnrSerial = CallAndResponse.Transport.Serial;
-using RjcpPorts = RJCP.IO.Ports;
+using Periphery.Serial;
+using Bcl = System.IO.Ports;
 
 namespace Periphery.Bootloader.Stm32.Serial;
 
@@ -48,12 +49,37 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// <summary>How many times the handshake will clear a byte and re-test with Get.</summary>
     private const int SyncProofAttempts = 3;
 
+    /// <summary>
+    /// The rate a part ends up at when its autobaud measured one of our recovery bytes instead of
+    /// the sync byte, as a fraction of the rate we are actually driving: 8/9.
+    /// </summary>
+    /// <remarks>
+    /// AN3155 §3.1 has the bootloader derive the bit period from 0x7F, whose framing puts the
+    /// second falling edge exactly 8 bit times after the first (start low, D0..D6 high, D7 low).
+    /// It divides the span it measures by 8. Send 0xFF instead and the next falling edge is the
+    /// <b>parity</b> bit, 9 bit times out, so the part computes a bit period 9/8 too long and
+    /// locks to 8/9 of the intended rate — 102400 when we are driving 115200.
+    /// <para>
+    /// That matters because the recovery path below deliberately sends 0xFF, and a part that
+    /// resets while one is in flight autobauds on it. Autobaud happens once per reset, so the
+    /// part is then stuck: it answers every command correctly, at a rate ~12% off ours, which
+    /// arrives as parity and framing errors. Measured on an STM32G431 (bootloader 3.1) whose
+    /// replies decoded byte-perfect at 102400 while reading as noise at 115200.
+    /// </para>
+    /// </remarks>
+    private const int MislockNumerator = 8;
+
+    /// <inheritdoc cref="MislockNumerator" />
+    private const int MislockDenominator = 9;
+
     private readonly Stm32BootloaderClient _client;
     private readonly ITransceiver _transceiver;
     private readonly IDuplexPipe _pipe;
     private readonly Stm32SerialOptions _options;
     private readonly IAsyncDisposable? _pipeOwner;  // the SerialDuplexPipe read pump, when we made it
     private readonly IDisposable? _portOwner;       // the serial port, when we opened it
+    private readonly Action<int>? _setBaudRate;     // retunes the port, when the caller owns one
+    private bool _sawBytes;                        // anything at all arrived during the handshake
 
     /// <summary>
     /// Wraps an already-open byte stream. The caller owns <paramref name="pipe"/> and the transport
@@ -78,7 +104,8 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         Stm32SerialOptions? options,
         ILogger<Transceiver>? logger,
         IAsyncDisposable? pipeOwner,
-        IDisposable? portOwner)
+        IDisposable? portOwner,
+        Action<int>? setBaudRate = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(pipe);
@@ -90,6 +117,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         _client = new Stm32BootloaderClient(_transceiver);
         _pipeOwner = pipeOwner;
         _portOwner = portOwner;
+        _setBaudRate = setBaudRate;
     }
 
     /// <inheritdoc />
@@ -124,16 +152,16 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
         // Construction, configuration and Open all inside the guard: a rejected property value
         // fails the same way a refused Open does, and the half-built port is still disposed.
-        RjcpPorts.SerialPortStream? port = null;
+        Bcl.SerialPort? port = null;
         try
         {
             // AN3155 section 2: 8 data bits, even parity, 1 stop bit. Not configurable.
-            port = new RjcpPorts.SerialPortStream(portName.Value)
+            port = new Bcl.SerialPort(portName.Value)
             {
                 BaudRate = opts.BaudRate,
                 DataBits = 8,
-                Parity = RjcpPorts.Parity.Even,
-                StopBits = RjcpPorts.StopBits.One,
+                Parity = Bcl.Parity.Even,
+                StopBits = Bcl.StopBits.One,
             };
             port.Open();
         }
@@ -143,9 +171,48 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             throw new Stm32SerialException($"could not open {portName.Value}: {ex.Message}", ex);
         }
 
-        var pipe = new CnrSerial.SerialDuplexPipe(port);
-        var programmer = new Stm32SerialProgrammer(device, pipe, opts, logger, pipeOwner: pipe, portOwner: port);
-        return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
+        // The port is open and nothing owns it yet. Building the pipe touches the port — it takes
+        // BaseStream and retimes ReadTimeout — so an adapter pulled in this window throws here,
+        // between Open and the programmer taking ownership. Closing it on the way out is what
+        // stops a probe loop from being blocked on a handle it is still holding open itself.
+        BclSerialDuplexPipe? pipe = null;
+        try
+        {
+            pipe = new BclSerialDuplexPipe(port);
+
+            // We opened the port, so we can retune it. That is what lets the handshake tell a
+            // part that autobauded wrong apart from one that is not there — see
+            // ConfirmMislockAsync.
+            var programmer = new Stm32SerialProgrammer(
+                device, pipe, opts, logger,
+                pipeOwner: pipe, portOwner: port, setBaudRate: b => port.BaudRate = b);
+            return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Reached both before the programmer exists and after it has already cleaned itself
+            // up on a handshake failure. Both disposals are idempotent, so covering the gap costs
+            // nothing on the path that did not need it.
+            //
+            // Pump before port, as disposal does — but the port closes from a finally, because a
+            // pump that fails to stop is precisely when leaving the handle open hurts most.
+            // Neither cleanup failure may propagate: the exception already on its way out is the
+            // one that says why we are here, and one thrown while tidying up would bury it.
+            try
+            {
+                if (pipe is not null)
+                    await pipe.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                try { port.Dispose(); } catch { }
+            }
+
+            throw;
+        }
     }
 
     /// <summary>
@@ -167,18 +234,26 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// Ownership is unchanged: whoever created the pipe still closes it.
     /// </para>
     /// </remarks>
+    /// <param name="setBaudRate">
+    /// Optional. Retunes the port under <paramref name="pipe"/>. Supply it when you own the port
+    /// and the handshake may then distinguish a part that autobauded to the wrong rate from one
+    /// that is absent, rather than reporting both as silence. Without it that check is skipped;
+    /// nothing else changes. See <see cref="MislockNumerator"/>.
+    /// </param>
     /// <exception cref="Stm32SerialException">Nothing answered the sync byte.</exception>
     public static async Task<Stm32SerialProgrammer> ConnectAsync(
         DeviceInfo device,
         IDuplexPipe pipe,
         Stm32SerialOptions? options = null,
         ILogger<Transceiver>? logger = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<int>? setBaudRate = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(pipe);
 
-        var programmer = new Stm32SerialProgrammer(device, pipe, options, logger);
+        var programmer = new Stm32SerialProgrammer(
+            device, pipe, options, logger, pipeOwner: null, portOwner: null, setBaudRate: setBaudRate);
         return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
     }
 
@@ -387,27 +462,128 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
         await NudgeAsync(unchecked((byte)~SyncByte), ct).ConfigureAwait(false);
 
-        // Each failed Get leaves at most one byte pending (its first byte completes the stray
-        // frame, its second becomes the next stray), so one nudge per retry converges. Settling
-        // between attempts matters for the same reason as above: a Get that timed out may still
-        // deliver its full multi-byte reply afterwards, and those bytes must be cleared rather
-        // than read as the next attempt's answer.
-        for (int attempt = 0; attempt < SyncProofAttempts; attempt++)
-        {
-            if (await RespondsToGetAsync(ct).ConfigureAwait(false))
-                return;
+        if (await ProveCommandBoundaryAsync(ct).ConfigureAwait(false))
+            return;
 
-            if (!await SettleAsync(ct).ConfigureAwait(false))
-                break;
-
-            await NudgeAsync(0xFF, ct).ConfigureAwait(false);
-        }
+        // Nothing intelligible came back — but "nothing intelligible" is not the same as
+        // "nothing there", and the difference decides what the operator should go and do.
+        if (await ConfirmMislockAsync(ct).ConfigureAwait(false) is { } lockedBaud)
+            throw new Stm32SerialException(
+                $"the bootloader is alive but autobauded to {lockedBaud} instead of " +
+                $"{_options.BaudRate}: it answered cleanly at {lockedBaud} after saying nothing " +
+                $"intelligible at {_options.BaudRate}. A part measures its rate from the first " +
+                "byte it sees after reset, so one that came out of reset while a recovery byte " +
+                "(0xFF) was on the line locks to 8/9 of the intended rate and stays there. " +
+                "Nothing on the host can retune it — reset the part (or power-cycle it) so its " +
+                "next autobaud measures the 0x7F sync byte, then flash again.");
 
         throw new Stm32SerialException(
             "no answer to the AN3155 sync byte (0x7F), and the bootloader did not answer Get " +
             $"after {SyncProofAttempts} attempts to clear the command boundary. Check that the " +
             "part is in system-bootloader mode (BOOT0 asserted and reset), that the port is the " +
             "right one, and that RX/TX are not swapped.");
+    }
+
+    /// <summary>
+    /// Nudges and re-tests with Get until the part answers one, or the attempts run out.
+    /// </summary>
+    /// <remarks>
+    /// Each failed Get leaves at most one byte pending (its first byte completes the stray frame,
+    /// its second becomes the next stray), so one nudge per retry converges. Settling between
+    /// attempts matters for the same reason it does on the way in: a Get that timed out may still
+    /// deliver its full multi-byte reply afterwards, and those bytes must be cleared rather than
+    /// read as the next attempt's answer.
+    /// </remarks>
+    private async Task<bool> ProveCommandBoundaryAsync(CancellationToken ct)
+    {
+        for (int attempt = 0; attempt < SyncProofAttempts; attempt++)
+        {
+            if (await RespondsToGetAsync(ct).ConfigureAwait(false))
+                return true;
+
+            if (!await SettleAsync(ct).ConfigureAwait(false))
+                return false;
+
+            await NudgeAsync(0xFF, ct).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Asks whether a part that said nothing intelligible at our rate is in fact answering
+    /// perfectly at the rate a mis-measured autobaud would have left it on. Returns that rate
+    /// when it is, and <see langword="null"/> otherwise. The port is always left as it was found.
+    /// </summary>
+    /// <remarks>
+    /// This is a proof, not an inference: it retunes the port and re-runs the same Get that just
+    /// failed. A part that answers a well-formed Get at 8/9 of our rate is not a coincidence of
+    /// noise — a desynchronised stream does not produce ACK, a length, a version, a command list
+    /// and a trailing ACK by chance, which is the same reasoning
+    /// <see cref="RespondsToGetAsync"/> already rests on.
+    /// <para>
+    /// Skipped when the caller did not supply a way to retune, which is the honest outcome: the
+    /// pipe alone cannot change the rate, so the check cannot be run and the generic failure
+    /// stands.
+    /// </para>
+    /// </remarks>
+    private async Task<int?> ConfirmMislockAsync(CancellationToken ct)
+    {
+        if (_setBaudRate is not { } retune)
+            return null;
+
+        // Only worth asking when something was actually talking. A mis-locked part is not quiet —
+        // it answers everything, and its answers arrive as bytes that fail to parse. A port with
+        // nothing on it delivers no bytes at all, and that is the common case in a probe loop
+        // watching an empty fixture: retuning and re-proving there would buy nothing and cost
+        // seconds on every cycle.
+        if (!_sawBytes)
+            return null;
+
+        int intended = _options.BaudRate;
+        int suspect = intended * MislockNumerator / MislockDenominator;
+        if (suspect <= 0 || suspect == intended)
+            return null;
+
+        try
+        {
+            retune(suspect);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or ArgumentException
+                                      or ObjectDisposedException or UnauthorizedAccessException)
+        {
+            // The port cannot take the rate, or is already gone. Nothing to conclude.
+            return null;
+        }
+
+        try
+        {
+            // The retune itself garbles whatever was mid-flight, and everything we sent at the
+            // wrong rate landed on the part as noise that may have left a frame half-open. So
+            // clear the line, then prove the boundary the same way the primary path does —
+            // anything less would report a mis-locked part as absent on the first stray byte.
+            await SettleAsync(ct).ConfigureAwait(false);
+            return await ProveCommandBoundaryAsync(ct).ConfigureAwait(false) ? suspect : null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Stm32SerialException)
+        {
+            // The port died while we were asking. The caller's original failure is the better
+            // report, so fall through to it rather than dressing this up as a diagnosis.
+            return null;
+        }
+        finally
+        {
+            // Unconditional: the caller owns this port and did not ask us to leave it retuned.
+            try { retune(intended); }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or ArgumentException
+                                          or ObjectDisposedException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     /// <summary>
@@ -420,6 +596,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             var reply = await WithTimeout(_options.SyncTimeout, ct,
                 t => _transceiver.SendReceiveExactly(new byte[] { SyncByte }, 1, t)).ConfigureAwait(false);
+            _sawBytes = true;
             return reply.Span[0];
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -749,7 +926,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             var buffer = result.Buffer;
             if (!buffer.IsEmpty)
-                discarded = true;
+                discarded = _sawBytes = true;
             _pipe.Input.AdvanceTo(buffer.End);
             if (buffer.IsEmpty || result.IsCompleted)
                 break;
