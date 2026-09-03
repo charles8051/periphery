@@ -12,8 +12,8 @@ using CallAndResponse;
 using CallAndResponse.Protocol.Stm32Bootloader;
 using Microsoft.Extensions.Logging;
 using Periphery.Firmware;
-using CnrSerial = CallAndResponse.Transport.Serial;
-using RjcpPorts = RJCP.IO.Ports;
+using Periphery.Serial;
+using Bcl = System.IO.Ports;
 
 namespace Periphery.Bootloader.Stm32.Serial;
 
@@ -124,16 +124,16 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
         // Construction, configuration and Open all inside the guard: a rejected property value
         // fails the same way a refused Open does, and the half-built port is still disposed.
-        RjcpPorts.SerialPortStream? port = null;
+        Bcl.SerialPort? port = null;
         try
         {
             // AN3155 section 2: 8 data bits, even parity, 1 stop bit. Not configurable.
-            port = new RjcpPorts.SerialPortStream(portName.Value)
+            port = new Bcl.SerialPort(portName.Value)
             {
                 BaudRate = opts.BaudRate,
                 DataBits = 8,
-                Parity = RjcpPorts.Parity.Even,
-                StopBits = RjcpPorts.StopBits.One,
+                Parity = Bcl.Parity.Even,
+                StopBits = Bcl.StopBits.One,
             };
             port.Open();
         }
@@ -143,7 +143,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             throw new Stm32SerialException($"could not open {portName.Value}: {ex.Message}", ex);
         }
 
-        var pipe = new CnrSerial.SerialDuplexPipe(port);
+        var pipe = new BclSerialDuplexPipe(port);
         var programmer = new Stm32SerialProgrammer(device, pipe, opts, logger, pipeOwner: pipe, portOwner: port);
         return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
     }
