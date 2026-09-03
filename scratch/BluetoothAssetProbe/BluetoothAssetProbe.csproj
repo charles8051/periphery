@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The whole point of the probe. One source file, three TFMs, three different
+         assets selected by NuGet from InTheHand.Net.Bluetooth 4.2.1:
+
+           net10.0                     -> lib/net8.0                     (bare)
+           net10.0-windows             -> lib/net8.0-windows7.0          (Win32)
+           net10.0-windows10.0.19041   -> lib/net8.0-windows10.0.19041   (WinRT)
+
+         ADR-0085's open question is whether the bare asset drives Win32 at runtime
+         on Windows. Run A prints the resolved path so the selection is observed
+         rather than assumed; Runs B-D then say whether the bare build BEHAVES like
+         the windows7.0 build. Same code in all three, so any difference is the
+         asset. -->
+    <TargetFrameworks>net10.0;net10.0-windows;net10.0-windows10.0.19041</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Periphery's own enumeration is one side of the Run D join. -->
+    <RootNamespace>BluetoothAssetProbe</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="InTheHand.Net.Bluetooth" Version="4.2.1" />
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+</Project>
