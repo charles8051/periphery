@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;SYSLIB1051</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Serial.Rjcp</PackageId>
+    <Description>ADR-0062: an IDuplexPipe over an already-open RJCP.IO.Ports.SerialPortStream —
+      the third-party-backed alternative to Periphery.Serial, for the custom-baud-rate and
+      cross-platform cases the BCL's System.IO.Ports cannot cover. RJCP.SerialPortStream is a
+      third-party runtime dependency of this package only; consumers who cannot accept one should
+      depend on Periphery.Serial instead.</Description>
+    <PackageTags>hardware;serial;uart;rjcp;duplex-pipe;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery.Serial\Periphery.Serial.csproj" />
+    <PackageReference Include="RJCP.SerialPortStream" Version="3.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Serial.Rjcp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
