@@ -261,6 +261,76 @@ lane and [`adr.md`](adr.md) Decision 4.
 - **GUI** — an Arm/Disarm control bound to the loaded image + selected family, a prominent
   armed indicator, and the live per-device result feed (reusing the target rows).
 
+> Probe-identified families present differently — one persistent row per bound bridge rather than
+> one per device, and a tally of flashes rather than of boards. See
+> [Presenting probe targets](#presenting-probe-targets-amendment-2026-09-03).
+
+---
+
+## Presenting probe targets (amendment, 2026-09-03)
+
+*Decided, not yet implemented.* [`adr.md`](adr.md) Decisions 8-11 admit probe-identified targets
+to autoflash and assume a presentation model without describing one. This section is that model.
+It does not change anything about passive families.
+
+### The row is the bridge, not the chip
+
+A serial target has two levels of identity and only the outer one is real. The USB-serial bridge
+is a genuine `DeviceInfo` from the watcher — VID/PID, `LocationPath`, often a `SerialNumber` —
+and Decision 8 binds the arm to exactly that. The chip behind it is knowable only by probing, and
+what a probe returns is a family: every STM32G431 answers Get ID with `0x0468`. Two boards in
+sequence are indistinguishable.
+
+So the chip cannot be a row. **It is an occupancy state of the bridge's row.**
+
+| Row state | Means | Basis |
+|---|---|---|
+| `empty` | probe silent | inferred under `--repeat=silence`; observed under `--repeat=cts` |
+| `occupied 0x468` | probe answered, chip id read | observed |
+| `flashing 42%` | flash in progress | observed |
+| `flashed` | written and verified | observed |
+| `failed <reason>` | flash failed | observed |
+
+The row persists for the armed session, because the fixture is still there whether or not a board
+is in it. This is the visible difference from a passive family, where a row appears and disappears
+with the device itself.
+
+### The tally counts flashes, not boards
+
+`AutoflashTally.Audit` builds its entries from `DeviceId` (`flashed {id}`). For a fixture that
+yields `flashed COM7`, `flashed COM7`, `flashed COM7` — three identical lines that say nothing
+about which board each was. Probe rows need a **per-row sequence number** instead: `COM7 #1`,
+`COM7 #2`. A position in a sequence is what can honestly be produced; a name is not.
+
+That forces a labelling rule, and it is deliberate rather than pedantic. **Under
+`--repeat=silence` the summary says "3 flashes", never "3 boards."** Decision 10 is explicit that
+departure-gating is a heuristic: a board that resets while seated and re-enters the bootloader is
+counted again, and nothing available can distinguish that from a replacement. "Boards" may only be
+claimed where a presence line backs it (`--repeat=cts`), which is the one mode where occupancy is
+observed rather than inferred.
+
+### Inferred occupancy must look inferred
+
+A row whose `empty`/`occupied` state comes from probe silence is a weaker claim than one backed by
+a hardware present-detect line, and the front-ends must not render them identically. Same
+discipline as marking probe targets as unconfirmed in `flashany list` — still open below.
+
+### Probe rows and passive rows are different claims
+
+`COM7 · fixture · board #3` and `STM32 DFU 0483:DF11 · SN 207D34...` assert different things. The
+first is a position in a sequence on a named fixture; the second is a device that identified
+itself. Rendering them in one undifferentiated list is what would let an operator read a position
+as an identity, which is the mistake this whole model exists to prevent.
+
+### Front-end deltas
+
+- **CLI** — while armed on a probe family, print a persistent per-fixture line that updates in
+  place rather than a new line per detection, and a tally labelled per the rule above. The arm
+  confirmation already has to enumerate the bound ports and state that probing sends bytes to
+  whatever is attached (Decision 8).
+- **GUI** — one row per bound bridge, showing occupancy and the running count for that fixture,
+  visibly distinct from passive target rows.
+
 ---
 
 ## Open Questions
