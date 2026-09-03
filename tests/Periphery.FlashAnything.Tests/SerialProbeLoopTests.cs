@@ -34,7 +34,8 @@ public class SerialProbeLoopTests
     }
 
     /// <summary>A provider whose every open answers or stays silent as the test dictates.</summary>
-    private sealed class ScriptedProvider(Queue<bool> answers) : IBootloaderProvider
+    private sealed class ScriptedProvider(
+        Queue<bool> answers, Exception? throwInstead = null, bool throwOnDispose = false) : IBootloaderProvider
     {
         public int Opens { get; private set; }
         public string Name => "STM32 UART (AN3155)";
@@ -44,22 +45,39 @@ public class SerialProbeLoopTests
         public Task<IFirmwareProgrammer> OpenAsync(DeviceInfo device, CancellationToken ct = default)
         {
             Opens++;
+            if (throwInstead is not null) throw throwInstead;
             bool answered = answers.Count > 0 && answers.Dequeue();
             return answered
-                ? Task.FromResult<IFirmwareProgrammer>(new FakeFirmwareProgrammer(device, identity: G431))
+                ? Task.FromResult<IFirmwareProgrammer>(
+                    throwOnDispose ? new ThrowsOnDispose(device, G431) : new FakeFirmwareProgrammer(device, identity: G431))
                 : throw new BootloaderException("no valid answer to the AN3155 sync byte");
         }
+    }
+
+    /// <summary>A programmer whose close fails — a port yanked between probe and teardown.</summary>
+    private sealed class ThrowsOnDispose(DeviceInfo device, DeviceIdentity identity) : IFirmwareProgrammer
+    {
+        public DeviceInfo Device { get; } = device;
+        public ImmutableArray<FirmwareFormat> AcceptedFormats { get; } =
+            ImmutableArray.Create(FirmwareFormat.IntelHex, FirmwareFormat.RawBinary);
+        public Task<DeviceIdentity> IdentifyAsync(CancellationToken ct = default) => Task.FromResult(identity);
+        public Task<FlashResult> FlashAsync(
+            FirmwarePayload payload, FlashOptions options, IProgress<FlashProgress>? progress = null,
+            CancellationToken ct = default) => Task.FromResult(FlashResult.Ok(0, verified: true));
+        public Task LeaveAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => throw new IOException("the port went away while closing");
     }
 
     private sealed record Run(
         List<ProbeRowAction> Actions, List<TimeSpan> Waits, ScriptedProvider Provider, SerialProbeLoop Loop);
 
     private static async Task<Run> RunAsync(
-        IEnumerable<bool> answers, int cycles, Func<BridgeIdentity, DeviceInfo?>? resolve = null)
+        IEnumerable<bool> answers, int cycles, Func<BridgeIdentity, DeviceInfo?>? resolve = null,
+        Exception? providerThrows = null, bool throwOnDispose = false)
     {
         var actions = new List<ProbeRowAction>();
         var waits = new List<TimeSpan>();
-        var provider = new ScriptedProvider(new Queue<bool>(answers));
+        var provider = new ScriptedProvider(new Queue<bool>(answers), providerThrows, throwOnDispose);
         using var cts = new CancellationTokenSource();
 
         // The delay is where the loop yields, so it is also where the test decides how far to let
@@ -157,5 +175,31 @@ public class SerialProbeLoopTests
 
         Assert.IsType<ProbeRowAction.Detected>(run.Actions[^1]);
         Assert.Equal(Cadence, run.Waits[^1]);   // and the cadence recovers with it
+    }
+
+    [Fact]
+    public async Task A_provider_defect_faults_the_row_rather_than_reading_as_silence()
+    {
+        // Folding an unexpected exception into NoResponse would back the cadence off and probe
+        // forever while never reporting that anything is wrong. Only the provider's documented
+        // failure — BootloaderException — means the device did not cooperate.
+        var run = await RunAsync(new[] { true }, cycles: 3,
+            providerThrows: new InvalidOperationException("provider bug"));
+
+        var faulted = Assert.IsType<ProbeRowAction.Faulted>(run.Actions[^1]);
+        Assert.Contains("InvalidOperationException", faulted.Message);
+        Assert.Contains("provider bug", faulted.Message);
+    }
+
+    [Fact]
+    public async Task A_failed_close_does_not_kill_the_row_or_lose_the_detection()
+    {
+        // Disposal runs after the probe result is computed but before it is returned, so a throw
+        // there would bypass the policy entirely and propagate out of RunAsync — killing an armed
+        // row over a failed close and losing the detection that cycle had already established.
+        var run = await RunAsync(new[] { true, true }, cycles: 2, throwOnDispose: true);
+
+        Assert.Equal(G431, Assert.IsType<ProbeRowAction.Detected>(run.Actions[0]).Identity);
+        Assert.Equal(2, run.Provider.Opens);   // and it kept probing
     }
 }

@@ -125,19 +125,51 @@ internal sealed class SerialProbeLoop
         {
             throw;
         }
-        catch (Exception)
+        catch (BootloaderException)
         {
-            // Deliberately broad and deliberately not fatal. Every reason a probe fails to get an
-            // answer is one this row calls NoResponse, and the row is what decides whether a run of
-            // them means anything.
+            // The documented way a provider reports that the device did not cooperate: nothing
+            // answered the handshake, the port would not open, the part is not in its bootloader.
+            // All of those are silence, and the row decides whether a run of them means anything.
             return ProbeOutcome.NoResponse.Instance;
+        }
+        catch (Exception ex)
+        {
+            // Anything outside the provider contract is a defect, not a quiet fixture. Folding it
+            // into NoResponse would back the cadence off and probe forever while never reporting
+            // that something is wrong — so it faults the row and the operator hears about it.
+            return new ProbeOutcome.TransportFailed(
+                $"probing {device.PortName?.Value ?? device.Id.Value} threw {ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
             // Open per cycle (adr.md Decision 11). The port goes free between probes; the handle is
             // held only across the probe-to-flash hand-off, which arrives with the service wiring.
-            if (programmer is not null)
-                await programmer.DisposeAsync().ConfigureAwait(false);
+            await SafeDisposeAsync(programmer).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Closes the probe's programmer without letting a teardown failure escape.
+    /// </summary>
+    /// <remarks>
+    /// A throw from here runs after the probe result is computed but before it is returned, so it
+    /// would bypass the policy entirely and propagate out of <see cref="RunAsync"/> — killing an
+    /// armed row over a failed close, and losing the detection or removal that cycle had already
+    /// established. Swallowing is safe rather than lazy: if the port really is broken, the next
+    /// cycle fails to open it and the row observes that through the normal path.
+    /// </remarks>
+    private static async ValueTask SafeDisposeAsync(IFirmwareProgrammer? programmer)
+    {
+        if (programmer is null)
+            return;
+
+        try
+        {
+            await programmer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Deliberately ignored; see above.
         }
     }
 }
