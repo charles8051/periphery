@@ -20,4 +20,11 @@
     <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- SerialProbeLoop is internal: it is the shell around ProbeRowPolicy, not a public surface.
+         The tests drive it directly because its whole job is timing and IO the pure policy cannot
+         cover. Same pattern as Periphery.Bootloader.Stm32.Serial. -->
+    <InternalsVisibleTo Include="Periphery.FlashAnything.Tests" />
+  </ItemGroup>
+
 </Project>
