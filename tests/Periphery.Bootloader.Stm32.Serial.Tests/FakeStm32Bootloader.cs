@@ -80,6 +80,54 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// </summary>
     public int? DisconnectAfterCommands { get; init; }
 
+    /// <summary>
+    /// The rate this part autobauded to, when that is not the rate the host is driving. Models a
+    /// part whose autobaud measured the wrong byte: it is alive and correct, but unintelligible
+    /// until the host happens to be tuned to the same rate. Null means the two always agree.
+    /// </summary>
+    /// <remarks>
+    /// Both directions corrupt, which is what makes the captured behaviour make sense. Bytes that
+    /// are all-ones or all-zeros survive any sampling error — a receiver reading 0xFF or 0x00 at
+    /// the wrong rate still recovers 0xFF or 0x00 — and Get is 0x00 followed by 0xFF. So a
+    /// mis-locked part goes on receiving and answering <i>that one command</i> perfectly while
+    /// nothing else gets through, which is exactly what the capture shows: NACKs to the sync
+    /// byte, and a complete, well-formed Get reply that the host cannot read.
+    /// </remarks>
+    public int? MislockedBaudRate { get; init; }
+
+    /// <summary>The rate the host is currently driving. The retune seam writes this.</summary>
+    public int HostBaudRate { get; set; } = Stm32SerialOptions.Default.BaudRate;
+
+    /// <summary>Rates this part was ever asked to speak, oldest first — so a test can assert the port was put back.</summary>
+    public List<int> BaudRatesSeen { get; } = new();
+
+    private bool Intelligible => MislockedBaudRate is not { } locked || locked == HostBaudRate;
+
+    /// <summary>
+    /// What a byte sent at <paramref name="actualBaud"/> looks like to a receiver sampling at
+    /// <paramref name="samplingBaud"/>, when the receiver is the faster of the two by roughly 9/8.
+    /// </summary>
+    /// <remarks>
+    /// The receiver samples the middle of each of its own bit periods, so against a slower
+    /// stream it reads bit 2 twice and never reaches bit 7: the byte it recovers is built from
+    /// source bits D0 D1 D2 D2 D3 D4 D5 D6. Derived from, and checked against, a capture of an
+    /// STM32G431 locked to 102400 while the host drove 115200 — all fifteen bytes of its Get
+    /// reply reproduce exactly.
+    /// </remarks>
+    public static byte MisreadAtWrongBaud(byte value, int actualBaud, int samplingBaud)
+    {
+        if (actualBaud <= 0 || samplingBaud <= 0 || actualBaud == samplingBaud)
+            return value;
+
+        ReadOnlySpan<int> sourceBit = stackalloc int[] { 0, 1, 2, 2, 3, 4, 5, 6 };
+        int result = 0;
+        for (int i = 0; i < 8; i++)
+            if ((value & (1 << sourceBit[i])) != 0)
+                result |= 1 << i;
+
+        return (byte)result;
+    }
+
     private int _commandsHandled;
 
     public PipeReader Input => _toHost.Reader;
@@ -126,7 +174,7 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
                 if (_commandsHandled == DisconnectAfterCommands)
                     break;   // the finally completes the writer — the host sees the pipe close
 
-                byte command = await ReadByteAsync(reader, ct).ConfigureAwait(false);
+                byte command = Received(await ReadByteAsync(reader, ct).ConfigureAwait(false));
                 _commandsHandled++;
 
                 if (command == 0x7F && !_synced)
@@ -147,7 +195,7 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
                 // nothing at all until the frame is completed: verified against an STM32G431
                 // (PID 0x468, bootloader 3.1) on 2026-09-02.
 
-                byte complement = await ReadByteAsync(reader, ct).ConfigureAwait(false);
+                byte complement = Received(await ReadByteAsync(reader, ct).ConfigureAwait(false));
                 if ((byte)(command ^ complement) != 0xFF)
                 {
                     await SendAsync(writer, new[] { Nack }, ct).ConfigureAwait(false);
@@ -272,8 +320,19 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     private static uint ReadBigEndian(byte[] frame) =>
         ((uint)frame[0] << 24) | ((uint)frame[1] << 16) | ((uint)frame[2] << 8) | frame[3];
 
-    private static async Task SendAsync(PipeWriter writer, byte[] bytes, CancellationToken ct)
+    /// <summary>A byte as this part receives it, corrupted when the host is tuned elsewhere.</summary>
+    private byte Received(byte value) =>
+        Intelligible ? value : MisreadAtWrongBaud(value, HostBaudRate, MislockedBaudRate!.Value);
+
+    private async Task SendAsync(PipeWriter writer, byte[] bytes, CancellationToken ct)
     {
+        if (!Intelligible)
+        {
+            bytes = bytes
+                .Select(b => MisreadAtWrongBaud(b, MislockedBaudRate!.Value, HostBaudRate))
+                .ToArray();
+        }
+
         bytes.CopyTo(writer.GetSpan(bytes.Length));
         writer.Advance(bytes.Length);
         await writer.FlushAsync(ct).ConfigureAwait(false);
