@@ -122,6 +122,19 @@ public class BclSerialDuplexPipeTests
     }
 
     [Fact]
+    public async Task DisposeAsync_CalledTwice_IsIdempotent()
+    {
+        var stream = new FakeSyncSerialStream(Tick);
+        var pipe = new BclSerialDuplexPipe(stream, Tick);
+
+        while (stream.ReadCount < 2) await Task.Delay(5, Token());
+
+        await pipe.DisposeAsync();
+        // Must not throw ObjectDisposedException from re-cancelling an already-disposed _cts.
+        await pipe.DisposeAsync();
+    }
+
+    [Fact]
     public async Task Dispose_StopsThePump()
     {
         var stream = new FakeSyncSerialStream(Tick);

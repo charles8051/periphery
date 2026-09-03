@@ -101,7 +101,7 @@ public sealed class BclSerialDuplexPipe : IDuplexPipe, IAsyncDisposable
 
         // One tick to notice cancellation, one for the read already in flight when it arrived.
         _joinTimeout = tick + tick;
-        Output = PipeWriter.Create(stream);
+        Output = PipeWriter.Create(stream, new StreamPipeWriterOptions(leaveOpen: true));
         _pumpTask = StartPump(stream, _rxPipe.Writer, _cts.Token);
     }
 
@@ -115,7 +115,7 @@ public sealed class BclSerialDuplexPipe : IDuplexPipe, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(stream);
 
         _joinTimeout = readTick + readTick;
-        Output = PipeWriter.Create(stream);
+        Output = PipeWriter.Create(stream, new StreamPipeWriterOptions(leaveOpen: true));
         _pumpTask = StartPump(stream, _rxPipe.Writer, _cts.Token);
     }
 
@@ -164,36 +164,66 @@ public sealed class BclSerialDuplexPipe : IDuplexPipe, IAsyncDisposable
             ? ReadDisposition.Benign
             : ReadDisposition.Failure;
 
+    private readonly object _disposeLock = new();
+    private Task? _disposeTask;
+
     /// <summary>
-    /// Signals the background pump to stop and waits up to two read ticks for it to finish.
-    /// Does not close or dispose the underlying <see cref="SerialPort"/>.
+    /// Signals the background pump to stop and waits for it to actually finish before handing
+    /// the port back to the caller. Does not close or dispose the underlying
+    /// <see cref="SerialPort"/>. Safe to call more than once — every call after the first awaits
+    /// the same cleanup rather than repeating it.
     /// </summary>
     /// <remarks>
-    /// Unlike the RJCP transport this cannot promise the pump has stopped, only that it will
-    /// stop within one tick. A synchronous read in flight is not cancellable, and the
-    /// alternative — closing the port to unblock it — belongs to the caller and is the
-    /// close-to-unblock pattern this library removed. Consumers are unaffected either way: they
-    /// wait on <see cref="Input"/>, which cancels immediately.
+    /// A synchronous read in flight is not cancellable, and the alternative — closing the port
+    /// to unblock it — belongs to the caller and is the close-to-unblock pattern this library
+    /// removed. The common case still returns within two read ticks, since that is what the
+    /// pump's own <see cref="SerialPort.ReadTimeout"/> bounds it to; when a read runs longer than
+    /// that, this keeps waiting rather than restoring <see cref="SerialPort.ReadTimeout"/> and
+    /// returning while the pump still owns the port — a caller that reconfigures or closes the
+    /// port believing disposal is complete would otherwise race it. Consumers are unaffected
+    /// either way: they wait on <see cref="Input"/>, which cancels immediately.
     /// </remarks>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeLock)
+        {
+            _disposeTask ??= DisposeAsyncCore();
+        }
+
+        return new ValueTask(_disposeTask);
+    }
+
+    private async Task DisposeAsyncCore()
     {
         _cts.Cancel();
 
-        var stopped = true;
         try
         {
             await _pumpTask.WaitAsync(_joinTimeout).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
-            // A read was in flight. It will end on its own tick and find the loop guard
-            // already cancelled.
-            stopped = false;
+            // A read was still in flight past the fast path. Keep waiting for it to
+            // actually finish rather than abandoning the port mid-tick — see the remarks
+            // above.
+            try
+            {
+                await _pumpTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Already reported to the consumer through the pipe's completion.
+            }
+        }
+        catch
+        {
+            // The pump faulted; already reported to the consumer through the pipe's
+            // completion. Disposal still has to restore the port and release _cts.
         }
 
-        // Only safe once the pump is provably out of Read; SetCommTimeouts on a port with
-        // I/O in flight is not something to do on the way out.
-        if (stopped && _port is not null)
+        // The pump is now provably out of Read; SetCommTimeouts on a port with I/O in
+        // flight is not something to do on the way out.
+        if (_port is not null)
         {
             try
             {

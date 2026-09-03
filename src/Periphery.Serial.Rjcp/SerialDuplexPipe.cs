@@ -15,14 +15,16 @@ namespace Periphery.Serial.Rjcp;
 /// <para>
 /// Unlike <see cref="System.IO.Ports.SerialPort"/>, <see cref="SerialPortStream"/> is itself a
 /// <see cref="System.IO.Stream"/> with its own internal I/O thread that buffers bytes out of the
-/// kernel. Its <see cref="System.IO.Stream.ReadAsync"/> waits on that in-memory buffer, so
+/// kernel. Its <see cref="System.IO.Stream.ReadAsync(byte[], int, int, System.Threading.CancellationToken)"/>
+/// waits on that in-memory buffer, so
 /// cancellation is reliable without any Win32 <c>CancelIoEx</c> involvement — this backend does
 /// not have <see cref="Periphery.Serial.BclSerialDuplexPipe"/>'s hang, because the thing that
 /// causes it (Windows' <c>SerialPort.BaseStream.ReadAsync</c> ignoring cancellation and
 /// <c>ReadTimeout</c>) is specific to the BCL's own stream implementation.
 /// </para>
 /// <para>
-/// However, passing the stream directly to <see cref="PipeReader.Create(System.IO.Stream)"/>
+/// However, passing the stream directly to
+/// <see cref="PipeReader.Create(System.IO.Stream, System.IO.Pipelines.StreamPipeReaderOptions)"/>
 /// causes <c>StreamPipeReader</c> to forward its own internal cancellation token into every
 /// <c>ReadAsync</c> call. RJCP calls <c>cancellationToken.ThrowIfCancellationRequested()</c>
 /// after its internal wait returns, which means the exception escapes rather than being
@@ -68,7 +70,7 @@ public sealed class SerialDuplexPipe : IDuplexPipe, IAsyncDisposable
     internal SerialDuplexPipe(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        Output = PipeWriter.Create(stream);
+        Output = PipeWriter.Create(stream, new StreamPipeWriterOptions(leaveOpen: true));
 
         var token = _cts.Token;
 
@@ -102,14 +104,37 @@ public sealed class SerialDuplexPipe : IDuplexPipe, IAsyncDisposable
             // the consumer.
             : ReadDisposition.Failure;
 
+    private readonly object _disposeLock = new();
+    private Task? _disposeTask;
+
     /// <summary>
     /// Signals the background pump to stop and waits for it to finish cleanly. Does not close
-    /// or dispose the underlying <see cref="SerialPortStream"/>.
+    /// or dispose the underlying <see cref="SerialPortStream"/>. Safe to call more than once —
+    /// every call after the first awaits the same cleanup rather than repeating it.
     /// </summary>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeLock)
+        {
+            _disposeTask ??= DisposeAsyncCore();
+        }
+
+        return new ValueTask(_disposeTask);
+    }
+
+    private async Task DisposeAsyncCore()
     {
         _cts.Cancel();
-        await _pumpTask.ConfigureAwait(false);
+
+        try
+        {
+            await _pumpTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Already reported to the consumer through the pipe's completion.
+        }
+
         _cts.Dispose();
     }
 }

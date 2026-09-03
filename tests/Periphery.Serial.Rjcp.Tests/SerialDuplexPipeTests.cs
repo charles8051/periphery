@@ -80,4 +80,16 @@ public class SerialDuplexPipeTests
             () => pipe.Input.ReadAsync(Token()).AsTask());
         Assert.Same(failure, thrown);
     }
+
+    [Fact]
+    public async Task DisposeAsync_CalledTwice_IsIdempotent()
+    {
+        var stream = new FakeSerialStream();
+        var pipe = new SerialDuplexPipe(stream);
+        await stream.Parked.WaitAsync(Token());
+
+        await pipe.DisposeAsync();
+        // Must not throw ObjectDisposedException from re-cancelling an already-disposed _cts.
+        await pipe.DisposeAsync();
+    }
 }
