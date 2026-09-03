@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Periphery.FlashAnything.Tests;
 
 /// <summary>
@@ -23,14 +25,51 @@ public class ProbeRepeatTests
     private sealed class SwitchableProvider : IBootloaderProvider
     {
         public volatile bool Answers;
+        public int ConcurrentFlashes;
+        public int MaxConcurrentFlashes;
         public string Name => Family;
         public IdentificationMode Identification => IdentificationMode.Probe;
         public bool CanHandle(DeviceInfo device) => device.PortName is not null;
 
         public Task<IFirmwareProgrammer> OpenAsync(DeviceInfo device, CancellationToken ct = default) =>
             Answers
-                ? Task.FromResult<IFirmwareProgrammer>(new FakeFirmwareProgrammer(device))
+                ? Task.FromResult<IFirmwareProgrammer>(new CountingProgrammer(device, this))
                 : throw new BootloaderException("nothing answered the sync byte");
+    }
+
+    /// <summary>Records overlapping flashes, so a double-enqueue cannot pass unnoticed.</summary>
+    private sealed class CountingProgrammer(DeviceInfo device, SwitchableProvider owner) : IFirmwareProgrammer
+    {
+        public DeviceInfo Device { get; } = device;
+        public ImmutableArray<FirmwareFormat> AcceptedFormats { get; } =
+            ImmutableArray.Create(FirmwareFormat.IntelHex, FirmwareFormat.RawBinary, FirmwareFormat.Elf);
+
+        public Task<DeviceIdentity> IdentifyAsync(CancellationToken ct = default) =>
+            Task.FromResult(DeviceIdentity.Unknown("STM32"));
+
+        public async Task<FlashResult> FlashAsync(
+            FirmwarePayload payload, FlashOptions options, IProgress<FlashProgress>? progress = null,
+            CancellationToken ct = default)
+        {
+            int now = Interlocked.Increment(ref owner.ConcurrentFlashes);
+            int seen = Volatile.Read(ref owner.MaxConcurrentFlashes);
+            while (now > seen)
+            {
+                int prior = Interlocked.CompareExchange(ref owner.MaxConcurrentFlashes, now, seen);
+                if (prior == seen) break;
+                seen = prior;
+            }
+
+            try
+            {
+                await Task.Delay(20, ct);
+                return FlashResult.Ok(payload.ByteLength, verified: true);
+            }
+            finally { Interlocked.Decrement(ref owner.ConcurrentFlashes); }
+        }
+
+        public Task LeaveAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private static async Task<string> TempBinAsync()
@@ -168,6 +207,36 @@ public class ProbeRepeatTests
         {
             await ArmedAsync(rig, fw, RepeatMode.None);
             Assert.True(svc.State.AutoflashTally.CountsDistinctBoards);
+        }
+        finally { File.Delete(fw); }
+    }
+
+    [Fact]
+    public async Task Repeat_never_leaves_two_flashes_outstanding_on_one_fixture()
+    {
+        // A successful flash causes the silence that retracts the row: LeaveAfterFlash jumps the
+        // part and it stops answering. So a Removed routinely arrives while that flash is still
+        // running, and reopening then would let the next Detected enqueue the same row again — a
+        // second outstanding flash on a fixture that reports one DeviceId for every board.
+        var rig = Build();
+        await using var svc = rig.Svc;
+        string fw = await TempBinAsync();
+        try
+        {
+            await ArmedAsync(rig, fw, RepeatMode.Silence);
+
+            // Flap the fixture hard: every answer can start a flash, every silence can retract.
+            for (int i = 0; i < 40; i++)
+            {
+                rig.Provider.Answers = i % 2 == 0;
+                await Task.Delay(5);
+            }
+            rig.Provider.Answers = false;
+            await Task.Delay(100);
+
+            // The invariant: however many flashes the flapping produced, no two ever overlapped on
+            // this fixture. Counting audit lines would prove nothing — that is a tautology.
+            Assert.Equal(1, Volatile.Read(ref rig.Provider.MaxConcurrentFlashes));
         }
         finally { File.Delete(fw); }
     }
