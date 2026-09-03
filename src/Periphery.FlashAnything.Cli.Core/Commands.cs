@@ -39,7 +39,15 @@ internal static class Commands
         foreach (var t in targets)
         {
             string mode = t.RebootsToFlash ? "  (application - reboots to flash)" : "";
-            Console.WriteLine($"  {t.Id}  {t.DisplayName} [{t.ProviderName}]{mode}");
+
+            // A probe row is a port that a provider *could* handle, not a target known to be there:
+            // nothing has asked what is behind the bridge, and asking means sending protocol bytes.
+            // Saying so is the difference between listing a bench and claiming a device.
+            string unconfirmed = t.Identification != IdentificationMode.Passive && t.Identity is null
+                ? "  (unconfirmed - probe to identify)"
+                : "";
+
+            Console.WriteLine($"  {t.Id}  {t.OperatorLabel} [{t.ProviderName}]{mode}{unconfirmed}");
         }
         return ExitCodes.Success;
     }

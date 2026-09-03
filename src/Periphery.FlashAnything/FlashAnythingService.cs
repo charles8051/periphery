@@ -98,8 +98,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
     // _maxFlashConcurrency boards flash at once). _flashedThisSession dedupes within an armed session
     // (the armed config itself lives in State.Autoflash); a device is enqueued at most once (test-and-
     // marked under _gate before the write), so no two workers ever flash the same device.
-    private readonly Channel<DeviceId> _autoflashQueue =
-        Channel.CreateUnbounded<DeviceId>(new() { SingleReader = false, SingleWriter = false });
+    private readonly Channel<(DeviceId Id, string? Label)> _autoflashQueue =
+        Channel.CreateUnbounded<(DeviceId Id, string? Label)>(new() { SingleReader = false, SingleWriter = false });
     private readonly HashSet<DeviceId> _flashedThisSession = new();
     private readonly CancellationTokenSource _cts = new();
 
@@ -191,6 +191,14 @@ public sealed class FlashAnythingService : IAsyncDisposable
         for (int i = 0; i < maxFlashConcurrency; i++)
             _autoflashWorkers[i] = Task.Run(() => RunAutoflashQueueAsync(_cts.Token));
     }
+
+    /// <summary>
+    /// Whether arming this family requires a fixture to be bound first. True for probe-identified
+    /// families: their bridge's VID/PID names the bridge, never the part behind it, so autoflash
+    /// has no way to know which fixture the operator meant (adr.md Decision 8). A front-end uses
+    /// this to require a port before it offers to arm, rather than letting the arm be refused.
+    /// </summary>
+    public bool FamilyNeedsPort(string family) => IsProbeFamily(family);
 
     /// <summary>The registered provider + entry family names (for a front-end autoflash family picker).</summary>
     public IReadOnlyList<string> KnownFamilies =>
@@ -347,7 +355,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
             }
             _logger.LogInformation("Discovery: detected {Kind} {Mode} target {Id} '{Name}' [{Family}] status={Status}.",
                 isNew ? "new" : "existing", mode, device.Id, DisplayName(device), family, state.ActivityStatus);
-            Emit(new AppEvent.TargetDetected(device.Id, DisplayName(device), family, identification, mode, bridge));
+            Emit(new AppEvent.TargetDetected(
+                device.Id, DisplayName(device), family, identification, mode, bridge, device.PortName));
             if (isNew) MaybeAutoflash(device.Id); // autoflash on first detection; re-arrival after a reset re-evaluates (and dedupes)
         }
         else
@@ -750,7 +759,12 @@ public sealed class FlashAnythingService : IAsyncDisposable
             _reopenWhenFlashed.Clear();
         }
         Emit(new AppEvent.AutoflashArmed(
-            new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges, Repeat = arm.Repeat }));
+            new AutoflashConfig(arm.Family, arm.Options)
+            {
+                Bridges = bridges,
+                Repeat = arm.Repeat,
+                BoundPorts = arm.Ports.IsDefault ? ImmutableArray<SerialPortName>.Empty : arm.Ports,
+            }));
 
         StartProbeLoops(bridges);
 
@@ -825,6 +839,16 @@ public sealed class FlashAnythingService : IAsyncDisposable
 
         bridges = builder.ToImmutable();
         return true;
+    }
+
+    /// <summary>
+    /// How to name a target in the session audit. A fixture reads as its port, not as the bridge's
+    /// USB instance id — the id is unreadable and it names the wrong thing, since what was flashed
+    /// is whatever board happened to be in that fixture.
+    /// </summary>
+    private string? LabelFor(DeviceId id)
+    {
+        lock (_gate) return State.Find(id)?.OperatorLabel;
     }
 
     /// <summary>Whether the named family identifies its targets by probing rather than by VID/PID.</summary>
@@ -992,7 +1016,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
             case ProbeRowAction.Detected detected when device is not null:
                 Emit(new AppEvent.TargetDetected(
                     device.Id, DisplayName(device), State.Autoflash?.Family ?? "serial",
-                    IdentificationMode.Probe, DeviceMode.Bootloader, bridge));
+                    IdentificationMode.Probe, DeviceMode.Bootloader, bridge, device.PortName));
                 Emit(new AppEvent.TargetIdentified(device.Id, detected.Identity));
                 MaybeAutoflash(device.Id);
                 break;
@@ -1090,8 +1114,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     break;
             }
         }
-        if (enqueue) _autoflashQueue.Writer.TryWrite(id);
-        else if (skipReason is not null) Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, skipReason));
+        // Capture the label now, not when the outcome lands. A fixture reuses one DeviceId across
+        // boards and its row's identity moves on as later probes arrive, so reading it at
+        // completion can describe the board that came next — or, if the row was retracted first,
+        // fall back to the unreadable bridge id. The name has to belong to this operation.
+        if (enqueue) _autoflashQueue.Writer.TryWrite((id, LabelFor(id)));
+        else if (skipReason is not null)
+            Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, skipReason, LabelFor(id)));
     }
 
     // An autoflash worker: one of _maxFlashConcurrency identical workers draining the shared queue.
@@ -1102,13 +1131,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
     {
         try
         {
-            await foreach (var id in _autoflashQueue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            await foreach (var (id, label) in _autoflashQueue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 AutoflashConfig? armed;
                 lock (_gate) armed = State.Autoflash;
                 if (armed is null)
                 {
-                    Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "disarmed before flash"));
+                    Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "disarmed before flash", label));
                     continue;
                 }
 
@@ -1119,7 +1148,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     FlashOutcome.Failed => (AutoflashOutcomeKind.Failed, State.Find(id)?.LastError),
                     _ => (AutoflashOutcomeKind.Skipped, State.Find(id)?.LastError ?? "skipped"),
                 };
-                Emit(new AppEvent.AutoflashOutcome(id, kind, detail));
+                Emit(new AppEvent.AutoflashOutcome(id, kind, detail, label));
             }
         }
         catch (OperationCanceledException) { /* service disposing */ }
