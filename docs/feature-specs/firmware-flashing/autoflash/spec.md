@@ -331,8 +331,19 @@ an operator sees when a board is seated but unresponsive, miswired, or held in r
 the cases indistinguishable from an empty fixture at the protocol level and the reason `no
 response` is not called `empty`.
 
-N, the backed-off interval, and whether the row escalates further after a long stall are open —
-they want a real fixture rather than an argument, like the other three constants.
+Concrete starting values, so this is specified rather than deferred: **N = 20 cycles**, backing off
+from ~1 Hz to **one probe every 10 s**, and the row reports the elapsed stall from the first
+no-response. That is a 10x reduction in bytes reaching whatever is attached, and it holds
+indefinitely — these are starting values to be corrected against a real fixture, not open
+questions.
+
+**Probing does not stop on its own, and that is the decision.** An armed fixture sitting empty is
+the normal resting state of this feature; a session that stopped probing after some interval would
+stop being an autoflash fixture. Indefinite probing of a bound bridge is not a new hazard — it is
+the consequence Decision 8 accepts explicitly, which is why the arm confirmation has to enumerate
+every bound port and say that probing sends bytes to whatever is attached. What this section adds
+is that the rate falls and the row stops looking like progress. Disarm remains immediate, and is
+the stop.
 
 The row persists for the armed session, because the fixture is still there whether or not a board
 is in it. This is the visible difference from a passive family, where a row appears and disappears
