@@ -29,6 +29,10 @@ public static class AppReducer
 
         AppEvent.FirmwareLoadFailed ev => state with { Firmware = null, FirmwareError = ev.Message },
 
+        // Surfaces on the same error line the front-ends already render, but leaves the image
+        // alone: the arm failed, the firmware did not.
+        AppEvent.AutoflashArmFailed ev => state with { FirmwareError = ev.Message, Autoflash = null },
+
         // App-mode reboot lifecycle, ahead of the flash. Entering clears any prior error/progress
         // (a fresh attempt); WaitingForBootloader just advances the stage.
         AppEvent.EnteringBootloader ev => state.WithTarget(ev.Id,
@@ -72,8 +76,8 @@ public static class AppReducer
     {
         int idx = s.IndexOf(ev.Id);
         AppState next = idx < 0
-            ? s with { Targets = s.Targets.Add(new FlashTargetView(ev.Id, ev.DisplayName, ev.ProviderName, ev.Identification, ev.Mode)) }
-            : s with { Targets = s.Targets.SetItem(idx, s.Targets[idx] with { DisplayName = ev.DisplayName, ProviderName = ev.ProviderName, Identification = ev.Identification, Mode = ev.Mode }) };
+            ? s with { Targets = s.Targets.Add(new FlashTargetView(ev.Id, ev.DisplayName, ev.ProviderName, ev.Identification, ev.Mode, Bridge: ev.Bridge)) }
+            : s with { Targets = s.Targets.SetItem(idx, s.Targets[idx] with { DisplayName = ev.DisplayName, ProviderName = ev.ProviderName, Identification = ev.Identification, Mode = ev.Mode, Bridge = ev.Bridge }) };
 
         // Convenience: focus the first target when nothing is selected yet.
         return next.SelectedTargetId is null ? next with { SelectedTargetId = ev.Id } : next;
