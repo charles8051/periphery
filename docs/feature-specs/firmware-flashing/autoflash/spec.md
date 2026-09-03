@@ -306,11 +306,33 @@ bootloader for its application — the last of which is the *expected* end of ev
 flash. `no response` is therefore the honest state, and only a present-detect line can produce
 `absent`.
 
-The distinction is not cosmetic. Under `--repeat=silence`, Decision 10 releases the dedupe gate on
-`no response`, so a row rendered as `empty` would tell an operator the fixture is ready for the
-next board on evidence that does not support it. Probing continues in that state, which means
-bytes keep going to whatever is actually attached — the accepted hazard of Decision 8, and one an
-operator should be able to see they are still in.
+The distinction is not cosmetic. A row rendered as `empty` tells an operator the fixture is ready
+for the next board on evidence that does not support it, and under `--repeat=silence` that is also
+the evidence the dedupe gate reopens on.
+
+**What the gate actually does, stated precisely.** Decision 10's default is one flash per bound
+bridge per armed session — Decision 5's guarantee, unchanged — and `no response` does not reopen
+it. Only `--repeat` reopens the gate, and only `--repeat=silence` reopens it on inference; under
+`--repeat=cts` a present-detect line has to observe the board leave. So a row that has reached
+`flashed` stays terminal unless the operator asked for a fixture loop, and the mode they chose
+decides what counts as departure.
+
+### Probing backs off, and a stalled row says so
+
+A row can sit at `no response` indefinitely, and the specification above gives no bound on that.
+An armed fixture with no board in it is the *normal* resting state, so stopping outright would be
+wrong — but probing at full cadence forever is also wrong, because every cycle puts `0x7F` on the
+line to whatever is actually attached.
+
+So: after **N consecutive no-response cycles the cadence backs off** to a slower interval, and the
+row surfaces the fact — `no target seen for 4m` rather than a row that looks busy. Probing does
+not stop; it stops being noisy, and it stops looking like progress. The backed-off state is what
+an operator sees when a board is seated but unresponsive, miswired, or held in reset, which are
+the cases indistinguishable from an empty fixture at the protocol level and the reason `no
+response` is not called `empty`.
+
+N, the backed-off interval, and whether the row escalates further after a long stall are open —
+they want a real fixture rather than an argument, like the other three constants.
 
 The row persists for the armed session, because the fixture is still there whether or not a board
 is in it. This is the visible difference from a passive family, where a row appears and disappears
