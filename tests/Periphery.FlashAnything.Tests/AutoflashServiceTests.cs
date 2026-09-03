@@ -158,7 +158,7 @@ public class AutoflashServiceTests
             await WaitUntil(svc, s => s.AutoflashTally.Skipped >= 1);
 
             Assert.Equal(0, svc.State.AutoflashTally.Flashed);
-            Assert.Contains("not passively identified", string.Join(" ", svc.State.AutoflashTally.Audit));
+            Assert.Contains("probe-identified", string.Join(" ", svc.State.AutoflashTally.Audit));
         }
         finally { File.Delete(fw); }
     }
