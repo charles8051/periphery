@@ -79,6 +79,8 @@ This feature **does not** modify the Treehopper updater / control app.
 - [ ] **Passive identification only.** Autoflash triggers **only** for families identified
       passively by USB VID/PID. Probe-identified (serial) targets are **never** auto-flashed
       (see [Identification model](#identification-model)).
+      *In force. [`adr.md`](adr.md) Decisions 8-11 supersede this once implemented; until then
+      this requirement governs — see [Presenting probe targets](#presenting-probe-targets-amendment-2026-09-03).*
 - [ ] **Idempotent.** Each physical device is flashed **at most once per armed session**;
       post-flash re-enumeration (the board resetting back through the bootloader) must not
       re-trigger a flash.
@@ -194,6 +196,10 @@ A provider declares its `IdentificationMode`; autoflash includes only `Passive` 
 See [ADR-0062](../../../adr/0062-periphery-serial-backend-provider.md) for the serial
 lane and [`adr.md`](adr.md) Decision 4.
 
+**This is shipped behaviour and it still governs.** Decision 4 is amended by Decisions 8-11, which
+admit probe families on operator-bound bridges, but none of that is implemented. Until it is, a
+probe-identified target is never auto-flashed, whatever the amendment below describes.
+
 ---
 
 ## Safety rules (this flashes firmware unattended — bricking is real)
@@ -201,6 +207,7 @@ lane and [`adr.md`](adr.md) Decision 4.
 1. **Opt-in, per-family, disarmed by default.** Nothing auto-flashes until the operator arms
    a specific image + family.
 2. **Passive identification only.** Probe-identified (serial) targets are never auto-flashed.
+   *In force until [`adr.md`](adr.md) Decisions 8-11 are implemented.*
 3. **Idempotent + debounced.** A given physical device is flashed at most once per armed
    session; post-flash re-enumeration does not re-trigger.
 4. **Bounded-parallel, per-family-safe.** Distinct devices may flash concurrently (capped by
@@ -285,11 +292,25 @@ So the chip cannot be a row. **It is an occupancy state of the bridge's row.**
 
 | Row state | Means | Basis |
 |---|---|---|
-| `empty` | probe silent | inferred under `--repeat=silence`; observed under `--repeat=cts` |
+| `no response` | probe sent, nothing came back | **indeterminate** |
+| `absent` | present-detect line deasserted | observed, `--repeat=cts` only |
 | `occupied 0x468` | probe answered, chip id read | observed |
 | `flashing 42%` | flash in progress | observed |
 | `flashed` | written and verified | observed |
 | `failed <reason>` | flash failed | observed |
+
+**Silence is not absence, and the row must not claim it is.** A probe that gets nothing back is
+consistent with an empty fixture, but equally with a board that is seated and unresponsive, a
+non-STM32 device on that bridge, RX/TX swapped, a part held in reset, or one that has left the
+bootloader for its application — the last of which is the *expected* end of every successful
+flash. `no response` is therefore the honest state, and only a present-detect line can produce
+`absent`.
+
+The distinction is not cosmetic. Under `--repeat=silence`, Decision 10 releases the dedupe gate on
+`no response`, so a row rendered as `empty` would tell an operator the fixture is ready for the
+next board on evidence that does not support it. Probing continues in that state, which means
+bytes keep going to whatever is actually attached — the accepted hazard of Decision 8, and one an
+operator should be able to see they are still in.
 
 The row persists for the armed session, because the fixture is still there whether or not a board
 is in it. This is the visible difference from a passive family, where a row appears and disappears
@@ -311,9 +332,11 @@ observed rather than inferred.
 
 ### Inferred occupancy must look inferred
 
-A row whose `empty`/`occupied` state comes from probe silence is a weaker claim than one backed by
-a hardware present-detect line, and the front-ends must not render them identically. Same
-discipline as marking probe targets as unconfirmed in `flashany list` — still open below.
+`no response` and `absent` must not render alike, and neither may be styled as a settled fact the
+way `occupied` is. Same discipline as marking probe targets as unconfirmed in `flashany list` —
+still open below. The wording matters more than the styling: a state named for what was observed
+(`no response`) cannot be misread, while one named for what was inferred (`empty`) invites exactly
+that, which is how this table read before review caught it.
 
 ### Probe rows and passive rows are different claims
 
