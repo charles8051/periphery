@@ -13,8 +13,36 @@ namespace Periphery.FlashAnything;
 /// Bound when the operator arms autoflash; <see langword="null"/> in <see cref="AppState.Autoflash"/>
 /// means disarmed. <see cref="Family"/> is matched against <see cref="FlashTargetView.ProviderName"/>.
 /// </summary>
+/// <summary>
+/// Whether a bound fixture may flash more than one board per armed session, and on what evidence
+/// the previous one is judged to have left (adr.md Decision 10).
+/// </summary>
+public enum RepeatMode
+{
+    /// <summary>
+    /// One flash per bound bridge per armed session — Decision 5's guarantee, unchanged. A board
+    /// that goes quiet and answers again is not flashed a second time.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// Re-arm the fixture when the row is retracted for silence. This is inference, and Decision 10
+    /// is explicit that it is a heuristic: silence cannot tell a board that left from one that
+    /// reset while seated, so a board that re-enters its bootloader can be flashed again. Suitable
+    /// for an attended-adjacent fixture, and named in the tally as flashes rather than boards.
+    /// </summary>
+    Silence,
+}
+
 public sealed record AutoflashConfig(string Family, FlashOptions Options)
 {
+    /// <summary>
+    /// Whether the fixture loop is opt-in for this arm. Default <see cref="RepeatMode.None"/>:
+    /// the operator has to ask for a succession of boards, because the evidence that one left is
+    /// weaker than the evidence that one arrived.
+    /// </summary>
+    public RepeatMode Repeat { get; init; } = RepeatMode.None;
+
     /// <summary>
     /// The USB-serial bridges this arm is bound to, for probe-identified families. Empty for
     /// passive families, which identify themselves and need no binding; required for probe

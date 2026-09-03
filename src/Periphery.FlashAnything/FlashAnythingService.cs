@@ -63,6 +63,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
     // how AutoflashPolicy.Decide's already-flashed set came to depend on caller discipline.
     private readonly Dictionary<DeviceId, DeviceInfo> _devices = new();
     private readonly HashSet<DeviceId> _flashingNow = new();    // targets mid-flash: not removed even if their device drops (an app-mode device disappears by design while it reboots)
+    private readonly HashSet<DeviceId> _reopenWhenFlashed = new();  // rows that went quiet mid-flash and may repeat once it finishes
     private readonly List<DeviceFilter> _claimedFilters = new(); // bootloaders an in-flight app-mode flash owns: the orchestration drives them, so they are suppressed from separate detection / autoflash
     private readonly object _gate = new();     // guards _devices, _flashedThisSession, _flashingNow, _claimedFilters, _payload, _rawContent, and the State swap
     private readonly object _emitGate = new();  // serializes Emit (fold + notify) for in-order delivery; lock order is always _emitGate -> _gate
@@ -481,7 +482,19 @@ public sealed class FlashAnythingService : IAsyncDisposable
         }
         finally
         {
-            lock (_gate) _flashingNow.Remove(id);
+            lock (_gate)
+            {
+                _flashingNow.Remove(id);
+
+                // The row went quiet while this flash was still running — which is what a
+                // successful one looks like. Now that it is finished, honour the repeat.
+                if (_reopenWhenFlashed.Remove(id)
+                    && State.Autoflash is { Repeat: RepeatMode.Silence }
+                    && _flashedThisSession.Remove(id))
+                {
+                    _logger.LogInformation("Autoflash: {Id} left the fixture during its flash; it may flash again (--repeat).", id);
+                }
+            }
         }
     }
 
@@ -731,8 +744,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
             return;
         }
 
-        lock (_gate) _flashedThisSession.Clear();
-        Emit(new AppEvent.AutoflashArmed(new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges }));
+        lock (_gate)
+        {
+            _flashedThisSession.Clear();
+            _reopenWhenFlashed.Clear();
+        }
+        Emit(new AppEvent.AutoflashArmed(
+            new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges, Repeat = arm.Repeat }));
 
         StartProbeLoops(bridges);
 
@@ -817,7 +835,11 @@ public sealed class FlashAnythingService : IAsyncDisposable
     private void DisarmAutoflash()
     {
         StopProbeLoops();
-        lock (_gate) _flashedThisSession.Clear();
+        lock (_gate)
+        {
+            _flashedThisSession.Clear();
+            _reopenWhenFlashed.Clear();
+        }
         Emit(new AppEvent.AutoflashDisarmed());
     }
 
@@ -980,7 +1002,10 @@ public sealed class FlashAnythingService : IAsyncDisposable
             // because there is nothing left to resolve.
             case ProbeRowAction.Removed:
                 if (LastDeviceFor(bridge) is { } removed)
+                {
+                    ReopenGateIfRepeating(removed);
                     Emit(new AppEvent.TargetRemoved(removed));
+                }
                 break;
 
             case ProbeRowAction.Faulted faulted:
@@ -993,6 +1018,41 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     if (_probeGates.Remove(bridge, out var gate)) gate.Dispose();
                 }
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Lets a fixture flash the next board, when the operator armed it to (adr.md Decision 10).
+    /// </summary>
+    /// <remarks>
+    /// The default is one flash per bound bridge per armed session, which is Decision 5 unchanged:
+    /// a fixture produces the same <see cref="DeviceId"/> for every board, so the existing
+    /// already-flashed set is what stops a second one. Reopening it is the whole of
+    /// <c>--repeat</c>, and it is opt-in because the evidence a board left is weaker than the
+    /// evidence one arrived — silence cannot tell a departure from a part that reset while seated.
+    /// </remarks>
+    private void ReopenGateIfRepeating(DeviceId id)
+    {
+        lock (_gate)
+        {
+            if (State.Autoflash is not { Repeat: RepeatMode.Silence })
+                return;
+
+            // A successful flash *causes* the silence that retracts the row: LeaveAfterFlash jumps
+            // the part to its application and it stops answering AN3155. So a Removed routinely
+            // arrives while that very flash is still running, and reopening then would let the next
+            // Detected enqueue the same row again — a second outstanding flash on a fixture that
+            // reports the same DeviceId for every board, with a worker pool happy to run both.
+            // Defer instead, and let the flash's own completion reopen it.
+            if (_flashingNow.Contains(id))
+            {
+                _reopenWhenFlashed.Add(id);
+                _logger.LogDebug("Autoflash: {Id} went quiet mid-flash; deferring its repeat until that flash finishes.", id);
+                return;
+            }
+
+            if (_flashedThisSession.Remove(id))
+                _logger.LogInformation("Autoflash: {Id} left the fixture; it may flash again (--repeat).", id);
         }
     }
 
