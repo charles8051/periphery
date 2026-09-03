@@ -268,9 +268,23 @@ empty fixture polled on that deadline spends every cycle waiting, and disarm lat
 it. A few hundred milliseconds is the right order for "is anyone there."
 
 The probe is cheap to build — `Stm32SerialProgrammer.OpenAsync` followed by `IdentifyAsync`
-already *is* it. `SyncAsync` treats the NACK an already-synced part returns to a second `0x7F`
-(AN3155 §3.1) as success, which is what makes the probe safe to repeat against a part that
-stays put between cycles.
+already *is* it. What makes it safe to **repeat** against a part that stays put between cycles
+is that `SyncAsync` handles a part already in its command loop: it sends `0x7F`, and on the
+silence that follows it completes the frame the part is holding and accepts the NACK, leaving
+the next cycle on a clean command boundary.
+
+> **Correction (2026-09-02, after the first hardware test).** As written when this decision
+> landed, the paragraph above said `SyncAsync` "treats the NACK an already-synced part returns
+> to a second `0x7F` (AN3155 §3.1) as success." No such NACK exists. Once synced, the
+> bootloader is in its command loop and `0x7F` is an opcode — it takes the byte and waits for
+> the complement, silently. An STM32G431 proved it by failing every `OpenAsync` while answering
+> `Get` and `Get ID` perfectly. So this decision's stated basis described behaviour the code did
+> not have and the part does not exhibit, and the repeat-safety it claimed was not real: the
+> loop would have desynchronised on its second cycle of every session, each stray `0x7F`
+> completing the previous one's orphaned frame. Fixed in
+> [#156](https://github.com/charles8051/periphery/pull/156), which is what the corrected
+> paragraph now describes. The decision itself is unchanged — a repeatable probe is still the
+> right shape, and it is now actually repeatable.
 
 ---
 

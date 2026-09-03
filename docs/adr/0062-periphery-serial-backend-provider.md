@@ -301,12 +301,88 @@ dependency. That table belongs to
 Periphery's Bluetooth state is poll-only on Windows. Moving it by symmetry with serial would be
 a decision made for the wrong reason.
 
-**Not yet measured.**
+**Measured (2026-09-02): the backend choice costs 3x on a request-response protocol, and
+DEC-003 picks the slow one.**
+
+Identical AN3155 round trips to an STM32G431 behind a CP210x, 115200 8E1, 50 iterations each,
+raw port to raw port with no pipe or framing layer in between:
+
+| Backend | Get (15-byte reply) | Get ID (5-byte reply) |
+|---|---|---|
+| `RJCP.SerialPortStream` | 30.75 ms | 30.71 ms |
+| BCL `System.IO.Ports.SerialPort` | 3.90 ms | 3.07 ms |
+
+The shape matters more than the ratio. The BCL times track reply size — 0.83 ms for 10 extra
+bytes against 0.95 ms of actual wire time — so it is paying for the bytes. RJCP's do not move
+at all, because a flat ~30 ms per exchange swamps them. That is a fixed wait, not throughput.
+
+End to end, flashing the same 52 KB image through the same `Stm32SerialProgrammer` and changing
+only the `IDuplexPipe` beneath it:
+
+| Transport | Flash + verify |
+|---|---|
+| RJCP (`CallAndResponse.Transport.Serial`) | **47.1 s** |
+| BCL `SerialPort.BaseStream` via `PipeReader.Create` | **14.6 s** |
+
+AN3155 is round-trip bound — Write Memory is three exchanges per 256 bytes and the cap is 256,
+so a 52 KB flash with verify is about 1,230 exchanges. At ~27 ms of avoidable overhead each,
+that is the whole difference, and the measured 32.5 s saved matches the predicted ~33 s.
+
+**This bears directly on DEC-003**, which recommends RJCP as the default. That recommendation
+was made on portability and custom-baud grounds with no latency measurement behind it, and for
+the flashing workloads this repo exists to serve it is the wrong default by 3x. It may still be
+right where custom baud rates or non-Windows behaviour dominate. It should not be described as
+the default without qualifying the workload.
+
+**Caveats.** One board, one bridge, one driver (Silicon Labs `silabser` 6.7.3.350), Windows
+only. FTDI and CH340 bridges may differ. The micro-benchmark isolates the port layer fairly;
+the end-to-end comparison also swaps the pipe adapter, so attribution rests on the
+micro-benchmark, which the end-to-end number then corroborates.
+
+**Where the time goes, and why it is not tunable from outside.** Timing the read separately from
+the wait localises it. Reading after a 150 ms settle, with the reply already in RJCP's buffer,
+costs **0.02 ms** — the `Read` call is free. Reading immediately after the send costs **21 ms
+mean, 15.45 ms minimum, 31.85 ms maximum**, clustering on multiples of ~15.6 ms. So the entire
+cost is the delay before RJCP *learns* bytes arrived, not the delivery of them.
+
+Three candidates are ruled out. Process timer resolution was already 1.0 ms and
+`timeBeginPeriod(1)` changed nothing. `ReadTimeout` at 2000, 50 and 5 ms changed nothing, so it
+is not a timeout being waited out. And nothing in the stack calls `Task.Delay`, `Thread.Sleep`
+or `SpinWait` — RJCP uses `WaitCommEvent` with overlapped I/O, and `CallAndResponse`'s
+`SerialDuplexPipe` documents that it avoids polling.
+
+The leading explanation, **not confirmed**: RJCP waits on a `WaitCommEvent` notification and
+then reads, while the BCL keeps an overlapped read outstanding that completes as soon as bytes
+land. An event notification delivered on the driver's ~16 ms cadence produces exactly this
+profile where an outstanding read would not. Confirming it means reading RJCP's pump.
+
+What matters for this ADR either way: it is not reachable from RJCP's public API, so it is an
+upstream fix or a backend choice, not a setting a consumer can turn.
+
+**Still not measured.**
 
 - **Control-line changes while a read pump is in flight.** Setting `DtrEnable`, `RtsEnable`, or
   `BaudRate` on an open port while a background `ReadAsync` is outstanding. The ESP32 reset dance
   needs exactly this, on every serial path. These are separate ioctls from a read and are expected
   to work; that expectation is untested, and it sets the shape of `ISerialPort`'s DTR/RTS methods.
+
+  *One data point (2026-09-02, STM32G431 behind a CP210x).* Setting `DtrEnable`/`RtsEnable` after
+  open, in both states, changed nothing about whether the part answered — that board wires neither
+  line to NRST or BOOT0, so it says nothing about a board that does. It did surface a **backend
+  difference worth knowing before `ISerialPort` fixes its open semantics**: `RJCP.SerialPortStream`
+  opens with `DTR=True RTS=True`, and the BCL `SerialPort` opens with both false. On a board using
+  the common auto-reset circuit, those two backends would do visibly different things at open —
+  under DEC-003 a consumer could switch backend and silently change whether their part gets reset.
+
+  **Recorded, not decided.** It is worth noting that DEC-002 exposes only post-open
+  `SetDtrAsync`/`SetRtsAsync` and `SerialPortOptions` names no initial state, so as specified a
+  caller cannot ask to open without touching the lines. Whether that matters, and what the
+  contract should say if it does, is deferred until a board that actually drives NRST or BOOT0
+  from these lines is on the bench and something needs them. Nothing measured here demonstrates a
+  fault: the one board tested wires neither line, and no observed failure has been traced to
+  control-line behaviour. Writing a contract now would mean specifying open and normalisation
+  semantics for two backends that do not exist, from one bridge on one OS — the shape of guess
+  this ADR has already been burned by once.
 - **Whether `SetDtrAsync`/`SetRtsAsync` should be async at all.** DEC-002 declares them `Task`-returning.
   The underlying operations are synchronous property writes in both `System.IO.Ports` and
   `RJCP.SerialPortStream`. Worth revisiting when the backends are written.
