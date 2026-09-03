@@ -337,9 +337,27 @@ the default without qualifying the workload.
 **Caveats.** One board, one bridge, one driver (Silicon Labs `silabser` 6.7.3.350), Windows
 only. FTDI and CH340 bridges may differ. The micro-benchmark isolates the port layer fairly;
 the end-to-end comparison also swaps the pipe adapter, so attribution rests on the
-micro-benchmark, which the end-to-end number then corroborates. The cause inside RJCP is not
-established — its `COMMTIMEOUTS` use (`ReadIntervalTimeout`, `ReadTotalTimeoutConstant`) is the
-obvious suspect and is unconfirmed.
+micro-benchmark, which the end-to-end number then corroborates.
+
+**Where the time goes, and why it is not tunable from outside.** Timing the read separately from
+the wait localises it. Reading after a 150 ms settle, with the reply already in RJCP's buffer,
+costs **0.02 ms** — the `Read` call is free. Reading immediately after the send costs **21 ms
+mean, 15.45 ms minimum, 31.85 ms maximum**, clustering on multiples of ~15.6 ms. So the entire
+cost is the delay before RJCP *learns* bytes arrived, not the delivery of them.
+
+Three candidates are ruled out. Process timer resolution was already 1.0 ms and
+`timeBeginPeriod(1)` changed nothing. `ReadTimeout` at 2000, 50 and 5 ms changed nothing, so it
+is not a timeout being waited out. And nothing in the stack calls `Task.Delay`, `Thread.Sleep`
+or `SpinWait` — RJCP uses `WaitCommEvent` with overlapped I/O, and `CallAndResponse`'s
+`SerialDuplexPipe` documents that it avoids polling.
+
+The leading explanation, **not confirmed**: RJCP waits on a `WaitCommEvent` notification and
+then reads, while the BCL keeps an overlapped read outstanding that completes as soon as bytes
+land. An event notification delivered on the driver's ~16 ms cadence produces exactly this
+profile where an outstanding read would not. Confirming it means reading RJCP's pump.
+
+What matters for this ADR either way: it is not reachable from RJCP's public API, so it is an
+upstream fix or a backend choice, not a setting a consumer can turn.
 
 **Still not measured.**
 
