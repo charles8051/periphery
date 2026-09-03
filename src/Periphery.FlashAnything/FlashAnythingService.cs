@@ -103,7 +103,24 @@ public sealed class FlashAnythingService : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
 
     // One probe loop per bound bridge, alive only while armed on a probe family. Guarded by _gate.
-    private readonly Dictionary<BridgeIdentity, (Task Task, CancellationTokenSource Cts)> _probeLoops = new();
+    private readonly Dictionary<BridgeIdentity, ProbeSession> _probeLoops = new();
+
+    // One gate per bound bridge: a serial port is an exclusive open, so a probe cycle and a flash
+    // on the same fixture must not overlap (ADR-0062 section 1). Guarded by _gate.
+    private readonly Dictionary<BridgeIdentity, SemaphoreSlim> _probeGates = new(); 
+
+    // Bumped every time loops are started or stopped. A probe already inside OpenAsync when the
+    // operator disarms will still finish and call back; cancellation cannot prevent that. The
+    // generation is what lets a stale callback be recognised and dropped, rather than being
+    // attributed to whatever session happens to be armed by the time it lands.
+    private int _probeGeneration;
+
+    /// <summary>A running probe loop and the token that stops it.</summary>
+    private sealed record ProbeSession(Task Task, CancellationTokenSource Cts, int Generation)
+    {
+        /// <summary>The last device the bridge resolved to, so a removal or fault can still name it.</summary>
+        public DeviceId? LastDevice { get; set; }
+    }
 
     /// <summary>Interval between probes on a live row. Overridable for tests.</summary>
     internal TimeSpan ProbeCadence { get; init; } = TimeSpan.FromSeconds(1);
@@ -425,6 +442,21 @@ public sealed class FlashAnythingService : IAsyncDisposable
 
     private async Task<FlashOutcome> FlashOneAsync(DeviceId id, FlashOptions options, CancellationToken ct)
     {
+        // A bound probe fixture is probed on a cadence while it is armed, and a serial port is an
+        // exclusive open. Hold the bridge gate for the whole flash so the next probe cycle waits
+        // rather than colliding with it (adr.md Decision 11).
+        if (GateFor(id) is { } bridgeGate)
+        {
+            await bridgeGate.WaitAsync(ct).ConfigureAwait(false);
+            try { return await FlashOneCoreAsync(id, options, ct).ConfigureAwait(false); }
+            finally { bridgeGate.Release(); }
+        }
+
+        return await FlashOneCoreAsync(id, options, ct).ConfigureAwait(false);
+    }
+
+    private async Task<FlashOutcome> FlashOneCoreAsync(DeviceId id, FlashOptions options, CancellationToken ct)
+    {
         if (State.Find(id) is not { } target) return FlashOutcome.Skipped;
 
         if (CurrentPayload() is null)
@@ -688,11 +720,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
         // says nothing about the firmware.
         if (CurrentPayload() is null)
         {
+            StopProbeLoops();
             Emit(new AppEvent.AutoflashArmFailed("Load a firmware image before arming autoflash."));
             return;
         }
         if (!TryBindBridges(arm, out var bridges, out string? bindError))
         {
+            StopProbeLoops();
             Emit(new AppEvent.AutoflashArmFailed(bindError));
             return;
         }
@@ -702,9 +736,17 @@ public sealed class FlashAnythingService : IAsyncDisposable
 
         StartProbeLoops(bridges);
 
-        // Evaluate targets already present at arm time (arming a bench with boards already connected).
-        foreach (var id in State.Targets.Select(t => t.Id).ToList())
+        // Evaluate targets already present at arm time (arming a bench with boards already
+        // connected) — but only passively-identified ones. A probe row exists as soon as the
+        // watcher sees the bridge, before anything has asked what is behind it, so flashing it here
+        // would act on a fixture that might be empty. Only a positive probe makes a probe target
+        // eligible, and that arrives through OnProbeAction.
+        foreach (var id in State.Targets
+                     .Where(t => t.Identification == IdentificationMode.Passive)
+                     .Select(t => t.Id).ToList())
+        {
             MaybeAutoflash(id);
+        }
     }
 
     /// <summary>
@@ -793,38 +835,97 @@ public sealed class FlashAnythingService : IAsyncDisposable
     private void StartProbeLoops(ImmutableHashSet<BridgeIdentity> bridges)
     {
         StopProbeLoops();
-        if (bridges.IsEmpty || _registry.Providers.FirstOrDefault(
-                p => string.Equals(p.Name, State.Autoflash?.Family, StringComparison.Ordinal)) is not { } provider)
+
+        string? family = State.Autoflash?.Family;
+
+        // Probe families only. A passive family armed with ports would otherwise get a loop poking
+        // its targets while detection ownership suppressed the watcher events those targets are
+        // actually identified by — the family would stop working in exchange for nothing.
+        if (bridges.IsEmpty || family is null || !IsProbeFamily(family)
+            || _registry.Providers.FirstOrDefault(
+                p => string.Equals(p.Name, family, StringComparison.Ordinal)) is not { } provider)
         {
             return;
         }
 
+        int generation;
+        lock (_gate) generation = ++_probeGeneration;
+
         foreach (var bridge in bridges)
         {
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            var gate = new SemaphoreSlim(1, 1);
             var loop = new SerialProbeLoop(
-                bridge, ResolveBoundBridge, provider, action => OnProbeAction(bridge, action),
-                ProbeDelay, ProbeCadence, StalledProbeCadence);
+                bridge, ResolveBoundBridge, provider,
+                action => OnProbeAction(bridge, generation, action),
+                ProbeDelay, ProbeCadence, StalledProbeCadence)
+            {
+                Gate = gate,
+            };
 
-            var task = Task.Run(() => loop.RunAsync(cts.Token), cts.Token);
-            lock (_gate) _probeLoops[bridge] = (task, cts);
+            var task = Task.Run(() => loop.RunAsync(cts.Token), CancellationToken.None);
+            lock (_gate)
+            {
+                _probeLoops[bridge] = new ProbeSession(task, cts, generation);
+                _probeGates[bridge] = gate;
+            }
             _logger.LogInformation("Autoflash: probing {Bridge} every {Cadence}.", bridge, ProbeCadence);
         }
     }
 
+    /// <summary>Cancels every probe loop and waits for it to stop before returning.</summary>
+    /// <remarks>
+    /// Waiting is the point. Cancellation does not reach a probe already inside the provider open
+    /// call, so without this a loop can finish its cycle and call back after a disarm — or after a
+    /// re-arm has installed replacements, where the callback would be attributed to a session it
+    /// knows nothing about. The generation check in <see cref="OnProbeAction"/> catches the
+    /// callback that still slips through; this bounds how long that window is.
+    /// </remarks>
     private void StopProbeLoops()
     {
-        (Task, CancellationTokenSource)[] running;
+        ProbeSession[] running;
+        SemaphoreSlim[] gates;
         lock (_gate)
         {
-            running = _probeLoops.Values.Select(v => (v.Task, v.Cts)).ToArray();
+            running = _probeLoops.Values.ToArray();
+            gates = _probeGates.Values.ToArray();
             _probeLoops.Clear();
+            _probeGates.Clear();
+            _probeGeneration++;   // anything already in flight is now stale
         }
 
-        foreach (var (_, cts) in running)
+        foreach (var session in running)
+            session.Cts.Cancel();
+
+        try
         {
-            cts.Cancel();
-            cts.Dispose();
+            Task.WhenAll(running.Select(r => r.Task)).Wait(TimeSpan.FromSeconds(5));
+        }
+        catch
+        {
+            // A loop that faulted on the way out has already reported through OnProbeAction.
+        }
+
+        foreach (var session in running)
+            session.Cts.Dispose();
+        foreach (var gate in gates)
+            gate.Dispose();
+    }
+
+    /// <summary>
+    /// The bridge gate a flash on this device must hold, or null when it is not a bound probe
+    /// target. A serial port is an exclusive open (ADR-0062 section 1), so a probe cycle and a
+    /// flash on the same fixture must not overlap: otherwise either open can lose, faulting the row
+    /// or failing the flash partway through a write. adr.md Decision 11 calls for one state machine
+    /// per bridge; this is that exclusion.
+    /// </summary>
+    private SemaphoreSlim? GateFor(DeviceId id)
+    {
+        lock (_gate)
+        {
+            return State.Find(id)?.Bridge is { } bound && _probeGates.TryGetValue(bound, out var gate)
+                ? gate
+                : null;
         }
     }
 
@@ -847,14 +948,26 @@ public sealed class FlashAnythingService : IAsyncDisposable
     }
 
     /// <summary>Turns one probe row action into the app's existing target lifecycle.</summary>
-    private void OnProbeAction(BridgeIdentity bridge, ProbeRowAction action)
+    private void OnProbeAction(BridgeIdentity bridge, int generation, ProbeRowAction action)
     {
-        if (ResolveBoundBridge(bridge) is not { } device)
-            return;
+        var device = ResolveBoundBridge(bridge);
+
+        // Drop callbacks from a loop that is no longer the current one. A probe inside the
+        // provider open call when the operator disarms still finishes and still calls back, and
+        // after a re-arm that callback would otherwise be attributed to the new session family —
+        // and could enqueue a flash off a probe belonging to the old one.
+        lock (_gate)
+        {
+            if (!_probeLoops.TryGetValue(bridge, out var session) || session.Generation != generation)
+                return;
+
+            if (device is not null)
+                session.LastDevice = device.Id;
+        }
 
         switch (action)
         {
-            case ProbeRowAction.Detected detected:
+            case ProbeRowAction.Detected detected when device is not null:
                 Emit(new AppEvent.TargetDetected(
                     device.Id, DisplayName(device), State.Autoflash?.Family ?? "serial",
                     IdentificationMode.Probe, DeviceMode.Bootloader, bridge));
@@ -862,16 +975,34 @@ public sealed class FlashAnythingService : IAsyncDisposable
                 MaybeAutoflash(device.Id);
                 break;
 
+            // Removal and faults still have to be reported when the bridge itself has gone — that
+            // is exactly when they matter most. The last device the loop saw is what names them,
+            // because there is nothing left to resolve.
             case ProbeRowAction.Removed:
-                Emit(new AppEvent.TargetRemoved(device.Id));
+                if (LastDeviceFor(bridge) is { } removed)
+                    Emit(new AppEvent.TargetRemoved(removed));
                 break;
 
             case ProbeRowAction.Faulted faulted:
                 _logger.LogWarning("Autoflash: probe loop for {Bridge} stopped: {Message}", bridge, faulted.Message);
-                Emit(new AppEvent.OperationFailed(device.Id, faulted.Message));
-                lock (_gate) _probeLoops.Remove(bridge);
+                if (LastDeviceFor(bridge) is { } faultedId)
+                    Emit(new AppEvent.OperationFailed(faultedId, faulted.Message));
+                lock (_gate)
+                {
+                    _probeLoops.Remove(bridge);
+                    if (_probeGates.Remove(bridge, out var gate)) gate.Dispose();
+                }
                 break;
         }
+    }
+
+    /// <summary>The device this bridge resolves to, or the last one it did before it vanished.</summary>
+    private DeviceId? LastDeviceFor(BridgeIdentity bridge)
+    {
+        if (ResolveBoundBridge(bridge) is { } device)
+            return device.Id;
+
+        lock (_gate) return _probeLoops.TryGetValue(bridge, out var session) ? session.LastDevice : null;
     }
 
     /// <summary>
