@@ -102,6 +102,22 @@ public class Stm32SerialSyncTests
     }
 
     [Fact]
+    public async Task Sync_reports_a_transport_failure_rather_than_calling_it_silence()
+    {
+        // A closed port or a pulled cable is not a quiet part, and the two need opposite
+        // handling: silence is what recovery exists for, a dead transport is not recoverable and
+        // must reach the caller as itself. Treating every exception as silence sent recovery
+        // bytes into a dead stream and then blamed the part for being missing.
+        await using var pipe = new DeadPipe();
+        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Quick);
+
+        var ex = await Assert.ThrowsAsync<Stm32SerialException>(
+            () => programmer.SyncAsync(CancellationToken.None));
+
+        Assert.DoesNotContain("did not answer Get", ex.Message);
+    }
+
+    [Fact]
     public async Task Sync_fails_on_a_junk_answer()
     {
         // Something is talking, but it is not an AN3155 bootloader at this baud. Note this needs a
@@ -156,6 +172,20 @@ public class Stm32SerialSyncTests
             try { await _loop; } catch (OperationCanceledException) { }
             _cts.Dispose();
         }
+    }
+
+    /// <summary>A pipe whose far end is gone — reads complete immediately, as on a closed port.</summary>
+    private sealed class DeadPipe : IDuplexPipe, IAsyncDisposable
+    {
+        private readonly Pipe _in = new();
+        private readonly Pipe _out = new();
+
+        public DeadPipe() => _in.Writer.Complete();
+
+        public PipeReader Input => _in.Reader;
+        public PipeWriter Output => _out.Writer;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     /// <summary>A pipe that accepts writes and never answers.</summary>

@@ -331,15 +331,24 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         // the boundary with Get, whose reply is long and structured enough that a desynchronised
         // stream cannot fake it. Whether a late ACK was consumed or discarded along the way stops
         // mattering: the proof is what decides, not the guess.
+        // Quiesce first. Our deadline cancelled a read; it did not stop the part talking. A late
+        // answer, or the tail of a reply longer than the one byte we asked for, can still be on
+        // the wire — and a recovery byte sent into that arrives interleaved, which is how a
+        // recoverable timeout becomes a desynchronised session. Wait, then drain, then act.
+        await SettleAsync(ct).ConfigureAwait(false);
         await NudgeAsync(unchecked((byte)~SyncByte), ct).ConfigureAwait(false);
 
-        // Each failed Get leaves exactly one byte pending (its first byte completes the stray
-        // frame, its second becomes the next stray), so one nudge per retry converges.
+        // Each failed Get leaves at most one byte pending (its first byte completes the stray
+        // frame, its second becomes the next stray), so one nudge per retry converges. Settling
+        // between attempts matters for the same reason as above: a Get that timed out may still
+        // deliver its full multi-byte reply afterwards, and those bytes must be cleared rather
+        // than read as the next attempt's answer.
         for (int attempt = 0; attempt < SyncProofAttempts; attempt++)
         {
             if (await RespondsToGetAsync(ct).ConfigureAwait(false))
                 return;
 
+            await SettleAsync(ct).ConfigureAwait(false);
             await NudgeAsync(0xFF, ct).ConfigureAwait(false);
         }
 
@@ -366,10 +375,25 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             throw;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            // Our own deadline: the part said nothing. That is the one case recovery is for.
             return null;
         }
+        // Everything else is the transport failing, not the part staying quiet — a closed port, a
+        // pulled cable. Swallowing it as silence would send recovery bytes into a dead stream and
+        // report the part missing when the real fault is the connection.
+    }
+
+    /// <summary>
+    /// Lets the line fall quiet, then clears it. Used only on the handshake's recovery path,
+    /// where a cancelled read may leave the part still talking.
+    /// </summary>
+    private async Task SettleAsync(CancellationToken ct)
+    {
+        if (_options.SyncSettle > TimeSpan.Zero)
+            await Task.Delay(_options.SyncSettle, ct).ConfigureAwait(false);
+        DrainStaleBytes();
     }
 
     /// <summary>

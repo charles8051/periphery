@@ -31,6 +31,7 @@ public sealed record Stm32SerialOptions
     private readonly int _writeChunkSize = MaxTransferSize;
     private readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _syncTimeout = TimeSpan.FromMilliseconds(500);
+    private readonly TimeSpan _syncSettle = TimeSpan.FromMilliseconds(100);
     private readonly TimeSpan _eraseTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>Port rate. The bootloader autobauds, so this only has to be one it supports (1200–115200).</summary>
@@ -107,6 +108,23 @@ public sealed record Stm32SerialOptions
         {
             ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
             _syncTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// How long the handshake lets the line fall quiet after a sync deadline before it drains and
+    /// sends anything else. Cancelling a read does not stop the part talking: a late answer, or
+    /// the tail of a multi-byte reply, can still be in flight. Sending a recovery byte while that
+    /// is arriving is what turns a recoverable timeout into a desynchronised session.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Negative.</exception>
+    public TimeSpan SyncSettle
+    {
+        get => _syncSettle;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            _syncSettle = value;
         }
     }
 
