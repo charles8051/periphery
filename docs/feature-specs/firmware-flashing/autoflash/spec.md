@@ -79,6 +79,8 @@ This feature **does not** modify the Treehopper updater / control app.
 - [ ] **Passive identification only.** Autoflash triggers **only** for families identified
       passively by USB VID/PID. Probe-identified (serial) targets are **never** auto-flashed
       (see [Identification model](#identification-model)).
+      *In force. [`adr.md`](adr.md) Decisions 8-11 supersede this once implemented; until then
+      this requirement governs — see [Presenting probe targets](#presenting-probe-targets-amendment-2026-09-03).*
 - [ ] **Idempotent.** Each physical device is flashed **at most once per armed session**;
       post-flash re-enumeration (the board resetting back through the bootloader) must not
       re-trigger a flash.
@@ -194,6 +196,10 @@ A provider declares its `IdentificationMode`; autoflash includes only `Passive` 
 See [ADR-0062](../../../adr/0062-periphery-serial-backend-provider.md) for the serial
 lane and [`adr.md`](adr.md) Decision 4.
 
+**This is shipped behaviour and it still governs.** Decision 4 is amended by Decisions 8-11, which
+admit probe families on operator-bound bridges, but none of that is implemented. Until it is, a
+probe-identified target is never auto-flashed, whatever the amendment below describes.
+
 ---
 
 ## Safety rules (this flashes firmware unattended — bricking is real)
@@ -201,6 +207,7 @@ lane and [`adr.md`](adr.md) Decision 4.
 1. **Opt-in, per-family, disarmed by default.** Nothing auto-flashes until the operator arms
    a specific image + family.
 2. **Passive identification only.** Probe-identified (serial) targets are never auto-flashed.
+   *In force until [`adr.md`](adr.md) Decisions 8-11 are implemented.*
 3. **Idempotent + debounced.** A given physical device is flashed at most once per armed
    session; post-flash re-enumeration does not re-trigger.
 4. **Bounded-parallel, per-family-safe.** Distinct devices may flash concurrently (capped by
@@ -260,6 +267,125 @@ lane and [`adr.md`](adr.md) Decision 4.
   (report what *would* be flashed on plug-in, flash nothing).
 - **GUI** — an Arm/Disarm control bound to the loaded image + selected family, a prominent
   armed indicator, and the live per-device result feed (reusing the target rows).
+
+> Probe-identified families present differently — one persistent row per bound bridge rather than
+> one per device, and a tally of flashes rather than of boards. See
+> [Presenting probe targets](#presenting-probe-targets-amendment-2026-09-03).
+
+---
+
+## Presenting probe targets (amendment, 2026-09-03)
+
+*Decided, not yet implemented.* [`adr.md`](adr.md) Decisions 8-11 admit probe-identified targets
+to autoflash and assume a presentation model without describing one. This section is that model.
+It does not change anything about passive families.
+
+### The row is the bridge, not the chip
+
+A serial target has two levels of identity and only the outer one is real. The USB-serial bridge
+is a genuine `DeviceInfo` from the watcher — VID/PID, `LocationPath`, often a `SerialNumber` —
+and Decision 8 binds the arm to exactly that. The chip behind it is knowable only by probing, and
+what a probe returns is a family: every STM32G431 answers Get ID with `0x0468`. Two boards in
+sequence are indistinguishable.
+
+So the chip cannot be a row. **It is an occupancy state of the bridge's row.**
+
+| Row state | Means | Basis |
+|---|---|---|
+| `no response` | probe sent, nothing came back | **indeterminate** |
+| `absent` | present-detect line deasserted | observed, `--repeat=cts` only |
+| `occupied 0x468` | probe answered, chip id read | observed |
+| `flashing 42%` | flash in progress | observed |
+| `flashed` | written and verified | observed |
+| `failed <reason>` | flash failed | observed |
+
+**Silence is not absence, and the row must not claim it is.** A probe that gets nothing back is
+consistent with an empty fixture, but equally with a board that is seated and unresponsive, a
+non-STM32 device on that bridge, RX/TX swapped, a part held in reset, or one that has left the
+bootloader for its application — the last of which is the *expected* end of every successful
+flash. `no response` is therefore the honest state, and only a present-detect line can produce
+`absent`.
+
+The distinction is not cosmetic. A row rendered as `empty` tells an operator the fixture is ready
+for the next board on evidence that does not support it, and under `--repeat=silence` that is also
+the evidence the dedupe gate reopens on.
+
+**What the gate actually does, stated precisely.** Decision 10's default is one flash per bound
+bridge per armed session — Decision 5's guarantee, unchanged — and `no response` does not reopen
+it. Only `--repeat` reopens the gate, and only `--repeat=silence` reopens it on inference; under
+`--repeat=cts` a present-detect line has to observe the board leave. So a row that has reached
+`flashed` stays terminal unless the operator asked for a fixture loop, and the mode they chose
+decides what counts as departure.
+
+### Probing backs off, and a stalled row says so
+
+A row can sit at `no response` indefinitely, and the specification above gives no bound on that.
+An armed fixture with no board in it is the *normal* resting state, so stopping outright would be
+wrong — but probing at full cadence forever is also wrong, because every cycle puts `0x7F` on the
+line to whatever is actually attached.
+
+So: after **N consecutive no-response cycles the cadence backs off** to a slower interval, and the
+row surfaces the fact — `no target seen for 4m` rather than a row that looks busy. Probing does
+not stop; it stops being noisy, and it stops looking like progress. The backed-off state is what
+an operator sees when a board is seated but unresponsive, miswired, or held in reset, which are
+the cases indistinguishable from an empty fixture at the protocol level and the reason `no
+response` is not called `empty`.
+
+Concrete starting values, so this is specified rather than deferred: **N = 20 cycles**, backing off
+from ~1 Hz to **one probe every 10 s**, and the row reports the elapsed stall from the first
+no-response. That is a 10x reduction in bytes reaching whatever is attached, and it holds
+indefinitely — these are starting values to be corrected against a real fixture, not open
+questions.
+
+**Probing does not stop on its own, and that is the decision.** An armed fixture sitting empty is
+the normal resting state of this feature; a session that stopped probing after some interval would
+stop being an autoflash fixture. Indefinite probing of a bound bridge is not a new hazard — it is
+the consequence Decision 8 accepts explicitly, which is why the arm confirmation has to enumerate
+every bound port and say that probing sends bytes to whatever is attached. What this section adds
+is that the rate falls and the row stops looking like progress. Disarm remains immediate, and is
+the stop.
+
+The row persists for the armed session, because the fixture is still there whether or not a board
+is in it. This is the visible difference from a passive family, where a row appears and disappears
+with the device itself.
+
+### The tally counts flashes, not boards
+
+`AutoflashTally.Audit` builds its entries from `DeviceId` (`flashed {id}`). For a fixture that
+yields `flashed COM7`, `flashed COM7`, `flashed COM7` — three identical lines that say nothing
+about which board each was. Probe rows need a **per-row sequence number** instead: `COM7 #1`,
+`COM7 #2`. A position in a sequence is what can honestly be produced; a name is not.
+
+That forces a labelling rule, and it is deliberate rather than pedantic. **Under
+`--repeat=silence` the summary says "3 flashes", never "3 boards."** Decision 10 is explicit that
+departure-gating is a heuristic: a board that resets while seated and re-enters the bootloader is
+counted again, and nothing available can distinguish that from a replacement. "Boards" may only be
+claimed where a presence line backs it (`--repeat=cts`), which is the one mode where occupancy is
+observed rather than inferred.
+
+### Inferred occupancy must look inferred
+
+`no response` and `absent` must not render alike, and neither may be styled as a settled fact the
+way `occupied` is. Same discipline as marking probe targets as unconfirmed in `flashany list` —
+still open below. The wording matters more than the styling: a state named for what was observed
+(`no response`) cannot be misread, while one named for what was inferred (`empty`) invites exactly
+that, which is how this table read before review caught it.
+
+### Probe rows and passive rows are different claims
+
+`COM7 · fixture · board #3` and `STM32 DFU 0483:DF11 · SN 207D34...` assert different things. The
+first is a position in a sequence on a named fixture; the second is a device that identified
+itself. Rendering them in one undifferentiated list is what would let an operator read a position
+as an identity, which is the mistake this whole model exists to prevent.
+
+### Front-end deltas
+
+- **CLI** — while armed on a probe family, print a persistent per-fixture line that updates in
+  place rather than a new line per detection, and a tally labelled per the rule above. The arm
+  confirmation already has to enumerate the bound ports and state that probing sends bytes to
+  whatever is attached (Decision 8).
+- **GUI** — one row per bound bridge, showing occupancy and the running count for that fixture,
+  visibly distinct from passive target rows.
 
 ---
 
