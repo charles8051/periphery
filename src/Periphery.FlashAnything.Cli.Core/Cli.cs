@@ -217,25 +217,18 @@ public static class Cli
                     p = p with { Family = args[i] };
                     break;
                 case "--port":
-                    if (++i >= args.Length) return Err("--port requires a port name (e.g. COM7).");
-                    if (string.IsNullOrWhiteSpace(args[i])) return Err("--port requires a port name (e.g. COM7).");
+                    // An option-looking value is a missing value, not a port name. Without this,
+                    // "--port --yes" binds a fixture called "--yes" and silently stays in dry run —
+                    // a typo that quietly disables the safety flag it ate.
+                    if (++i >= args.Length || string.IsNullOrWhiteSpace(args[i]) || args[i].StartsWith('-'))
+                        return Err("--port requires a port name (e.g. COM7).");
                     p = p with { Ports = p.Ports.Add(new SerialPortName(args[i])) };
                     break;
                 case "--repeat":
                     // Bare --repeat means the inference mode, which is the only one implemented.
-                    // adr.md also describes --repeat=cts, where a present-detect line observes the
-                    // departure; taking that spelling and treating it as inference would hide
-                    // exactly the difference that matters, so it is rejected rather than aliased.
                     if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
                     {
-                        string mode = args[++i];
-                        if (!string.Equals(mode, "silence", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return Err(string.Equals(mode, "cts", StringComparison.OrdinalIgnoreCase)
-                                ? "--repeat=cts needs a hardware present-detect line and is not implemented yet. " +
-                                  "Use --repeat (silence) and see that it infers departure rather than observing it."
-                                : $"Unknown --repeat mode '{mode}'; expected 'silence'.");
-                        }
+                        if (RepeatModeError(args[++i]) is { } bad) return Err(bad);
                     }
                     p = p with { Repeat = RepeatMode.Silence };
                     break;
@@ -251,7 +244,18 @@ public static class Cli
                 case "--no-verify": p = p with { NoVerify = true }; break;
                 case "--verbose" or "-v": p = p with { Verbose = true }; break;
                 case "-h" or "--help": return Ok(new Parsed { Command = Command.Help });
-                default: return Err($"Unknown option '{a}'.");
+                default:
+                    // --repeat=<mode> is the spelling adr.md uses, so it must reach the same
+                    // explanation rather than falling through to "Unknown option" — being told
+                    // "cts is not implemented, here is what silence does" is the whole point.
+                    if (a.StartsWith("--repeat=", StringComparison.Ordinal))
+                    {
+                        if (RepeatModeError(a["--repeat=".Length..]) is { } badMode) return Err(badMode);
+                        p = p with { Repeat = RepeatMode.Silence };
+                        break;
+                    }
+
+                    return Err($"Unknown option '{a}'.");
             }
         }
 
@@ -263,6 +267,16 @@ public static class Cli
             return Err("--all and --target are mutually exclusive.");
 
         return Ok(p);
+
+        // adr.md describes --repeat=cts, where a present-detect line observes the departure rather
+        // than inferring it from silence. Accepting that spelling and inferring anyway would hide
+        // exactly the difference that matters, so it is refused — with the reason, not a shrug.
+        static string? RepeatModeError(string mode) =>
+            string.Equals(mode, "silence", StringComparison.OrdinalIgnoreCase) ? null
+            : string.Equals(mode, "cts", StringComparison.OrdinalIgnoreCase)
+                ? "--repeat=cts needs a hardware present-detect line and is not implemented yet. " +
+                  "Use --repeat (silence), which infers departure rather than observing it."
+                : $"Unknown --repeat mode '{mode}'; expected 'silence'.";
 
         static ParseResult Ok(Parsed value) => new(value, null);
         static ParseResult Err(string message) => new(null, message);

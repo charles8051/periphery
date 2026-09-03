@@ -98,6 +98,42 @@ public class ProbeAutoflashCliTests
     }
 
     [Fact]
+    public void Port_does_not_swallow_the_option_after_it()
+    {
+        // "--port --yes" would otherwise bind a fixture called "--yes" and silently stay in dry
+        // run: a typo that quietly disables the safety flag it ate.
+        string error = ErrorFrom("autoflash", "--file", "app.hex", "--port", "--yes");
+
+        Assert.Contains("--port requires a port name", error);
+    }
+
+    [Fact]
+    public void Repeat_equals_cts_gets_the_explanation_not_unknown_option()
+    {
+        // The spelling adr.md uses. Being told "cts is not implemented, here is what silence does"
+        // is the whole point of refusing it.
+        string error = ErrorFrom("autoflash", "--file", "app.hex", "--port", "COM7", "--repeat=cts");
+
+        Assert.Contains("not implemented", error);
+        Assert.DoesNotContain("Unknown option", error);
+    }
+
+    [Fact]
+    public void Repeat_equals_silence_is_accepted()
+    {
+        var p = Parse("autoflash", "--file", "app.hex", "--port", "COM7", "--repeat=silence");
+
+        Assert.Equal(RepeatMode.Silence, p.Repeat);
+    }
+
+    [Fact]
+    public void An_unknown_repeat_mode_in_the_equals_form_is_refused_too()
+    {
+        Assert.Contains("Unknown --repeat mode",
+            ErrorFrom("autoflash", "--file", "app.hex", "--repeat=always"));
+    }
+
+    [Fact]
     public void Repeat_before_another_option_does_not_swallow_it()
     {
         // --repeat takes an optional value, so it must not eat the next flag.
