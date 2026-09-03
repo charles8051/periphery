@@ -30,6 +30,9 @@ public sealed record Stm32SerialOptions
     private readonly int _erasePageSize = 2048;
     private readonly int _writeChunkSize = MaxTransferSize;
     private readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _syncTimeout = TimeSpan.FromMilliseconds(500);
+    private readonly TimeSpan _syncSettle = TimeSpan.FromMilliseconds(100);
+    private readonly TimeSpan _syncSettleBudget = TimeSpan.FromSeconds(1);
     private readonly TimeSpan _eraseTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>Port rate. The bootloader autobauds, so this only has to be one it supports (1200–115200).</summary>
@@ -89,6 +92,56 @@ public sealed record Stm32SerialOptions
         {
             ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
             _commandTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// How long the AN3155 sync handshake waits for an answer. Deliberately much shorter than
+    /// <see cref="CommandTimeout"/>: on a part that has already synced since reset, the sync byte
+    /// is taken as a command opcode and silence is the <i>expected</i> first outcome, so this
+    /// deadline is paid on every open of an already-synced part rather than only on a failure.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Not positive.</exception>
+    public TimeSpan SyncTimeout
+    {
+        get => _syncTimeout;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
+            _syncTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// How long the handshake lets the line fall quiet after a sync deadline before it drains and
+    /// sends anything else. Cancelling a read does not stop the part talking: a late answer, or
+    /// the tail of a multi-byte reply, can still be in flight. Sending a recovery byte while that
+    /// is arriving is what turns a recoverable timeout into a desynchronised session.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Negative.</exception>
+    public TimeSpan SyncSettle
+    {
+        get => _syncSettle;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            _syncSettle = value;
+        }
+    }
+
+    /// <summary>
+    /// The most total time the handshake will spend waiting for the line to go quiet before it
+    /// gives up and drains anyway. Bounds <see cref="SyncSettle"/>'s repeat: a line that never
+    /// falls idle must not stall an open indefinitely.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Not positive.</exception>
+    public TimeSpan SyncSettleBudget
+    {
+        get => _syncSettleBudget;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
+            _syncSettleBudget = value;
         }
     }
 

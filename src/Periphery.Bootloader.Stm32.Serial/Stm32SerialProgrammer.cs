@@ -42,6 +42,12 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     private const byte Ack = 0x79;
     private const byte Nack = 0x1F;
 
+    /// <summary>AN3155 section 3.1 autobaud byte. Also, to an already-synced part, an opcode.</summary>
+    private const byte SyncByte = 0x7F;
+
+    /// <summary>How many times the handshake will clear a byte and re-test with Get.</summary>
+    private const int SyncProofAttempts = 3;
+
     private readonly Stm32BootloaderClient _client;
     private readonly ITransceiver _transceiver;
     private readonly IDuplexPipe _pipe;
@@ -284,25 +290,194 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
     // ── shell helpers (own the timing, ADR-0052 DEC-004) ──
 
-    private async Task SyncAsync(CancellationToken ct)
+    /// <summary>
+    /// The AN3155 handshake. Internal rather than private so the pipe-driven tests can reach it:
+    /// it used to be reachable only through <see cref="OpenAsync"/>, which needs a real port, so
+    /// nothing covered it and a wrong reading of section 3.1 shipped.
+    /// </summary>
+    internal async Task SyncAsync(CancellationToken ct)
     {
-        // AN3155 section 3.1: 0x7F at 8E1 drives the bootloader's autobaud and it answers ACK. A
-        // device that already synced since reset answers NACK instead — also a live bootloader, so
-        // both are success. Only silence (our timeout) or a junk byte is a failure.
+        // AN3155 section 3.1: 0x7F at 8E1 drives the bootloader's autobaud and it answers ACK —
+        // but ONLY on a part that has not synced since reset. Once synced, the bootloader is in
+        // its command loop, where 0x7F is an opcode: it takes the byte and waits for the
+        // complement that a command frame carries second. It does not answer, and it does not
+        // NACK. It waits.
+        //
+        // That state is the common one, not the exotic one. Anything that opened the port before
+        // us — a terminal, a previous flash, the probe loop, an operator checking the port is
+        // alive — leaves the part synced, and our sync byte becomes half a command frame.
+        byte? answer = await TrySyncByteAsync(ct).ConfigureAwait(false);
+
+        // A byte we actually received is unambiguous. ACK is a fresh autobaud sync; NACK means
+        // the part was already in its command loop and our byte completed an earlier partial
+        // frame. Both leave a live bootloader on a known command boundary.
+        if (answer is Ack or Nack)
+            return;
+
+        if (answer is { } junk)
+            throw new Stm32SerialException(
+                $"the AN3155 sync byte (0x7F) was answered with 0x{junk:X2}, which is neither ACK " +
+                $"(0x{Ack:X2}) nor NACK (0x{Nack:X2}). Check the baud rate and that 8E1 framing is " +
+                "reaching the part.");
+
+        // Silence, and silence is where inference gets dangerous. It usually means a synced part
+        // is holding our sync byte as an opcode — but it can also be a fresh part whose ACK was
+        // merely late, and the two demand opposite repairs. Guessing from the next single byte
+        // cannot tell them apart: a late ACK arriving after the deadline reads exactly like a
+        // reply to whatever we sent next, so we would report a clean session while a byte sat
+        // pending and desynchronise on the following command.
+        //
+        // So stop inferring. Push a byte to complete any frame the part is holding, then PROVE
+        // the boundary with Get, whose reply is long and structured enough that a desynchronised
+        // stream cannot fake it. Whether a late ACK was consumed or discarded along the way stops
+        // mattering: the proof is what decides, not the guess.
+        // Quiesce first. Our deadline cancelled a read; it did not stop the part talking. A late
+        // answer, or the tail of a reply longer than the one byte we asked for, can still be on
+        // the wire — and a recovery byte sent into that arrives interleaved, which is how a
+        // recoverable timeout becomes a desynchronised session. Wait, then drain, then act.
+        if (!await SettleAsync(ct).ConfigureAwait(false))
+            throw new Stm32SerialException(
+                $"the line never fell quiet for {_options.SyncSettle.TotalMilliseconds:F0} ms " +
+                $"within {_options.SyncSettleBudget.TotalSeconds:F1} s, so the handshake could not " +
+                "establish a command boundary to recover from. Something is transmitting " +
+                "continuously — check the baud rate, and that the port is not shared with another " +
+                "program or wired to a device that talks unprompted.");
+
+        await NudgeAsync(unchecked((byte)~SyncByte), ct).ConfigureAwait(false);
+
+        // Each failed Get leaves at most one byte pending (its first byte completes the stray
+        // frame, its second becomes the next stray), so one nudge per retry converges. Settling
+        // between attempts matters for the same reason as above: a Get that timed out may still
+        // deliver its full multi-byte reply afterwards, and those bytes must be cleared rather
+        // than read as the next attempt's answer.
+        for (int attempt = 0; attempt < SyncProofAttempts; attempt++)
+        {
+            if (await RespondsToGetAsync(ct).ConfigureAwait(false))
+                return;
+
+            if (!await SettleAsync(ct).ConfigureAwait(false))
+                break;
+
+            await NudgeAsync(0xFF, ct).ConfigureAwait(false);
+        }
+
+        throw new Stm32SerialException(
+            "no answer to the AN3155 sync byte (0x7F), and the bootloader did not answer Get " +
+            $"after {SyncProofAttempts} attempts to clear the command boundary. Check that the " +
+            "part is in system-bootloader mode (BOOT0 asserted and reset), that the port is the " +
+            "right one, and that RX/TX are not swapped.");
+    }
+
+    /// <summary>
+    /// Sends the sync byte and returns what came back, or <see langword="null"/> on silence.
+    /// Only a byte actually received is reported; a deadline is not an answer.
+    /// </summary>
+    private async Task<byte?> TrySyncByteAsync(CancellationToken ct)
+    {
         try
         {
-            await WithTimeout(_options.CommandTimeout, ct, t => _client.Ping(t)).ConfigureAwait(false);
+            var reply = await WithTimeout(_options.SyncTimeout, ct,
+                t => _transceiver.SendReceiveExactly(new byte[] { SyncByte }, 1, t)).ConfigureAwait(false);
+            return reply.Span[0];
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
         {
-            throw new Stm32SerialException(
-                "no valid answer to the AN3155 sync byte (0x7F). Check that the part is in " +
-                "system-bootloader mode (BOOT0 asserted and reset), that the port is the right one, " +
-                "and that RX/TX are not swapped.", ex);
+            // Our own deadline: the part said nothing. That is the one case recovery is for.
+            return null;
+        }
+        // Everything else is the transport failing, not the part staying quiet — a closed port, a
+        // pulled cable. Swallowing it as silence would send recovery bytes into a dead stream and
+        // report the part missing when the real fault is the connection.
+    }
+
+    /// <summary>
+    /// Lets the line fall quiet, then clears it. Used only on the handshake's recovery path,
+    /// where a cancelled read may leave the part still talking.
+    /// </summary>
+    /// <returns><see langword="true"/> if a full window passed with nothing arriving.</returns>
+    private async Task<bool> SettleAsync(CancellationToken ct)
+    {
+        DrainStaleBytes();
+        if (_options.SyncSettle <= TimeSpan.Zero)
+            return true;
+
+        // Drain until a whole window passes with nothing arriving, rather than draining once
+        // after a fixed wait. Waiting a fixed interval and then draining assumes the line is
+        // quiet by then, which no part of AN3155 promises: a reply delayed between its own bytes
+        // puts its head in front of that single drain and its tail behind it, and the tail is
+        // then read as the answer to whatever we send next. An idle window is evidence; an
+        // elapsed interval is an assumption.
+        var spent = System.Diagnostics.Stopwatch.StartNew();
+        while (spent.Elapsed < _options.SyncSettleBudget)
+        {
+            await Task.Delay(_options.SyncSettle, ct).ConfigureAwait(false);
+            if (!DrainStaleBytes())
+                return true;
+        }
+
+        // Budget exhausted with the line still talking. Do not transmit into that: a recovery
+        // byte sent while bytes are still arriving is the very interleaving this method exists to
+        // prevent, and no answer we got back could be attributed to it. Report instead.
+        return false;
+    }
+
+    /// <summary>
+    /// Sends one byte to complete whatever half-frame the part may be holding, and swallows the
+    /// answer. The value is never a real command by accident: a pending opcode <c>X</c> forms a
+    /// valid frame only with <c>~X</c>, so <c>0xFF</c> can only ever complete <c>0x00</c> — Get,
+    /// which is read-only — and every other pairing fails its checksum and is NACKed.
+    /// </summary>
+    private async Task NudgeAsync(byte value, CancellationToken ct)
+    {
+        try
+        {
+            await WithTimeout(_options.SyncTimeout, ct,
+                t => _transceiver.SendReceiveExactly(new byte[] { value }, 1, t)).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Stm32SerialException ex) when (IsTransportFailure(ex))
+        {
+            throw;   // a dead port is not a quiet one
+        }
+        catch
+        {
+            // Silence here proves nothing either way; the Get that follows is the test.
+        }
+    }
+
+    /// <summary>
+    /// Whether the part answers Get with a well-formed reply. This is the synchronisation proof:
+    /// ACK, length, version, command list and a trailing ACK is not something a desynchronised
+    /// stream produces by chance, and Get changes nothing on the part.
+    /// </summary>
+    private async Task<bool> RespondsToGetAsync(CancellationToken ct)
+    {
+        try
+        {
+            var info = await WithTimeout(_options.SyncTimeout, ct,
+                t => _client.GetSupportedCommands(t)).ConfigureAwait(false);
+            return info.SupportedCommands.Any();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Stm32SerialException ex) when (IsTransportFailure(ex))
+        {
+            // The port died mid-proof. Retrying cannot help and reporting "the bootloader did not
+            // answer Get" would blame the part for a broken connection.
+            throw;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -498,6 +673,16 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
     // Cancellation is deliberately not converted: the caller's token and our command deadline are
     // both signalled that way and both are handled as cancellation upstream.
+    /// <summary>
+    /// Whether a converted failure was the transport dying rather than the protocol misbehaving.
+    /// <see cref="Convert"/> keeps the original as the inner exception, which is the only thing
+    /// separating "the cable came out" from "that reply did not parse" once both are
+    /// <see cref="Stm32SerialException"/>. The handshake needs that distinction: a protocol
+    /// failure is worth retrying, a dead port is not.
+    /// </summary>
+    private static bool IsTransportFailure(Stm32SerialException ex) =>
+        ex.InnerException is TransceiverTransportException;
+
     private static bool Convertible(Exception ex) =>
         ex is TransceiverTransportException or InvalidOperationException or ArgumentException;
 
@@ -514,14 +699,19 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// a NACK from a refused command, line noise from the moment the port opened. Non-blocking:
     /// <see cref="PipeReader.TryRead"/> never waits for bytes that have not arrived.
     /// </summary>
-    private void DrainStaleBytes()
+    /// <returns><see langword="true"/> if anything was discarded.</returns>
+    private bool DrainStaleBytes()
     {
+        bool discarded = false;
         while (_pipe.Input.TryRead(out var result))
         {
             var buffer = result.Buffer;
+            if (!buffer.IsEmpty)
+                discarded = true;
             _pipe.Input.AdvanceTo(buffer.End);
             if (buffer.IsEmpty || result.IsCompleted)
                 break;
         }
+        return discarded;
     }
 }
