@@ -315,8 +315,19 @@ a decision made for the wrong reason.
   opens with `DTR=True RTS=True`, and the BCL `SerialPort` opens with both false. On a board using
   the common auto-reset circuit, those two backends would do visibly different things at open —
   under DEC-003 a consumer could switch backend and silently change whether their part gets reset.
-  `ISerialPort` should specify the state of the control lines at open rather than inherit whatever
-  the backend does.
+
+  So this is no longer only an unmeasured item — it is a hole in the contract. **DEC-002 exposes
+  only post-open `SetDtrAsync`/`SetRtsAsync`, and `SerialPortOptions` names no initial state**, so
+  a caller cannot express "open without touching the lines" and cannot correct them until after
+  the transition has already happened. On a board that drives NRST or BOOT0 from DTR/RTS, the
+  reset happens during `Open`, before any code of the caller's runs.
+
+  **`SerialPortOptions` should carry the initial DTR and RTS state, both defaulting to
+  deasserted, and both backends must establish it as part of open.** Deasserted because that is
+  the state that does not drive an auto-reset circuit: a port that opens asserted holds a part in
+  reset, or resets it on close, and the caller never gets a say. Where a backend cannot open
+  without a transient — and this needs checking on each one rather than assuming — the ADR should
+  say so plainly instead of implying a guarantee the platform will not give.
 - **Whether `SetDtrAsync`/`SetRtsAsync` should be async at all.** DEC-002 declares them `Task`-returning.
   The underlying operations are synchronous property writes in both `System.IO.Ports` and
   `RJCP.SerialPortStream`. Worth revisiting when the backends are written.
