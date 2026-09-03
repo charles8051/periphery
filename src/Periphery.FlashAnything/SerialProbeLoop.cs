@@ -71,6 +71,13 @@ internal sealed class SerialProbeLoop
     public ProbeRowState State { get; private set; } = ProbeRowState.Initial;
 
     /// <summary>
+    /// Held for the duration of each probe, so a flash on the same bridge cannot open the port at
+    /// the same time. A serial port is an exclusive open (ADR-0062 section 1) and one of the two
+    /// would lose: the probe faults the row, or the flash fails partway through a write.
+    /// </summary>
+    public SemaphoreSlim? Gate { get; init; }
+
+    /// <summary>
     /// Probes until cancelled, or until the bridge faults. Cancellation is the operator disarming,
     /// and it is the stop: an armed fixture sitting empty is the normal resting state of this
     /// feature, so the loop slows down rather than giving up.
@@ -79,7 +86,19 @@ internal sealed class SerialProbeLoop
     {
         while (!ct.IsCancellationRequested)
         {
-            var outcome = await ProbeOnceAsync(ct).ConfigureAwait(false);
+            ProbeOutcome outcome;
+            if (Gate is { } gate)
+            {
+                try { await gate.WaitAsync(ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
+
+                try { outcome = await ProbeOnceAsync(ct).ConfigureAwait(false); }
+                finally { gate.Release(); }
+            }
+            else
+            {
+                outcome = await ProbeOnceAsync(ct).ConfigureAwait(false);
+            }
 
             var (next, action) = ProbeRowPolicy.Advance(State, outcome);
             State = next;
