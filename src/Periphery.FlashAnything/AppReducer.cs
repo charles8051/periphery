@@ -54,7 +54,14 @@ public static class AppReducer
         AppEvent.OperationFailed ev => state.WithTarget(ev.Id,
             t => t with { LastError = ev.Message }),
 
-        AppEvent.AutoflashArmed ev => state with { Autoflash = ev.Config, AutoflashTally = AutoflashTally.Empty },
+        // A repeating fixture cannot attribute its flashes to distinct boards: silence cannot tell
+        // a board that left from one that reset while seated. The tally carries that so a front-end
+        // words the summary as flashes rather than boards.
+        AppEvent.AutoflashArmed ev => state with
+        {
+            Autoflash = ev.Config,
+            AutoflashTally = AutoflashTally.Empty with { CountsDistinctBoards = ev.Config.Repeat == RepeatMode.None },
+        },
 
         AppEvent.AutoflashDisarmed => state with { Autoflash = null },
 

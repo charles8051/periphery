@@ -732,7 +732,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
         }
 
         lock (_gate) _flashedThisSession.Clear();
-        Emit(new AppEvent.AutoflashArmed(new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges }));
+        Emit(new AppEvent.AutoflashArmed(
+            new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges, Repeat = arm.Repeat }));
 
         StartProbeLoops(bridges);
 
@@ -980,7 +981,10 @@ public sealed class FlashAnythingService : IAsyncDisposable
             // because there is nothing left to resolve.
             case ProbeRowAction.Removed:
                 if (LastDeviceFor(bridge) is { } removed)
+                {
+                    ReopenGateIfRepeating(removed);
                     Emit(new AppEvent.TargetRemoved(removed));
+                }
                 break;
 
             case ProbeRowAction.Faulted faulted:
@@ -993,6 +997,28 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     if (_probeGates.Remove(bridge, out var gate)) gate.Dispose();
                 }
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Lets a fixture flash the next board, when the operator armed it to (adr.md Decision 10).
+    /// </summary>
+    /// <remarks>
+    /// The default is one flash per bound bridge per armed session, which is Decision 5 unchanged:
+    /// a fixture produces the same <see cref="DeviceId"/> for every board, so the existing
+    /// already-flashed set is what stops a second one. Reopening it is the whole of
+    /// <c>--repeat</c>, and it is opt-in because the evidence a board left is weaker than the
+    /// evidence one arrived — silence cannot tell a departure from a part that reset while seated.
+    /// </remarks>
+    private void ReopenGateIfRepeating(DeviceId id)
+    {
+        lock (_gate)
+        {
+            if (State.Autoflash is not { Repeat: RepeatMode.Silence })
+                return;
+
+            if (_flashedThisSession.Remove(id))
+                _logger.LogInformation("Autoflash: {Id} left the fixture; it may flash again (--repeat).", id);
         }
     }
 

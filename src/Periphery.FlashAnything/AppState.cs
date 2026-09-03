@@ -63,15 +63,37 @@ public sealed record AutoflashTally(int Flashed, int Failed, int Skipped, Immuta
     /// <summary>Total devices acted on (flashed + failed + skipped).</summary>
     public int Total => Flashed + Failed + Skipped;
 
+    /// <summary>How many times each row has been acted on, so entries can be numbered.</summary>
+    public ImmutableDictionary<DeviceId, int> Sequence { get; init; } = ImmutableDictionary<DeviceId, int>.Empty;
+
+    /// <summary>
+    /// Whether every flash in this tally can be attributed to a distinct board.
+    /// <para>
+    /// False whenever a fixture was allowed to repeat on inference: adr.md Decision 10 cannot tell
+    /// a board that left from one that reset while seated, so the count is of flashes, not of
+    /// boards. Front-ends must word the summary accordingly — saying "3 boards" on evidence that
+    /// only supports "3 flashes" is the overclaim the whole row model exists to avoid.
+    /// </para>
+    /// </summary>
+    public bool CountsDistinctBoards { get; init; } = true;
+
     /// <summary>Fold one per-device outcome into the tally.</summary>
     public AutoflashTally With(AutoflashOutcomeKind kind, DeviceId id, string? detail)
     {
         string suffix = detail is null ? "" : $": {detail}";
+
+        // A fixture produces the same DeviceId every time, so "flashed COM7" three times says
+        // nothing about which board each was. A position in the sequence is what can honestly be
+        // produced for a probe row; a name cannot.
+        int nth = Sequence.TryGetValue(id, out int seen) ? seen + 1 : 1;
+        var sequence = Sequence.SetItem(id, nth);
+        string label = nth > 1 ? $"{id} #{nth}" : id.ToString();
+
         return kind switch
         {
-            AutoflashOutcomeKind.Flashed => this with { Flashed = Flashed + 1, Audit = Audit.Add($"flashed {id}") },
-            AutoflashOutcomeKind.Failed  => this with { Failed = Failed + 1, Audit = Audit.Add($"failed {id}{suffix}") },
-            _                            => this with { Skipped = Skipped + 1, Audit = Audit.Add($"skipped {id}{suffix}") },
+            AutoflashOutcomeKind.Flashed => this with { Flashed = Flashed + 1, Sequence = sequence, Audit = Audit.Add($"flashed {label}") },
+            AutoflashOutcomeKind.Failed  => this with { Failed = Failed + 1, Sequence = sequence, Audit = Audit.Add($"failed {label}{suffix}") },
+            _                            => this with { Skipped = Skipped + 1, Sequence = sequence, Audit = Audit.Add($"skipped {label}{suffix}") },
         };
     }
 }

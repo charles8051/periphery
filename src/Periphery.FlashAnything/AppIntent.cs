@@ -47,10 +47,15 @@ public abstract record AppIntent
     /// is not an identity, and Windows recycles them (adr.md Decision 8). Empty for passive
     /// families, which identify themselves and need no binding.
     /// </param>
+    /// <param name="Repeat">
+    /// Whether a bound fixture may flash a succession of boards. Default
+    /// <see cref="RepeatMode.None"/> — one flash per bridge per armed session.
+    /// </param>
     public sealed record ArmAutoflash(
         string Family,
         FlashOptions Options,
-        ImmutableArray<SerialPortName> Ports = default) : AppIntent;
+        ImmutableArray<SerialPortName> Ports = default,
+        RepeatMode Repeat = RepeatMode.None) : AppIntent;
 
     /// <summary>Disarm autoflash (stop automatic flashing).</summary>
     public sealed record DisarmAutoflash : AppIntent;
