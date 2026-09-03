@@ -301,7 +301,47 @@ dependency. That table belongs to
 Periphery's Bluetooth state is poll-only on Windows. Moving it by symmetry with serial would be
 a decision made for the wrong reason.
 
-**Not yet measured.**
+**Measured (2026-09-02): the backend choice costs 3x on a request-response protocol, and
+DEC-003 picks the slow one.**
+
+Identical AN3155 round trips to an STM32G431 behind a CP210x, 115200 8E1, 50 iterations each,
+raw port to raw port with no pipe or framing layer in between:
+
+| Backend | Get (15-byte reply) | Get ID (5-byte reply) |
+|---|---|---|
+| `RJCP.SerialPortStream` | 30.75 ms | 30.71 ms |
+| BCL `System.IO.Ports.SerialPort` | 3.90 ms | 3.07 ms |
+
+The shape matters more than the ratio. The BCL times track reply size — 0.83 ms for 10 extra
+bytes against 0.95 ms of actual wire time — so it is paying for the bytes. RJCP's do not move
+at all, because a flat ~30 ms per exchange swamps them. That is a fixed wait, not throughput.
+
+End to end, flashing the same 52 KB image through the same `Stm32SerialProgrammer` and changing
+only the `IDuplexPipe` beneath it:
+
+| Transport | Flash + verify |
+|---|---|
+| RJCP (`CallAndResponse.Transport.Serial`) | **47.1 s** |
+| BCL `SerialPort.BaseStream` via `PipeReader.Create` | **14.6 s** |
+
+AN3155 is round-trip bound — Write Memory is three exchanges per 256 bytes and the cap is 256,
+so a 52 KB flash with verify is about 1,230 exchanges. At ~27 ms of avoidable overhead each,
+that is the whole difference, and the measured 32.5 s saved matches the predicted ~33 s.
+
+**This bears directly on DEC-003**, which recommends RJCP as the default. That recommendation
+was made on portability and custom-baud grounds with no latency measurement behind it, and for
+the flashing workloads this repo exists to serve it is the wrong default by 3x. It may still be
+right where custom baud rates or non-Windows behaviour dominate. It should not be described as
+the default without qualifying the workload.
+
+**Caveats.** One board, one bridge, one driver (Silicon Labs `silabser` 6.7.3.350), Windows
+only. FTDI and CH340 bridges may differ. The micro-benchmark isolates the port layer fairly;
+the end-to-end comparison also swaps the pipe adapter, so attribution rests on the
+micro-benchmark, which the end-to-end number then corroborates. The cause inside RJCP is not
+established — its `COMMTIMEOUTS` use (`ReadIntervalTimeout`, `ReadTotalTimeoutConstant`) is the
+obvious suspect and is unconfirmed.
+
+**Still not measured.**
 
 - **Control-line changes while a read pump is in flight.** Setting `DtrEnable`, `RtsEnable`, or
   `BaudRate` on an open port while a background `ReadAsync` is outstanding. The ESP32 reset dance
