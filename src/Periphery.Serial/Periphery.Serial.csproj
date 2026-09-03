@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;SYSLIB1051</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Serial</PackageId>
+    <Description>ADR-0062: an IDuplexPipe over an already-open System.IO.Ports.SerialPort, with the
+      synchronous-read-pump-on-a-dedicated-thread design that a live board on the bench proved
+      necessary — Windows' SerialPort.BaseStream.ReadAsync honours neither cancellation
+      (dotnet/runtime#30850) nor ReadTimeout, so an async pipe reader over it can hang forever on a
+      port that goes genuinely silent. Zero third-party dependency: System.IO.Ports and
+      System.IO.Pipelines only. See Periphery.Serial.Rjcp for the third-party-backed
+      alternative.</Description>
+    <PackageTags>hardware;serial;uart;system-io-ports;duplex-pipe;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
+    <PackageReference Include="System.IO.Pipelines" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Serial.Tests" />
+    <!-- The RJCP backend reuses this package's read pump rather than duplicating it — the two
+         backends disagree only in how a read is issued and which exceptions are benign, both of
+         which the pump takes as parameters. See SerialReadPump.cs. -->
+    <InternalsVisibleTo Include="Periphery.Serial.Rjcp" />
+    <InternalsVisibleTo Include="Periphery.Serial.Rjcp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>

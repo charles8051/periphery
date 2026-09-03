@@ -4,6 +4,8 @@
     <Project Path="src/Periphery.Bootloader/Periphery.Bootloader.csproj" />
     <Project Path="src/Periphery.Bootloader.Stm32.Usb/Periphery.Bootloader.Stm32.Usb.csproj" />
     <Project Path="src/Periphery.Bootloader.Stm32.Serial/Periphery.Bootloader.Stm32.Serial.csproj" />
+    <Project Path="src/Periphery.Serial/Periphery.Serial.csproj" />
+    <Project Path="src/Periphery.Serial.Rjcp/Periphery.Serial.Rjcp.csproj" />
     <Project Path="src/Periphery.Camera/Periphery.Camera.csproj" />
     <Project Path="src/Periphery.Camera.Avalonia/Periphery.Camera.Avalonia.csproj" />
     <Project Path="src/Periphery.Camera.OpenCvSharp/Periphery.Camera.OpenCvSharp.csproj" />
@@ -51,6 +53,8 @@
   <Folder Name="/tests/">
     <Project Path="tests/Periphery.Bootloader.Stm32.Usb.Tests/Periphery.Bootloader.Stm32.Usb.Tests.csproj" />
     <Project Path="tests/Periphery.Bootloader.Stm32.Serial.Tests/Periphery.Bootloader.Stm32.Serial.Tests.csproj" />
+    <Project Path="tests/Periphery.Serial.Tests/Periphery.Serial.Tests.csproj" />
+    <Project Path="tests/Periphery.Serial.Rjcp.Tests/Periphery.Serial.Rjcp.Tests.csproj" />
     <Project Path="tests/Periphery.Bootloader.Tests/Periphery.Bootloader.Tests.csproj" />
     <Project Path="tests/Periphery.Camera.Avalonia.Tests/Periphery.Camera.Avalonia.Tests.csproj" />
     <Project Path="tests/Periphery.Camera.OpenCvSharp.Interop.Tests/Periphery.Camera.OpenCvSharp.Interop.Tests.csproj" />
