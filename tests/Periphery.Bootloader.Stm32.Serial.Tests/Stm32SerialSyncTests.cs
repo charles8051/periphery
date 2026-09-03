@@ -102,6 +102,46 @@ public class Stm32SerialSyncTests
     }
 
     [Fact]
+    public async Task Sync_absorbs_bytes_that_trickle_in_after_the_first_drain()
+    {
+        // Waiting a fixed interval and then draining once assumes the line is quiet by then, and
+        // nothing in AN3155 promises that. A reply delayed between its own bytes puts its head in
+        // front of that drain and its tail behind it, and the tail is then read as the answer to
+        // whatever goes out next. Draining until a whole window passes with nothing arriving is
+        // evidence of a quiet line; an elapsed interval is only an assumption.
+        await using var device = new FakeStm32Bootloader { StartSynced = true, ProductId = 0x0468 };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Stm32SerialOptions.Default with
+        {
+            SyncTimeout = TimeSpan.FromMilliseconds(200),
+            CommandTimeout = TimeSpan.FromMilliseconds(500),
+            SyncSettle = TimeSpan.FromMilliseconds(100),
+            SyncSettleBudget = TimeSpan.FromSeconds(3),
+        });
+
+        // Dribble stale bytes across several settle windows while the handshake is running.
+        using var trickling = new CancellationTokenSource();
+        var trickle = Task.Run(async () =>
+        {
+            // Start after the sync byte's own deadline has passed, so these are bytes arriving
+            // during recovery rather than an answer to the sync byte itself.
+            await Task.Delay(260, trickling.Token);
+            for (int i = 0; i < 5 && !trickling.IsCancellationRequested; i++)
+            {
+                await device.InjectNoiseAsync(0x00);
+                await Task.Delay(60, trickling.Token);
+            }
+        });
+
+        await programmer.SyncAsync(CancellationToken.None);
+        trickling.Cancel();
+        try { await trickle; } catch (OperationCanceledException) { }
+
+        // What matters is that the session is usable afterwards, not that Sync returned.
+        var identity = await programmer.IdentifyAsync();
+        Assert.Equal("0x468", identity.Chip);
+    }
+
+    [Fact]
     public async Task Sync_reports_a_transport_failure_rather_than_calling_it_silence()
     {
         // A closed port or a pulled cable is not a quiet part, and the two need opposite

@@ -391,9 +391,26 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// </summary>
     private async Task SettleAsync(CancellationToken ct)
     {
-        if (_options.SyncSettle > TimeSpan.Zero)
-            await Task.Delay(_options.SyncSettle, ct).ConfigureAwait(false);
         DrainStaleBytes();
+        if (_options.SyncSettle <= TimeSpan.Zero)
+            return;
+
+        // Drain until a whole window passes with nothing arriving, rather than draining once
+        // after a fixed wait. Waiting a fixed interval and then draining assumes the line is
+        // quiet by then, which no part of AN3155 promises: a reply delayed between its own bytes
+        // puts its head in front of that single drain and its tail behind it, and the tail is
+        // then read as the answer to whatever we send next. An idle window is evidence; an
+        // elapsed interval is an assumption.
+        var spent = System.Diagnostics.Stopwatch.StartNew();
+        while (spent.Elapsed < _options.SyncSettleBudget)
+        {
+            await Task.Delay(_options.SyncSettle, ct).ConfigureAwait(false);
+            if (!DrainStaleBytes())
+                return;
+        }
+
+        // Budget exhausted: something is talking continuously. Not silence, and not a boundary
+        // we can establish by waiting — the Get proof that follows is what decides.
     }
 
     /// <summary>
@@ -650,14 +667,19 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// a NACK from a refused command, line noise from the moment the port opened. Non-blocking:
     /// <see cref="PipeReader.TryRead"/> never waits for bytes that have not arrived.
     /// </summary>
-    private void DrainStaleBytes()
+    /// <returns><see langword="true"/> if anything was discarded.</returns>
+    private bool DrainStaleBytes()
     {
+        bool discarded = false;
         while (_pipe.Input.TryRead(out var result))
         {
             var buffer = result.Buffer;
+            if (!buffer.IsEmpty)
+                discarded = true;
             _pipe.Input.AdvanceTo(buffer.End);
             if (buffer.IsEmpty || result.IsCompleted)
                 break;
         }
+        return discarded;
     }
 }

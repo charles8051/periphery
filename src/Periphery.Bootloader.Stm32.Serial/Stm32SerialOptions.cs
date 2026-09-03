@@ -32,6 +32,7 @@ public sealed record Stm32SerialOptions
     private readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _syncTimeout = TimeSpan.FromMilliseconds(500);
     private readonly TimeSpan _syncSettle = TimeSpan.FromMilliseconds(100);
+    private readonly TimeSpan _syncSettleBudget = TimeSpan.FromSeconds(1);
     private readonly TimeSpan _eraseTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>Port rate. The bootloader autobauds, so this only has to be one it supports (1200–115200).</summary>
@@ -125,6 +126,22 @@ public sealed record Stm32SerialOptions
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
             _syncSettle = value;
+        }
+    }
+
+    /// <summary>
+    /// The most total time the handshake will spend waiting for the line to go quiet before it
+    /// gives up and drains anyway. Bounds <see cref="SyncSettle"/>'s repeat: a line that never
+    /// falls idle must not stall an open indefinitely.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Not positive.</exception>
+    public TimeSpan SyncSettleBudget
+    {
+        get => _syncSettleBudget;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
+            _syncSettleBudget = value;
         }
     }
 
