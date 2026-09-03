@@ -171,12 +171,33 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             throw new Stm32SerialException($"could not open {portName.Value}: {ex.Message}", ex);
         }
 
-        var pipe = new BclSerialDuplexPipe(port);
-        // We opened the port, so we can retune it. That is what lets the handshake tell a part
-        // that autobauded wrong apart from one that is not there — see ConfirmMislockAsync.
-        var programmer = new Stm32SerialProgrammer(
-            device, pipe, opts, logger, pipeOwner: pipe, portOwner: port, setBaudRate: b => port.BaudRate = b);
-        return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
+        // The port is open and nothing owns it yet. Building the pipe touches the port — it takes
+        // BaseStream and retimes ReadTimeout — so an adapter pulled in this window throws here,
+        // between Open and the programmer taking ownership. Closing it on the way out is what
+        // stops a probe loop from being blocked on a handle it is still holding open itself.
+        BclSerialDuplexPipe? pipe = null;
+        try
+        {
+            pipe = new BclSerialDuplexPipe(port);
+
+            // We opened the port, so we can retune it. That is what lets the handshake tell a
+            // part that autobauded wrong apart from one that is not there — see
+            // ConfirmMislockAsync.
+            var programmer = new Stm32SerialProgrammer(
+                device, pipe, opts, logger,
+                pipeOwner: pipe, portOwner: port, setBaudRate: b => port.BaudRate = b);
+            return await SyncOrDisposeAsync(programmer, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Reached both before the programmer exists and after it has already cleaned itself
+            // up on a handshake failure. Both disposals are idempotent, so covering the gap costs
+            // nothing on the path that did not need it. Pump before port, as disposal does.
+            if (pipe is not null)
+                await pipe.DisposeAsync().ConfigureAwait(false);
+            port.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
