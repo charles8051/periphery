@@ -240,6 +240,19 @@ internal static class Commands
         Console.WriteLine($"  Firmware : {p.File} ({firmware.Size} bytes)");
         Console.WriteLine($"  Family   : {family}");
 
+        // adr.md Decision 8: the arm confirmation must name every bound port and say what probing
+        // does. Recording the hazard in an ADR is not telling the operator — an arm they accept
+        // without being shown this is an arm they were not asked about.
+        if (!p.Ports.IsDefaultOrEmpty)
+        {
+            Console.WriteLine($"  Ports    : {string.Join(", ", p.Ports.Select(x => x.Value))}");
+            Console.WriteLine($"  Repeat   : {(p.Repeat == RepeatMode.None ? "no - one board per fixture" : "yes - inferred from silence")}");
+            Console.WriteLine();
+            Console.WriteLine("  Probing sends bootloader bytes to whatever is attached to those ports,");
+            Console.WriteLine("  about once a second, until you disarm. If something other than an STM32");
+            Console.WriteLine("  in its bootloader is wired there, it will receive them too.");
+        }
+
         if (!p.Yes)
         {
             Console.WriteLine();
@@ -261,7 +274,17 @@ internal static class Commands
         };
 
         await service.RefreshAsync(ct).ConfigureAwait(false); // start the watcher
-        await service.DispatchAsync(new AppIntent.ArmAutoflash(family, options), ct).ConfigureAwait(false);
+        await service.DispatchAsync(
+            new AppIntent.ArmAutoflash(family, options, p.Ports, p.Repeat), ct).ConfigureAwait(false);
+
+        // Arming can be refused — a port with nothing on it, a bridge that cannot be told from
+        // another of its model, a probe family with nothing bound. Say so and stop, rather than
+        // printing "Armed" over a session that does not exist.
+        if (service.State.Autoflash is null)
+        {
+            Console.Error.WriteLine($"Could not arm: {service.State.FirmwareError ?? "unknown reason"}");
+            return ExitCodes.NoTarget;
+        }
 
         Console.WriteLine();
         Console.WriteLine("Armed. Plug in devices to flash them automatically. Press Ctrl+C to stop.");
@@ -272,7 +295,11 @@ internal static class Commands
 
         var tally = service.State.AutoflashTally;
         Console.WriteLine();
-        Console.WriteLine($"Stopped. Flashed {tally.Flashed}, failed {tally.Failed}, skipped {tally.Skipped}.");
+        // "flashes", not "boards", whenever a fixture was allowed to repeat on inference: silence
+        // cannot tell a board that left from one that reset while seated, so the count is of
+        // flashes. Wording it as boards would claim more than the evidence supports.
+        string what = tally.CountsDistinctBoards ? "Flashed" : "Flashes";
+        Console.WriteLine($"Stopped. {what} {tally.Flashed}, failed {tally.Failed}, skipped {tally.Skipped}.");
         return tally.Failed == 0 ? ExitCodes.Success : ExitCodes.OperationFailed;
     }
 }
