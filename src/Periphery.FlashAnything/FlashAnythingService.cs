@@ -98,8 +98,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
     // _maxFlashConcurrency boards flash at once). _flashedThisSession dedupes within an armed session
     // (the armed config itself lives in State.Autoflash); a device is enqueued at most once (test-and-
     // marked under _gate before the write), so no two workers ever flash the same device.
-    private readonly Channel<DeviceId> _autoflashQueue =
-        Channel.CreateUnbounded<DeviceId>(new() { SingleReader = false, SingleWriter = false });
+    private readonly Channel<(DeviceId Id, string? Label)> _autoflashQueue =
+        Channel.CreateUnbounded<(DeviceId Id, string? Label)>(new() { SingleReader = false, SingleWriter = false });
     private readonly HashSet<DeviceId> _flashedThisSession = new();
     private readonly CancellationTokenSource _cts = new();
 
@@ -759,7 +759,12 @@ public sealed class FlashAnythingService : IAsyncDisposable
             _reopenWhenFlashed.Clear();
         }
         Emit(new AppEvent.AutoflashArmed(
-            new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges, Repeat = arm.Repeat }));
+            new AutoflashConfig(arm.Family, arm.Options)
+            {
+                Bridges = bridges,
+                Repeat = arm.Repeat,
+                BoundPorts = arm.Ports.IsDefault ? ImmutableArray<SerialPortName>.Empty : arm.Ports,
+            }));
 
         StartProbeLoops(bridges);
 
@@ -1109,7 +1114,11 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     break;
             }
         }
-        if (enqueue) _autoflashQueue.Writer.TryWrite(id);
+        // Capture the label now, not when the outcome lands. A fixture reuses one DeviceId across
+        // boards and its row's identity moves on as later probes arrive, so reading it at
+        // completion can describe the board that came next — or, if the row was retracted first,
+        // fall back to the unreadable bridge id. The name has to belong to this operation.
+        if (enqueue) _autoflashQueue.Writer.TryWrite((id, LabelFor(id)));
         else if (skipReason is not null)
             Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, skipReason, LabelFor(id)));
     }
@@ -1122,13 +1131,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
     {
         try
         {
-            await foreach (var id in _autoflashQueue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            await foreach (var (id, label) in _autoflashQueue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 AutoflashConfig? armed;
                 lock (_gate) armed = State.Autoflash;
                 if (armed is null)
                 {
-                    Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "disarmed before flash"));
+                    Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "disarmed before flash", label));
                     continue;
                 }
 
@@ -1139,7 +1148,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     FlashOutcome.Failed => (AutoflashOutcomeKind.Failed, State.Find(id)?.LastError),
                     _ => (AutoflashOutcomeKind.Skipped, State.Find(id)?.LastError ?? "skipped"),
                 };
-                Emit(new AppEvent.AutoflashOutcome(id, kind, detail, LabelFor(id)));
+                Emit(new AppEvent.AutoflashOutcome(id, kind, detail, label));
             }
         }
         catch (OperationCanceledException) { /* service disposing */ }

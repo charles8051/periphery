@@ -58,6 +58,23 @@ public class ProbePresentationTests
     }
 
     [Fact]
+    public void The_label_belongs_to_the_operation_that_produced_it()
+    {
+        // A fixture reuses one DeviceId across boards, and its row's identity moves on as later
+        // probes arrive. Reading the label at completion would describe the board that came next —
+        // or, if the row was retracted first, fall back to the unreadable bridge id. Passing it in
+        // is what pins each entry to the flash that produced it.
+        var id = new DeviceId(@"USB\VID_10C4&PID_EA60\92EA014C");
+
+        var tally = AutoflashTally.Empty
+            .With(AutoflashOutcomeKind.Flashed, id, null, "COM7 (fixture, 0x468)")
+            .With(AutoflashOutcomeKind.Flashed, id, null, "COM7 (fixture, 0x413)");
+
+        Assert.Equal("flashed COM7 (fixture, 0x468)", tally.Audit[0]);
+        Assert.Equal("flashed COM7 (fixture, 0x413) #2", tally.Audit[1]);
+    }
+
+    [Fact]
     public void The_audit_falls_back_to_the_id_when_no_label_is_given()
     {
         var tally = AutoflashTally.Empty.With(AutoflashOutcomeKind.Flashed, new DeviceId("dfu-1"), null);

@@ -19,7 +19,7 @@
       <ComboBox ItemsSource="{Binding Families}" SelectedItem="{Binding SelectedFamily}" MinWidth="150" />
       <ComboBox ItemsSource="{Binding Ports}" SelectedItem="{Binding SelectedPort}" MinWidth="90"
                 PlaceholderText="Fixture" ToolTip.Tip="The serial fixture to bind. Required for probe-identified families." />
-      <CheckBox Content="Repeat" IsChecked="{Binding Repeat}"
+      <CheckBox Content="Repeat" IsChecked="{Binding Repeat}" IsEnabled="{Binding CanRepeat}"
                 ToolTip.Tip="Let a bound fixture flash a succession of boards. Departure is inferred from silence." />
       <Button Content="Arm" Command="{Binding ArmCommand}" />
       <Button Content="Disarm" Command="{Binding DisarmCommand}" />

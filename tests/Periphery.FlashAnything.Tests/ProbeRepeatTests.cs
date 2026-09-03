@@ -225,7 +225,13 @@ public class ProbeRepeatTests
         {
             await ArmedAsync(rig, fw, RepeatMode.Silence);
 
-            // Flap the fixture hard: every answer can start a flash, every silence can retract.
+            // Get one flash on the board first, so the assertion below cannot pass by nothing
+            // having happened — that made it flaky, because the flapping alone does not guarantee
+            // a flash starts.
+            rig.Provider.Answers = true;
+            await WaitUntil(() => Volatile.Read(ref rig.Provider.MaxConcurrentFlashes) >= 1, "a flash started");
+
+            // Then flap the fixture hard: every answer can start another, every silence can retract.
             for (int i = 0; i < 40; i++)
             {
                 rig.Provider.Answers = i % 2 == 0;

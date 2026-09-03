@@ -50,6 +50,13 @@ public sealed record AutoflashConfig(string Family, FlashOptions Options)
     /// (adr.md Decision 8).
     /// </summary>
     public ImmutableHashSet<BridgeIdentity> Bridges { get; init; } = ImmutableHashSet<BridgeIdentity>.Empty;
+
+    /// <summary>
+    /// The ports the operator named at arm time. Kept for display only — <see cref="Bridges"/> is
+    /// what authorises anything. A front-end must render the fixture it armed from here rather than
+    /// from a live picker, which the operator can change afterwards.
+    /// </summary>
+    public ImmutableArray<SerialPortName> BoundPorts { get; init; } = ImmutableArray<SerialPortName>.Empty;
 }
 
 /// <summary>What autoflash should do for one detected target. A closed union.</summary>

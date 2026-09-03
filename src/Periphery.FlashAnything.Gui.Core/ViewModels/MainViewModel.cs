@@ -74,7 +74,7 @@ public partial class MainViewModel : ObservableObject
             foreach (var t in state.Targets)
             {
                 string mode = t.RebootsToFlash ? " (application)" : "";
-                string summary = $"{t.DisplayName} [{t.ProviderName}]{mode} - {t.Stage} {t.Percent}%"
+                string summary = $"{t.OperatorLabel} [{t.ProviderName}]{mode} - {t.Stage} {t.Percent}%"
                     + (t.LastError is { } error ? $" - {error}" : "");
                 if (existing.Remove(t.Id, out var row))
                     row.Summary = summary;
@@ -107,7 +107,10 @@ public partial class MainViewModel : ObservableObject
 
             IsArmed = state.Autoflash is not null;
             AutoflashStatus = state.Autoflash is { } cfg
-                ? $"ARMED [{cfg.Family}]{(cfg.Bridges.IsEmpty ? "" : $" on {SelectedPort}")}  " +
+                // From the config, not the picker: the operator can change the combo box after
+                // arming, and the port can vanish from the list entirely. The session is bound to
+                // what it was armed with.
+                ? $"ARMED [{cfg.Family}]{(cfg.BoundPorts.IsDefaultOrEmpty ? "" : $" on {string.Join(", ", cfg.BoundPorts.Select(x => x.Value))}")}  " +
                   $"{(state.AutoflashTally.CountsDistinctBoards ? "flashed" : "flashes")} {state.AutoflashTally.Flashed}" +
                   $" / failed {state.AutoflashTally.Failed} / skipped {state.AutoflashTally.Skipped}"
                 : "Disarmed.";
@@ -130,13 +133,17 @@ public partial class MainViewModel : ObservableObject
     /// VID/PID names the bridge, never the part behind it, so autoflash has no way to know which
     /// fixture was meant (adr.md Decision 8).
     /// </summary>
-    [ObservableProperty] private string? _selectedPort;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ArmCommand))]
+    private string? _selectedPort;
 
     /// <summary>
     /// Whether a bound fixture may flash a succession of boards. Off by default: departure is
     /// inferred from silence, which cannot tell a board that left from one that reset in place.
     /// </summary>
-    [ObservableProperty] private bool _repeat;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ArmCommand))]
+    private bool _repeat;
 
     /// <summary>True when the chosen family needs a fixture bound before it can be armed.</summary>
     public bool NeedsPort => SelectedFamily is { } family && _service.FamilyNeedsPort(family);
@@ -150,7 +157,13 @@ public partial class MainViewModel : ObservableObject
         SelectedFamily!,
         FlashOptions.Default,
         SelectedPort is { } port ? [new SerialPortName(port)] : ImmutableArray<SerialPortName>.Empty,
-        Repeat ? RepeatMode.Silence : RepeatMode.None));
+        // Repeat only means anything for a bound fixture: it re-arms when a probe row is retracted,
+        // and a passive family has no probe row. Passing it anyway would mark the session as unable
+        // to attribute flashes to distinct boards while nothing could ever reopen the gate.
+        Repeat && CanRepeat ? RepeatMode.Silence : RepeatMode.None));
+
+    /// <summary>Whether a succession of boards is on offer for the family currently chosen.</summary>
+    public bool CanRepeat => NeedsPort && !string.IsNullOrEmpty(SelectedPort);
 
     private bool CanDisarm() => _service.State.Autoflash is not null;
 
