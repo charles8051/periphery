@@ -1,7 +1,7 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
 status: "Proposed"
-status_note: "Package shapes, TFM matrix, and dependency chains derived from the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44), inspected 2026-09-02. No library code written; scratch/BluetoothAssetProbe measures the remaining open questions on hardware."
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware."
 date: "2026-09-02"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm"]
@@ -141,6 +141,40 @@ Win32 path "can only determine version up to Bluetooth 2.1". A consumer reading
 `LmpVersion` gets a different answer depending on the TFM the *package* was built
 for, which is not a choice they can see.
 
+### 6. `net10.0-windows` gets the Linux BLE provider, and it throws on Windows
+
+Context §3 read the BLE package's assets statically. `scratch/BleAssetProbe`
+executes the three cases — no hardware, availability only:
+
+| TFM | Asset | Provider | `Bluetooth.GetAvailabilityAsync()` |
+|---|---|---|---|
+| `net10.0` | 89,600 B | BlueZ (`Linux.Bluetooth`, `Tmds.DBus`) | `ConnectException: No path specified for UNIX transport` |
+| `net10.0-windows` | 89,600 B, **same MVID** | BlueZ | same `ConnectException` |
+| `net10.0-windows10.0.19041` | 93,696 B | WinRT (`Microsoft.Windows.SDK.NET`, `WinRT.Runtime`) | `true` |
+
+`net10.0-windows` is not a partial win over the bare target. It is byte-identical
+to it. Upstream's only Windows BLE asset is `net9.0-windows10.0.19041`, which a
+`net10.0-windows7.0` project cannot consume, so NuGet falls all the way back to
+the bare asset — and that asset reaches for a D-Bus socket on Windows.
+
+The same fallback governs the dependency graph, and it does **not** behave the
+same way for the two packages. Measured by restoring a project at each TFM
+against the 32feet package directly:
+
+| Consumer TFM | Package | `Linux.Bluetooth` + `Tmds.DBus`? |
+|---|---|---|
+| `net8.0` | `InTheHand.Net.Bluetooth` | yes |
+| `net8.0-windows` | `InTheHand.Net.Bluetooth` | **no** |
+| `net10.0-windows` | `InTheHand.BluetoothLE` | **yes** |
+
+NuGet picks a dependency group by the *consuming project's* framework, not by
+which `lib/` asset an intermediate package resolved. So a consumer's own TFM
+decides their exposure, and a wrapper cannot hand them a cleaner graph than their
+TFM earns. The classic package has a Windows dependency group at `net8.0-windows`
+and is clean there; the BLE package's only Windows group is at 10.0.19041, so
+every Windows consumer below that version gets the vulnerable chain *and* the
+broken provider.
+
 ---
 
 ## Decision
@@ -189,21 +223,60 @@ and the `netstandard2.0` fallback is a throw-only stub, so a `net8.0` target
 would ship a package that compiles and then fails at first call on every
 platform. The other packages keep `net8.0;net10.0` per ADR-0069.
 
+**A `net10.0-windows` target is added, and its only job is to fail loudly.**
+Context §6 measured what happens without one: NuGet hands that consumer the bare
+BlueZ asset, the package compiles, and the first call throws
+`ConnectException: No path specified for UNIX transport`. Offering the 10.0.19041
+asset does not prevent that — nothing about a *missing* TFM stops NuGet falling
+back to a compatible one.
+
+So the TFM exists, carries no BLE surface, and fails at build with a message
+naming what to do:
+
+```xml
+<Target Name="BleRequiresWindows10" BeforeTargets="Build"
+        Condition="'$(TargetFramework)' == 'net10.0-windows'">
+  <Error Text="Periphery.Ble.InTheHand needs net10.0-windows10.0.19041 or later on
+               Windows. 32feet's only Windows GATT asset targets 10.0.19041, so an
+               unversioned Windows target resolves the Linux BlueZ provider and
+               throws at first call. Raise your TargetFramework." />
+</Target>
+```
+
+A build error a consumer can act on beats a Unix-socket exception at run time on
+a machine with no Unix sockets. The alternative — say nothing and let it throw —
+was rejected because the failure gives no hint that the TFM is the cause.
+
 `Periphery.Bluetooth.InTheHand` needs none of this to *function* — its bare asset
 works on Windows. D4 gives it a Windows TFM anyway, for a different reason.
 
 ### D4 — Both packages carry a Windows TFM, and the advisory is surfaced rather than suppressed
 
-Context §4 changes what D3 is for. An OS-specific Windows TFM is not only how the
-BLE package reaches WinRT GATT; it is also the only way either package avoids
-handing a Windows consumer `Linux.Bluetooth` and `Tmds.DBus` 0.20.0. So
-`Periphery.Bluetooth.InTheHand` takes one too, even though its bare asset works
-on Windows:
+An OS-specific Windows TFM is not only how the BLE package reaches WinRT GATT; it
+is also how a Windows consumer avoids `Linux.Bluetooth` and `Tmds.DBus` 0.20.0.
+So `Periphery.Bluetooth.InTheHand` takes one too, even though its bare asset
+works on Windows:
 
 ```
 Periphery.Bluetooth.InTheHand   net8.0;net10.0;net10.0-windows
-Periphery.Ble.InTheHand         net10.0;net10.0-windows10.0.19041
+Periphery.Ble.InTheHand         net10.0;net10.0-windows;net10.0-windows10.0.19041
 ```
+
+**The claim this decision can support, stated exactly.** Context §6 measured that
+NuGet selects a dependency group by the *consumer's* TFM. So the packages do not
+control anyone's dependency graph; the consumer's own TFM does, and these TFM
+sets decide only what a consumer is able to reach:
+
+| Consumer targets | Classic package | BLE package |
+|---|---|---|
+| `net8.0` / `net10.0` (bare) | vulnerable chain | vulnerable chain |
+| `net8.0-windows` | clean | n/a — package has no `net8.0` |
+| `net10.0-windows` | clean | **build error** (D3), because the alternative is a broken provider *and* the chain |
+| `net10.0-windows10.0.19041` | clean | clean |
+
+An earlier draft of this decision claimed "a Windows consumer of either package
+inherits no `Tmds.DBus`". That was wrong for the BLE package below 10.0.19041,
+which is what D3's build error now closes.
 
 `net10.0-windows` rather than `net10.0-windows10.0.19041` for the classic
 package. Two reasons, and one of them cuts the other way. In favour: it binds the
@@ -280,8 +353,11 @@ then the name stays unclaimed rather than being spent on a wrapper.
 - Windows gains a live Bluetooth liveness signal for the first time. A poll over
   `BluetoothDeviceInfo.Connected`, joined by D5, closes the gap in Context §1 —
   measured to agree with `IsActive` in both directions.
-- A Windows consumer of either package inherits no `Tmds.DBus` and no CVE, via
-  D4's Windows TFMs. A consumer of `Periphery` core inherits nothing either way.
+- A Windows consumer who targets a Windows TFM can reach a clean graph — no
+  `Tmds.DBus`, no CVE — via D4's table. A consumer of `Periphery` core inherits
+  nothing either way.
+- The BLE package's worst failure mode is now a build error naming the fix,
+  instead of a Unix-socket exception on a Windows machine.
 - The BR/EDR half works on Periphery's existing bare TFM set; the Windows TFM D4
   adds to it is a dependency-hygiene measure, not a correctness one.
 

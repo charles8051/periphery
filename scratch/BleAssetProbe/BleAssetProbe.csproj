@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Deliberately small, and deliberately separate from BluetoothAssetProbe.
+         That probe binds InTheHand.Net.Bluetooth and says nothing about the BLE
+         package that ADR-0085 D3 makes its TFM decision from. This one covers the
+         BLE package only, and only the asset-selection question — no hardware, no
+         GATT traffic, no paired-device dependency.
+
+           net10.0                     -> InTheHand.BluetoothLE lib/net9.0        (BlueZ)
+           net10.0-windows             -> lib/net9.0 as well, which is the bug D3 has
+                                          to answer for: a bare-Windows consumer gets
+                                          the Linux provider
+           net10.0-windows10.0.19041   -> lib/net9.0-windows10.0.19041            (WinRT)
+
+         net8.0 is absent on purpose: upstream has no net8.0 asset and the
+         netstandard2.0 fallback is a throw-only stub (ADR-0085 Context 3). -->
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net10.0;net10.0-windows;net10.0-windows10.0.19041</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="InTheHand.BluetoothLE" Version="4.0.44" />
+  </ItemGroup>
+
+</Project>

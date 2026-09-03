@@ -192,6 +192,7 @@ if (watchSeconds > 0)
     Console.WriteLine("  32feet is polled at 1s; Periphery is re-enumerated at 1s.\n");
 
     var last = new Dictionary<string, (bool Conn, bool Active)>(StringComparer.OrdinalIgnoreCase);
+    var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     var deadline = DateTime.UtcNow.AddSeconds(watchSeconds);
     var started = Stopwatch.StartNew();
 
@@ -203,16 +204,34 @@ if (watchSeconds > 0)
         foreach (var d in paired)
         {
             string addr = d.DeviceAddress.ToString();
-            var node = nodes.FirstOrDefault(n =>
+
+            // One address can carry more than one DEV_ node: a dual-mode peripheral
+            // exposes BTHENUM and BTHLE for the same BD_ADDR, and a stale devnode can
+            // outlive the link. Their IsActive values are not interchangeable, so
+            // picking whichever enumeration returned first would make the comparison
+            // below say something about an unknown node. Report ambiguity instead.
+            var candidates = nodes.Where(n =>
             {
                 var m = Probe.JoinKey.Match(n.Id.Value);
                 return m.Success && string.Equals(m.Groups["addr"].Value, addr, StringComparison.OrdinalIgnoreCase);
-            });
+            }).ToList();
 
+            if (candidates.Count > 1)
+            {
+                if (ambiguous.Add(addr))
+                    Console.WriteLine($"  {started.Elapsed.TotalSeconds,6:F1}s  {Mask(addr),-18}  " +
+                                      $"AMBIGUOUS — {candidates.Count} nodes for this address, not compared:");
+                foreach (var c in candidates)
+                    Console.WriteLine($"           {Prefix(c.Id.Value),-28}  IsActive={Yn(c.IsActive)}  {c.Name}");
+                continue;
+            }
+
+            var node = candidates.Count == 1 ? candidates[0] : null;
             var now = (Conn: d.Connected, Active: node?.IsActive ?? false);
             if (last.TryGetValue(addr, out var prev) && prev == now) continue;
 
             string what = !last.ContainsKey(addr) ? "baseline"
+                : node is null ? "no node"
                 : prev.Conn != now.Conn && prev.Active != now.Active ? "both"
                 : prev.Conn != now.Conn ? "32feet only"
                 : "Periphery only";
