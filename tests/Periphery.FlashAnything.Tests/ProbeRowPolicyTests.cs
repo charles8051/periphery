@@ -29,7 +29,7 @@ public class ProbeRowPolicyTests
 
         Assert.Equal(G431, Assert.IsType<ProbeRowAction.Detected>(action).Identity);
         Assert.True(state.Occupied);
-        Assert.True(state.Reported);
+        Assert.Equal(G431, state.Reported);
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class ProbeRowPolicyTests
         var (state, action) = ProbeRowPolicy.Advance(occupied, Silent);
 
         Assert.IsType<ProbeRowAction.None>(action);
-        Assert.True(state.Reported);
+        Assert.Equal(G431, state.Reported);
         Assert.False(state.Occupied);
     }
 
@@ -67,7 +67,7 @@ public class ProbeRowPolicyTests
             (state, last) = ProbeRowPolicy.Advance(state, Silent);
 
         Assert.IsType<ProbeRowAction.Removed>(last);
-        Assert.False(state.Reported);
+        Assert.Null(state.Reported);
     }
 
     [Fact]
@@ -101,6 +101,22 @@ public class ProbeRowPolicyTests
         var (_, action) = ProbeRowPolicy.Advance(retracted, Answered);
 
         Assert.IsType<ProbeRowAction.Detected>(action);
+    }
+
+    [Fact]
+    public void A_different_part_appearing_is_reported_even_without_a_retraction()
+    {
+        // A fixture swapped inside the retraction window never goes quiet long enough to retract,
+        // so comparing against the claimed identity is the only thing that notices. It cannot
+        // separate two boards of the same part number - both answer 0x468, which is why Decision 10
+        // gates on departure rather than identity - but a different part must not go unreported.
+        var occupied = Run(ProbeRowState.Initial, Answered);
+        var f103 = G431 with { Chip = "0x413" };
+
+        var (state, action) = ProbeRowPolicy.Advance(occupied, new ProbeOutcome.Occupied(f103));
+
+        Assert.Equal(f103, Assert.IsType<ProbeRowAction.Detected>(action).Identity);
+        Assert.Equal(f103, state.Reported);
     }
 
     [Fact]

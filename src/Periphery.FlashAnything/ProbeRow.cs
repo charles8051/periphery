@@ -58,11 +58,16 @@ public abstract record ProbeRowAction
 /// </summary>
 /// <param name="Occupied">A bootloader answered on the last cycle.</param>
 /// <param name="Silences">Consecutive no-response cycles; zero whenever something answered.</param>
-/// <param name="Reported">Whether a <c>Detected</c> has been emitted and not yet retracted.</param>
-public readonly record struct ProbeRowState(bool Occupied, int Silences, bool Reported)
+/// <param name="Reported">
+/// The identity currently claimed for this row, or <see langword="null"/> when nothing is claimed.
+/// Held rather than reduced to a flag so a changed answer can be noticed: a fixture swapped inside
+/// the retraction window never goes silent long enough to retract, and without the previous
+/// identity to compare against, the new part would never be reported at all.
+/// </param>
+public readonly record struct ProbeRowState(bool Occupied, int Silences, DeviceIdentity? Reported)
 {
     /// <summary>Before the first cycle: nothing observed, nothing claimed.</summary>
-    public static readonly ProbeRowState Initial = new(false, 0, false);
+    public static readonly ProbeRowState Initial = new(false, 0, null);
 
     /// <summary>
     /// True once the row has been silent long enough that probing should slow down. The row is not
@@ -79,8 +84,18 @@ public readonly record struct ProbeRowState(bool Occupied, int Silences, bool Re
 /// The safety-relevant part is that presence is only ever claimed from an answer, while absence
 /// needs several consecutive silences — because a single silence is routine. A part resets, a
 /// bridge drops a byte, a flash finishes and the part jumps to its application. Retracting a row
-/// on the first quiet cycle would make the row flicker and, under
-/// <c>--repeat</c>, reopen the dedupe gate on noise.
+/// on the first quiet cycle would make the row flicker.
+/// </para>
+/// <para>
+/// <b>What this does not decide.</b> <see cref="ProbeRowAction.Removed"/> retracts a <i>row</i>; it
+/// does not reopen the autoflash dedupe gate. adr.md Decision 10 defaults to one flash per bound
+/// bridge per armed session - Decision 5 unchanged - and only <c>--repeat</c> reopens it, with
+/// <c>--repeat=cts</c> requiring a present-detect line rather than inference. A board that goes
+/// quiet for three cycles while seated is therefore re-reported here and still not re-flashed,
+/// unless the operator asked for a fixture loop. Where they have, the residual is
+/// <see cref="ProbeOutcome.NoResponse"/>: silence cannot tell a reset from a departure, which is
+/// why the driving loop must make <see cref="SilencesBeforeRemoved"/> cycles comfortably longer
+/// than a part takes to reset.
 /// </para>
 /// </summary>
 public static class ProbeRowPolicy
@@ -106,13 +121,21 @@ public static class ProbeRowPolicy
             case ProbeOutcome.Occupied occupied:
                 // An answer is the only thing that establishes presence, and it resets everything:
                 // the silence run, the backoff, and — if the row had been retracted — the claim.
-                return (new ProbeRowState(Occupied: true, Silences: 0, Reported: true),
-                        state.Reported ? ProbeRowAction.None.Instance : new ProbeRowAction.Detected(occupied.Identity));
+                //
+                // A *changed* answer re-reports. A board swapped inside the retraction window never
+                // goes quiet long enough to retract the row, so comparing against the claimed
+                // identity is the only thing that notices it. This cannot separate two boards of the
+                // same part number - both answer 0x468, which is the whole reason adr.md Decision 10
+                // gates on departure rather than identity - but it does catch a different part
+                // appearing on the fixture, and reporting that is strictly better than not.
+                bool isNew = state.Reported is not { } claimed || claimed != occupied.Identity;
+                return (new ProbeRowState(Occupied: true, Silences: 0, Reported: occupied.Identity),
+                        isNew ? new ProbeRowAction.Detected(occupied.Identity) : ProbeRowAction.None.Instance);
 
             case ProbeOutcome.NoResponse:
                 int silences = state.Silences + 1;
-                bool retract = state.Reported && silences >= SilencesBeforeRemoved;
-                return (new ProbeRowState(Occupied: false, Silences: silences, Reported: state.Reported && !retract),
+                bool retract = state.Reported is not null && silences >= SilencesBeforeRemoved;
+                return (new ProbeRowState(Occupied: false, Silences: silences, Reported: retract ? null : state.Reported),
                         retract ? ProbeRowAction.Removed.Instance : ProbeRowAction.None.Instance);
 
             case ProbeOutcome.TransportFailed failed:
