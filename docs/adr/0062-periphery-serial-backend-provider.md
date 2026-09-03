@@ -307,6 +307,16 @@ a decision made for the wrong reason.
   `BaudRate` on an open port while a background `ReadAsync` is outstanding. The ESP32 reset dance
   needs exactly this, on every serial path. These are separate ioctls from a read and are expected
   to work; that expectation is untested, and it sets the shape of `ISerialPort`'s DTR/RTS methods.
+
+  *One data point (2026-09-02, STM32G431 behind a CP210x).* Setting `DtrEnable`/`RtsEnable` after
+  open, in both states, changed nothing about whether the part answered — that board wires neither
+  line to NRST or BOOT0, so it says nothing about a board that does. It did surface a **backend
+  difference worth knowing before `ISerialPort` fixes its open semantics**: `RJCP.SerialPortStream`
+  opens with `DTR=True RTS=True`, and the BCL `SerialPort` opens with both false. On a board using
+  the common auto-reset circuit, those two backends would do visibly different things at open —
+  under DEC-003 a consumer could switch backend and silently change whether their part gets reset.
+  `ISerialPort` should specify the state of the control lines at open rather than inherit whatever
+  the backend does.
 - **Whether `SetDtrAsync`/`SetRtsAsync` should be async at all.** DEC-002 declares them `Task`-returning.
   The underlying operations are synchronous property writes in both `System.IO.Ports` and
   `RJCP.SerialPortStream`. Worth revisiting when the backends are written.
