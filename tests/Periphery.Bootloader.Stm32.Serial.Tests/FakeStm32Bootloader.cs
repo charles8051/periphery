@@ -28,6 +28,12 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
     private bool _synced;
 
+    /// <summary>
+    /// Start in the command loop, as a part does when anything opened the port before us. The
+    /// sync byte is then an opcode, not a sync byte, and the part waits for its complement.
+    /// </summary>
+    public bool StartSynced { get => _synced; init => _synced = value; }
+
     /// <summary>Bytes the device corrupts on write, keyed by absolute address — to force a verify failure.</summary>
     public Dictionary<uint, byte> CorruptOnWrite { get; } = new();
 
@@ -115,13 +121,21 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
                 byte command = await ReadByteAsync(reader, ct).ConfigureAwait(false);
                 _commandsHandled++;
 
-                if (command == 0x7F)
+                if (command == 0x7F && !_synced)
                 {
-                    // AN3155 3.1: the first sync since reset is ACKed; a second is NACKed.
-                    await SendAsync(writer, new[] { _synced ? Nack : Ack }, ct).ConfigureAwait(false);
+                    // AN3155 3.1: the first 0x7F since reset drives autobaud and is ACKed.
+                    await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
                     _synced = true;
                     continue;
                 }
+
+                // Once synced there is no sync byte any more — the bootloader is in its command
+                // loop, and 0x7F is just an opcode that falls through to the complement read
+                // below and NACKs as unimplemented. Modelling it as an immediate NACK (what this
+                // fake used to do) is the bug that let Stm32SerialProgrammer.SyncAsync ship
+                // believing an already-synced part answers a second sync byte. Real silicon says
+                // nothing at all until the frame is completed: verified against an STM32G431
+                // (PID 0x468, bootloader 3.1) on 2026-09-02.
 
                 byte complement = await ReadByteAsync(reader, ct).ConfigureAwait(false);
                 if ((byte)(command ^ complement) != 0xFF)

@@ -30,6 +30,7 @@ public sealed record Stm32SerialOptions
     private readonly int _erasePageSize = 2048;
     private readonly int _writeChunkSize = MaxTransferSize;
     private readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _syncTimeout = TimeSpan.FromMilliseconds(500);
     private readonly TimeSpan _eraseTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>Port rate. The bootloader autobauds, so this only has to be one it supports (1200–115200).</summary>
@@ -89,6 +90,23 @@ public sealed record Stm32SerialOptions
         {
             ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
             _commandTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// How long the AN3155 sync handshake waits for an answer. Deliberately much shorter than
+    /// <see cref="CommandTimeout"/>: on a part that has already synced since reset, the sync byte
+    /// is taken as a command opcode and silence is the <i>expected</i> first outcome, so this
+    /// deadline is paid on every open of an already-synced part rather than only on a failure.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Not positive.</exception>
+    public TimeSpan SyncTimeout
+    {
+        get => _syncTimeout;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
+            _syncTimeout = value;
         }
     }
 

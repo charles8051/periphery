@@ -42,6 +42,9 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     private const byte Ack = 0x79;
     private const byte Nack = 0x1F;
 
+    /// <summary>AN3155 section 3.1 autobaud byte. Also, to an already-synced part, an opcode.</summary>
+    private const byte SyncByte = 0x7F;
+
     private readonly Stm32BootloaderClient _client;
     private readonly ITransceiver _transceiver;
     private readonly IDuplexPipe _pipe;
@@ -284,14 +287,32 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
 
     // ── shell helpers (own the timing, ADR-0052 DEC-004) ──
 
-    private async Task SyncAsync(CancellationToken ct)
+    /// <summary>
+    /// The AN3155 handshake. Internal rather than private so the pipe-driven tests can reach it:
+    /// it used to be reachable only through <see cref="OpenAsync"/>, which needs a real port, so
+    /// nothing covered it and a wrong reading of section 3.1 shipped.
+    /// </summary>
+    internal async Task SyncAsync(CancellationToken ct)
     {
-        // AN3155 section 3.1: 0x7F at 8E1 drives the bootloader's autobaud and it answers ACK. A
-        // device that already synced since reset answers NACK instead — also a live bootloader, so
-        // both are success. Only silence (our timeout) or a junk byte is a failure.
+        // AN3155 section 3.1: 0x7F at 8E1 drives the bootloader's autobaud and it answers ACK —
+        // but ONLY on a part that has not synced since reset. Once synced, the bootloader is in
+        // its command loop, where 0x7F is an opcode: it takes the byte and waits for the
+        // complement that a command frame carries second. It does not answer, and it does not
+        // NACK. It waits.
+        //
+        // That state is the common one, not the exotic one. Anything that opened the port before
+        // us — a terminal, a previous flash, the probe loop, an operator checking the port is
+        // alive — leaves the part synced with our 0x7F pending as half a command frame. Sending
+        // one more 0x7F then completes THAT frame with a bad checksum instead of syncing, which
+        // is how a stray byte turns into a permanently desynchronised session.
+        //
+        // So: try the sync byte, and read the three answers a live bootloader can give.
+        byte answer;
         try
         {
-            await WithTimeout(_options.CommandTimeout, ct, t => _client.Ping(t)).ConfigureAwait(false);
+            var reply = await WithTimeout(_options.SyncTimeout, ct,
+                t => _transceiver.SendReceiveExactly(new byte[] { SyncByte }, 1, t)).ConfigureAwait(false);
+            answer = reply.Span[0];
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -299,10 +320,56 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         }
         catch (Exception ex)
         {
+            // Silence. Either nothing is there, or a synced bootloader is holding our sync byte
+            // as an opcode. Complete the frame and find out which — 0x7F's complement is 0x80,
+            // and 0x7F is not a command any documented bootloader implements, so a live part
+            // answers NACK to the completed frame. That also clears the pending byte, which is
+            // the repair: whatever happens next starts from a clean command boundary.
+            if (await CompletesAsAlreadySyncedAsync(ct).ConfigureAwait(false))
+                return;
+
             throw new Stm32SerialException(
-                "no valid answer to the AN3155 sync byte (0x7F). Check that the part is in " +
-                "system-bootloader mode (BOOT0 asserted and reset), that the port is the right one, " +
-                "and that RX/TX are not swapped.", ex);
+                "no valid answer to the AN3155 sync byte (0x7F), and no answer to a completed " +
+                "command frame either. Check that the part is in system-bootloader mode (BOOT0 " +
+                "asserted and reset), that the port is the right one, and that RX/TX are not swapped.", ex);
+        }
+
+        // ACK is a fresh autobaud sync. NACK means the part was already in its command loop and
+        // our byte completed some earlier partial frame — either way it is a live bootloader on
+        // a known command boundary.
+        if (answer is Ack or Nack)
+            return;
+
+        throw new Stm32SerialException(
+            $"the AN3155 sync byte (0x7F) was answered with 0x{answer:X2}, which is neither ACK " +
+            $"(0x{Ack:X2}) nor NACK (0x{Nack:X2}). Check the baud rate and that 8E1 framing is " +
+            "reaching the part.");
+    }
+
+    /// <summary>
+    /// Completes the command frame a synced bootloader started when it took our sync byte as an
+    /// opcode, and reports whether a live part answered. Sends the complement of
+    /// <see cref="SyncByte"/> and accepts NACK — the defined answer to an unimplemented command.
+    /// </summary>
+    private async Task<bool> CompletesAsAlreadySyncedAsync(CancellationToken ct)
+    {
+        try
+        {
+            var reply = await WithTimeout(_options.SyncTimeout, ct,
+                t => _transceiver.SendReceiveExactly(new byte[] { unchecked((byte)~SyncByte) }, 1, t))
+                .ConfigureAwait(false);
+
+            // NACK is the expected answer. Accept ACK too rather than failing a live part on a
+            // bootloader that implements 0x7F as something benign.
+            return reply.Span[0] is Nack or Ack;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
         }
     }
 
