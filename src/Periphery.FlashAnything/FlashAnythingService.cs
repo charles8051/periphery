@@ -101,6 +101,18 @@ public sealed class FlashAnythingService : IAsyncDisposable
         Channel.CreateUnbounded<DeviceId>(new() { SingleReader = false, SingleWriter = false });
     private readonly HashSet<DeviceId> _flashedThisSession = new();
     private readonly CancellationTokenSource _cts = new();
+
+    // One probe loop per bound bridge, alive only while armed on a probe family. Guarded by _gate.
+    private readonly Dictionary<BridgeIdentity, (Task Task, CancellationTokenSource Cts)> _probeLoops = new();
+
+    /// <summary>Interval between probes on a live row. Overridable for tests.</summary>
+    internal TimeSpan ProbeCadence { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>Interval once a row has stalled — a fixture that has been sitting empty.</summary>
+    internal TimeSpan StalledProbeCadence { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>How the probe loops wait. Injected so tests drive the cadence without sleeping.</summary>
+    internal Func<TimeSpan, CancellationToken, Task> ProbeDelay { get; init; } = (d, ct) => Task.Delay(d, ct);
     private readonly Task[] _autoflashWorkers;
 
     private FirmwarePayload? _payload;  // the parsed firmware payload, loaded once and flashed many; guarded by _gate
@@ -303,6 +315,18 @@ public sealed class FlashAnythingService : IAsyncDisposable
             }
             bool isNew;
             lock (_gate) { isNew = !_devices.ContainsKey(device.Id); _devices[device.Id] = device; }
+
+            // Detection ownership (adr.md Decision 9). While a probe family is armed on this
+            // bridge, the loop is the only thing that may say a target is present — it is the only
+            // thing that has actually asked. Letting the watcher emit as well would produce two
+            // detections for one physical target, and MaybeAutoflash fires on the first: a double
+            // flash, a flash dispatched before the probe established there is an STM32 there at
+            // all, or two opens of one port.
+            if (bridge is { } bound && IsArmedOnBridge(bound))
+            {
+                _logger.LogDebug("Discovery: {Id} is on bound bridge {Bridge}; its probe loop owns detection.", device.Id, bound);
+                return;
+            }
             _logger.LogInformation("Discovery: detected {Kind} {Mode} target {Id} '{Name}' [{Family}] status={Status}.",
                 isNew ? "new" : "existing", mode, device.Id, DisplayName(device), family, state.ActivityStatus);
             Emit(new AppEvent.TargetDetected(device.Id, DisplayName(device), family, identification, mode, bridge));
@@ -676,6 +700,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
         lock (_gate) _flashedThisSession.Clear();
         Emit(new AppEvent.AutoflashArmed(new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges }));
 
+        StartProbeLoops(bridges);
+
         // Evaluate targets already present at arm time (arming a bench with boards already connected).
         foreach (var id in State.Targets.Select(t => t.Id).ToList())
             MaybeAutoflash(id);
@@ -748,8 +774,104 @@ public sealed class FlashAnythingService : IAsyncDisposable
 
     private void DisarmAutoflash()
     {
+        StopProbeLoops();
         lock (_gate) _flashedThisSession.Clear();
         Emit(new AppEvent.AutoflashDisarmed());
+    }
+
+    /// <summary>Whether a probe loop is currently running for this bridge.</summary>
+    private bool IsArmedOnBridge(BridgeIdentity bridge)
+    {
+        lock (_gate) return _probeLoops.ContainsKey(bridge);
+    }
+
+    /// <summary>
+    /// Starts one loop per bound bridge. Cancellation is the operator disarming, and it is the
+    /// stop — a fixture sitting empty is the normal resting state, so a loop slows down rather
+    /// than giving up.
+    /// </summary>
+    private void StartProbeLoops(ImmutableHashSet<BridgeIdentity> bridges)
+    {
+        StopProbeLoops();
+        if (bridges.IsEmpty || _registry.Providers.FirstOrDefault(
+                p => string.Equals(p.Name, State.Autoflash?.Family, StringComparison.Ordinal)) is not { } provider)
+        {
+            return;
+        }
+
+        foreach (var bridge in bridges)
+        {
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            var loop = new SerialProbeLoop(
+                bridge, ResolveBoundBridge, provider, action => OnProbeAction(bridge, action),
+                ProbeDelay, ProbeCadence, StalledProbeCadence);
+
+            var task = Task.Run(() => loop.RunAsync(cts.Token), cts.Token);
+            lock (_gate) _probeLoops[bridge] = (task, cts);
+            _logger.LogInformation("Autoflash: probing {Bridge} every {Cadence}.", bridge, ProbeCadence);
+        }
+    }
+
+    private void StopProbeLoops()
+    {
+        (Task, CancellationTokenSource)[] running;
+        lock (_gate)
+        {
+            running = _probeLoops.Values.Select(v => (v.Task, v.Cts)).ToArray();
+            _probeLoops.Clear();
+        }
+
+        foreach (var (_, cts) in running)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+    }
+
+    /// <summary>Finds the device currently behind a bound bridge, or null if it is no longer present.</summary>
+    private DeviceInfo? ResolveBoundBridge(BridgeIdentity bridge)
+    {
+        lock (_gate)
+        {
+            foreach (var device in _devices.Values)
+            {
+                if (device.PortName is not null
+                    && BridgeIdentity.TryFrom(device, out var identity, out _)
+                    && identity == bridge)
+                {
+                    return device;
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Turns one probe row action into the app's existing target lifecycle.</summary>
+    private void OnProbeAction(BridgeIdentity bridge, ProbeRowAction action)
+    {
+        if (ResolveBoundBridge(bridge) is not { } device)
+            return;
+
+        switch (action)
+        {
+            case ProbeRowAction.Detected detected:
+                Emit(new AppEvent.TargetDetected(
+                    device.Id, DisplayName(device), State.Autoflash?.Family ?? "serial",
+                    IdentificationMode.Probe, DeviceMode.Bootloader, bridge));
+                Emit(new AppEvent.TargetIdentified(device.Id, detected.Identity));
+                MaybeAutoflash(device.Id);
+                break;
+
+            case ProbeRowAction.Removed:
+                Emit(new AppEvent.TargetRemoved(device.Id));
+                break;
+
+            case ProbeRowAction.Faulted faulted:
+                _logger.LogWarning("Autoflash: probe loop for {Bridge} stopped: {Message}", bridge, faulted.Message);
+                Emit(new AppEvent.OperationFailed(device.Id, faulted.Message));
+                lock (_gate) _probeLoops.Remove(bridge);
+                break;
+        }
     }
 
     /// <summary>
@@ -868,6 +990,11 @@ public sealed class FlashAnythingService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _trackerSub.Dispose();
+
+        // Before _cts.Cancel: the loops hold linked sources, and cancelling them here means their
+        // own dispose does not race the one below.
+        StopProbeLoops();
+
         _cts.Cancel();
         _autoflashQueue.Writer.TryComplete();
         try { await Task.WhenAll(_autoflashWorkers).ConfigureAwait(false); } catch { /* shutdown */ }
