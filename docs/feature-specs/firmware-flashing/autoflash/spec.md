@@ -288,8 +288,12 @@ lane and [`adr.md`](adr.md) Decision 4.
 - [ ] **Post-flash re-enumeration.** A flashed STM32 that leaves DFU disappears (won't
       re-trigger); but a board whose BOOT0 is still asserted re-enters DFU and reappears.
       Debounce window vs. serial-based dedupe — which per family?
-- [ ] **Probe-based autoflash (serial).** Deferred entirely from v1. Revisit only with a
-      safe, explicit, per-port probe-and-confirm flow — never blanket auto.
+- [x] **Probe-based autoflash (serial).** *Decided, not yet implemented.* Deferred entirely from
+      v1; the per-port probe-and-confirm flow this bullet asked for is now [`adr.md`](adr.md)
+      Decisions 8-11 (arm binds a bridge identity, a per-bridge probe loop that owns detection,
+      departure-gated dedupe, open-per-probe-cycle). The
+      safety rules below still describe shipped behaviour: until those land, probe targets are
+      never auto-flashed.
 - [ ] **Multi-arm.** v1 arms a single family/image at a time. Arming several families at once
       (a mixed bench) is a possible later extension.
 
