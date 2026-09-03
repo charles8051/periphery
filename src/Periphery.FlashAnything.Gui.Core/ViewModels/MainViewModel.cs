@@ -1,6 +1,8 @@
 // Copyright 2026 Charles Lee
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
+using System;
+using System.Collections.Immutable;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -89,9 +91,25 @@ public partial class MainViewModel : ObservableObject
                 ? $"Firmware: {fw.DisplayName} ({fw.Size} bytes)"
                 : state.FirmwareError is { } err ? err : "No firmware loaded.";
 
+            // Only targets with a port can be bound as a fixture.
+            var ports = state.Targets
+                .Where(t => t.PortName is not null)
+                .Select(t => t.PortName!.Value.Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var gone in Ports.Where(x => !ports.Contains(x, StringComparer.OrdinalIgnoreCase)).ToList())
+                Ports.Remove(gone);
+            foreach (var added in ports.Where(x => !Ports.Contains(x, StringComparer.OrdinalIgnoreCase)))
+                Ports.Add(added);
+            if (SelectedPort is { } chosen && !Ports.Contains(chosen, StringComparer.OrdinalIgnoreCase))
+                SelectedPort = null;
+
             IsArmed = state.Autoflash is not null;
             AutoflashStatus = state.Autoflash is { } cfg
-                ? $"ARMED [{cfg.Family}]  flashed {state.AutoflashTally.Flashed} / failed {state.AutoflashTally.Failed} / skipped {state.AutoflashTally.Skipped}"
+                ? $"ARMED [{cfg.Family}]{(cfg.Bridges.IsEmpty ? "" : $" on {SelectedPort}")}  " +
+                  $"{(state.AutoflashTally.CountsDistinctBoards ? "flashed" : "flashes")} {state.AutoflashTally.Flashed}" +
+                  $" / failed {state.AutoflashTally.Failed} / skipped {state.AutoflashTally.Skipped}"
                 : "Disarmed.";
             ArmCommand.NotifyCanExecuteChanged();
             DisarmCommand.NotifyCanExecuteChanged();
@@ -101,11 +119,38 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Loads a firmware image chosen by the view's file dialog (a raw .bin at the STM32 base; .hex and .elf carry their own addresses).</summary>
     public Task SetFirmwareAsync(string path) => _service.DispatchAsync(new AppIntent.LoadFirmware(path, 0x08000000));
 
+    /// <summary>
+    /// The serial fixtures on offer to bind, for a probe-identified family. Populated from the
+    /// detected targets that have a port.
+    /// </summary>
+    public ObservableCollection<string> Ports { get; } = new();
+
+    /// <summary>
+    /// The fixture the operator picked. A probe family cannot be armed without one: its bridge's
+    /// VID/PID names the bridge, never the part behind it, so autoflash has no way to know which
+    /// fixture was meant (adr.md Decision 8).
+    /// </summary>
+    [ObservableProperty] private string? _selectedPort;
+
+    /// <summary>
+    /// Whether a bound fixture may flash a succession of boards. Off by default: departure is
+    /// inferred from silence, which cannot tell a board that left from one that reset in place.
+    /// </summary>
+    [ObservableProperty] private bool _repeat;
+
+    /// <summary>True when the chosen family needs a fixture bound before it can be armed.</summary>
+    public bool NeedsPort => SelectedFamily is { } family && _service.FamilyNeedsPort(family);
+
     private bool CanArm() => _service.State.Firmware is not null
-        && !string.IsNullOrEmpty(SelectedFamily) && _service.State.Autoflash is null;
+        && !string.IsNullOrEmpty(SelectedFamily) && _service.State.Autoflash is null
+        && (!NeedsPort || !string.IsNullOrEmpty(SelectedPort));
 
     [RelayCommand(CanExecute = nameof(CanArm))]
-    private Task Arm() => _service.DispatchAsync(new AppIntent.ArmAutoflash(SelectedFamily!, FlashOptions.Default));
+    private Task Arm() => _service.DispatchAsync(new AppIntent.ArmAutoflash(
+        SelectedFamily!,
+        FlashOptions.Default,
+        SelectedPort is { } port ? [new SerialPortName(port)] : ImmutableArray<SerialPortName>.Empty,
+        Repeat ? RepeatMode.Silence : RepeatMode.None));
 
     private bool CanDisarm() => _service.State.Autoflash is not null;
 

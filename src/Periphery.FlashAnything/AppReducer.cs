@@ -65,7 +65,7 @@ public static class AppReducer
 
         AppEvent.AutoflashDisarmed => state with { Autoflash = null },
 
-        AppEvent.AutoflashOutcome ev => state with { AutoflashTally = state.AutoflashTally.With(ev.Kind, ev.Id, ev.Detail) },
+        AppEvent.AutoflashOutcome ev => state with { AutoflashTally = state.AutoflashTally.With(ev.Kind, ev.Id, ev.Detail, ev.Label) },
 
         _ => throw new ArgumentOutOfRangeException(nameof(e), e.GetType().Name, "Unhandled AppEvent."),
     };
@@ -83,8 +83,8 @@ public static class AppReducer
     {
         int idx = s.IndexOf(ev.Id);
         AppState next = idx < 0
-            ? s with { Targets = s.Targets.Add(new FlashTargetView(ev.Id, ev.DisplayName, ev.ProviderName, ev.Identification, ev.Mode, Bridge: ev.Bridge)) }
-            : s with { Targets = s.Targets.SetItem(idx, s.Targets[idx] with { DisplayName = ev.DisplayName, ProviderName = ev.ProviderName, Identification = ev.Identification, Mode = ev.Mode, Bridge = ev.Bridge }) };
+            ? s with { Targets = s.Targets.Add(new FlashTargetView(ev.Id, ev.DisplayName, ev.ProviderName, ev.Identification, ev.Mode, Bridge: ev.Bridge, PortName: ev.PortName)) }
+            : s with { Targets = s.Targets.SetItem(idx, s.Targets[idx] with { DisplayName = ev.DisplayName, ProviderName = ev.ProviderName, Identification = ev.Identification, Mode = ev.Mode, Bridge = ev.Bridge, PortName = ev.PortName }) };
 
         // Convenience: focus the first target when nothing is selected yet.
         return next.SelectedTargetId is null ? next with { SelectedTargetId = ev.Id } : next;

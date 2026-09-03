@@ -78,22 +78,23 @@ public sealed record AutoflashTally(int Flashed, int Failed, int Skipped, Immuta
     public bool CountsDistinctBoards { get; init; } = true;
 
     /// <summary>Fold one per-device outcome into the tally.</summary>
-    public AutoflashTally With(AutoflashOutcomeKind kind, DeviceId id, string? detail)
+    public AutoflashTally With(AutoflashOutcomeKind kind, DeviceId id, string? detail, string? label = null)
     {
         string suffix = detail is null ? "" : $": {detail}";
+        string name = string.IsNullOrWhiteSpace(label) ? id.ToString() : label;
 
         // A fixture produces the same DeviceId every time, so "flashed COM7" three times says
         // nothing about which board each was. A position in the sequence is what can honestly be
         // produced for a probe row; a name cannot.
         int nth = Sequence.TryGetValue(id, out int seen) ? seen + 1 : 1;
         var sequence = Sequence.SetItem(id, nth);
-        string label = nth > 1 ? $"{id} #{nth}" : id.ToString();
+        string entry = nth > 1 ? $"{name} #{nth}" : name;
 
         return kind switch
         {
-            AutoflashOutcomeKind.Flashed => this with { Flashed = Flashed + 1, Sequence = sequence, Audit = Audit.Add($"flashed {label}") },
-            AutoflashOutcomeKind.Failed  => this with { Failed = Failed + 1, Sequence = sequence, Audit = Audit.Add($"failed {label}{suffix}") },
-            _                            => this with { Skipped = Skipped + 1, Sequence = sequence, Audit = Audit.Add($"skipped {label}{suffix}") },
+            AutoflashOutcomeKind.Flashed => this with { Flashed = Flashed + 1, Sequence = sequence, Audit = Audit.Add($"flashed {entry}") },
+            AutoflashOutcomeKind.Failed  => this with { Failed = Failed + 1, Sequence = sequence, Audit = Audit.Add($"failed {entry}{suffix}") },
+            _                            => this with { Skipped = Skipped + 1, Sequence = sequence, Audit = Audit.Add($"skipped {entry}{suffix}") },
         };
     }
 }

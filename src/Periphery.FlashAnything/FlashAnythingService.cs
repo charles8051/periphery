@@ -192,6 +192,14 @@ public sealed class FlashAnythingService : IAsyncDisposable
             _autoflashWorkers[i] = Task.Run(() => RunAutoflashQueueAsync(_cts.Token));
     }
 
+    /// <summary>
+    /// Whether arming this family requires a fixture to be bound first. True for probe-identified
+    /// families: their bridge's VID/PID names the bridge, never the part behind it, so autoflash
+    /// has no way to know which fixture the operator meant (adr.md Decision 8). A front-end uses
+    /// this to require a port before it offers to arm, rather than letting the arm be refused.
+    /// </summary>
+    public bool FamilyNeedsPort(string family) => IsProbeFamily(family);
+
     /// <summary>The registered provider + entry family names (for a front-end autoflash family picker).</summary>
     public IReadOnlyList<string> KnownFamilies =>
         _registry.Providers.Select(p => p.Name)
@@ -347,7 +355,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
             }
             _logger.LogInformation("Discovery: detected {Kind} {Mode} target {Id} '{Name}' [{Family}] status={Status}.",
                 isNew ? "new" : "existing", mode, device.Id, DisplayName(device), family, state.ActivityStatus);
-            Emit(new AppEvent.TargetDetected(device.Id, DisplayName(device), family, identification, mode, bridge));
+            Emit(new AppEvent.TargetDetected(
+                device.Id, DisplayName(device), family, identification, mode, bridge, device.PortName));
             if (isNew) MaybeAutoflash(device.Id); // autoflash on first detection; re-arrival after a reset re-evaluates (and dedupes)
         }
         else
@@ -827,6 +836,16 @@ public sealed class FlashAnythingService : IAsyncDisposable
         return true;
     }
 
+    /// <summary>
+    /// How to name a target in the session audit. A fixture reads as its port, not as the bridge's
+    /// USB instance id — the id is unreadable and it names the wrong thing, since what was flashed
+    /// is whatever board happened to be in that fixture.
+    /// </summary>
+    private string? LabelFor(DeviceId id)
+    {
+        lock (_gate) return State.Find(id)?.OperatorLabel;
+    }
+
     /// <summary>Whether the named family identifies its targets by probing rather than by VID/PID.</summary>
     private bool IsProbeFamily(string family) =>
         _registry.Providers.FirstOrDefault(p => string.Equals(p.Name, family, StringComparison.Ordinal))
@@ -992,7 +1011,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
             case ProbeRowAction.Detected detected when device is not null:
                 Emit(new AppEvent.TargetDetected(
                     device.Id, DisplayName(device), State.Autoflash?.Family ?? "serial",
-                    IdentificationMode.Probe, DeviceMode.Bootloader, bridge));
+                    IdentificationMode.Probe, DeviceMode.Bootloader, bridge, device.PortName));
                 Emit(new AppEvent.TargetIdentified(device.Id, detected.Identity));
                 MaybeAutoflash(device.Id);
                 break;
@@ -1091,7 +1110,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
             }
         }
         if (enqueue) _autoflashQueue.Writer.TryWrite(id);
-        else if (skipReason is not null) Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, skipReason));
+        else if (skipReason is not null)
+            Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, skipReason, LabelFor(id)));
     }
 
     // An autoflash worker: one of _maxFlashConcurrency identical workers draining the shared queue.
@@ -1119,7 +1139,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     FlashOutcome.Failed => (AutoflashOutcomeKind.Failed, State.Find(id)?.LastError),
                     _ => (AutoflashOutcomeKind.Skipped, State.Find(id)?.LastError ?? "skipped"),
                 };
-                Emit(new AppEvent.AutoflashOutcome(id, kind, detail));
+                Emit(new AppEvent.AutoflashOutcome(id, kind, detail, LabelFor(id)));
             }
         }
         catch (OperationCanceledException) { /* service disposing */ }
