@@ -192,10 +192,25 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             // Reached both before the programmer exists and after it has already cleaned itself
             // up on a handshake failure. Both disposals are idempotent, so covering the gap costs
-            // nothing on the path that did not need it. Pump before port, as disposal does.
-            if (pipe is not null)
-                await pipe.DisposeAsync().ConfigureAwait(false);
-            port.Dispose();
+            // nothing on the path that did not need it.
+            //
+            // Pump before port, as disposal does — but the port closes from a finally, because a
+            // pump that fails to stop is precisely when leaving the handle open hurts most.
+            // Neither cleanup failure may propagate: the exception already on its way out is the
+            // one that says why we are here, and one thrown while tidying up would bury it.
+            try
+            {
+                if (pipe is not null)
+                    await pipe.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                try { port.Dispose(); } catch { }
+            }
+
             throw;
         }
     }
