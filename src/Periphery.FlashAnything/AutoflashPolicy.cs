@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using Periphery.Bootloader;
 
 namespace Periphery.FlashAnything;
@@ -12,7 +13,16 @@ namespace Periphery.FlashAnything;
 /// Bound when the operator arms autoflash; <see langword="null"/> in <see cref="AppState.Autoflash"/>
 /// means disarmed. <see cref="Family"/> is matched against <see cref="FlashTargetView.ProviderName"/>.
 /// </summary>
-public sealed record AutoflashConfig(string Family, FlashOptions Options);
+public sealed record AutoflashConfig(string Family, FlashOptions Options)
+{
+    /// <summary>
+    /// The USB-serial bridges this arm is bound to, for probe-identified families. Empty for
+    /// passive families, which identify themselves and need no binding; required for probe
+    /// families, where it is the operator's consent to probe those fixtures and nothing else
+    /// (adr.md Decision 8).
+    /// </summary>
+    public ImmutableHashSet<BridgeIdentity> Bridges { get; init; } = ImmutableHashSet<BridgeIdentity>.Empty;
+}
 
 /// <summary>What autoflash should do for one detected target. A closed union.</summary>
 public abstract record AutoflashAction
@@ -55,9 +65,17 @@ public static class AutoflashPolicy
         if (!string.Equals(detected.ProviderName, armed.Family, StringComparison.Ordinal))
             return new AutoflashAction.Skip($"not the armed family ('{detected.ProviderName}' != '{armed.Family}')");
 
-        // 2. Passive identification only — never auto-poke a probe-identified (serial) target.
-        if (detected.Identification != IdentificationMode.Passive)
-            return new AutoflashAction.Skip($"not passively identified ({detected.Identification})");
+        // 2. A passively-identified target says what it is without being touched, so it needs no
+        //    binding. A probe-identified one does not: its bridge's VID/PID names the bridge, never
+        //    the part behind it, and establishing that part means sending it protocol bytes. The
+        //    operator supplies the consent a VID/PID cannot, by binding the bridge at arm time —
+        //    so probing is scoped to what they bound, and nothing else (adr.md Decision 8).
+        if (detected.Identification != IdentificationMode.Passive
+            && (detected.Bridge is not { } bridge || !armed.Bridges.Contains(bridge)))
+            return new AutoflashAction.Skip(
+                detected.Bridge is null
+                    ? $"probe-identified ({detected.Identification}) and its bridge could not be identified"
+                    : $"probe-identified ({detected.Identification}) and not on a bound bridge");
 
         // 3. Idempotent — each physical device is flashed at most once per armed session.
         if (alreadyFlashed.Contains(detected.Id))

@@ -21,7 +21,10 @@ public sealed record FlashTargetView(
     FlashStage Stage = FlashStage.Detected,
     int Percent = 0,
     string? Message = null,
-    string? LastError = null)
+    string? LastError = null,
+    // Null for passive families, which need no binding, and for a probe target whose bridge could
+    // not be identified — which AutoflashPolicy treats as ineligible rather than as a match.
+    BridgeIdentity? Bridge = null)
 {
     /// <summary>
     /// True if flashing this target first reboots it into a bootloader (an application-mode device an

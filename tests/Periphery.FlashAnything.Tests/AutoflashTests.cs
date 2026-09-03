@@ -32,8 +32,10 @@ public class AutoflashTests
     [Fact]
     public void Skips_a_probe_identified_target()
     {
+        // Rule 2 is now a scope check rather than a flat ban (adr.md Decision 8), but an arm that
+        // bound no bridge authorises no probing — which is what this has always asserted.
         var action = AutoflashPolicy.Decide(Armed, Target("port", mode: IdentificationMode.Probe), NoneFlashed);
-        Assert.Contains("not passively identified", Assert.IsType<AutoflashAction.Skip>(action).Reason);
+        Assert.Contains("probe-identified", Assert.IsType<AutoflashAction.Skip>(action).Reason);
     }
 
     [Fact]
