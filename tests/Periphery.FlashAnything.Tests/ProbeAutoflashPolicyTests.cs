@@ -168,6 +168,30 @@ public class ProbeAutoflashPolicyTests
     }
 
     [Fact]
+    public void A_bridge_with_a_serial_still_matches_after_it_moves_socket()
+    {
+        // The bind follows the device, not the socket. Requiring the location to agree as well
+        // would silently unbind a fixture for being replugged, which is the opposite of what
+        // binding is for — and TryFrom already says a serial alone is sufficient identity.
+        var bound = IdentityOf(Bridge(serial: "92EA014C", location: "PCIROOT(0)#USB(1)"));
+        var moved = IdentityOf(Bridge(serial: "92EA014C", location: "PCIROOT(0)#USB(9)"));
+
+        Assert.Equal(bound, moved);
+        Assert.Equal(bound.GetHashCode(), moved.GetHashCode());
+        Assert.IsType<AutoflashAction.Flash>(AutoflashPolicy.Decide(Armed(bound), Target(moved), None));
+    }
+
+    [Fact]
+    public void A_serial_bound_bridge_never_matches_a_serial_less_one()
+    {
+        // Same model, but one reports a serial and one does not: two different devices.
+        var withSerial = IdentityOf(Bridge(serial: "92EA014C"));
+        var without = IdentityOf(Bridge() with { SerialNumber = null });
+
+        Assert.NotEqual(withSerial, without);
+    }
+
+    [Fact]
     public void Same_model_in_a_different_port_is_a_different_bridge()
     {
         var a = IdentityOf(Bridge(serial: null!, location: "PCIROOT(0)#USB(1)") with { SerialNumber = null });

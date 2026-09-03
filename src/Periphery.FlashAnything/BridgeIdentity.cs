@@ -53,6 +53,12 @@ public readonly record struct BridgeIdentity
     /// narrow it to one device. A bridge offering neither cannot be bound, and the arm must fail
     /// rather than bind something ambiguous.
     /// </para>
+    /// <para>
+    /// Which one it gets changes what the bind follows. With a serial, the bind follows the
+    /// <i>device</i> and survives being moved to another socket. Without one it follows the
+    /// <i>socket</i>, so an identical model plugged in there matches — the accepted cost of a
+    /// bridge that offers nothing better.
+    /// </para>
     /// </summary>
     public static bool TryFrom(DeviceInfo device, out BridgeIdentity identity, [NotNullWhen(false)] out string? reason)
     {
@@ -84,22 +90,38 @@ public readonly record struct BridgeIdentity
 
     private static bool Blank(string? s) => string.IsNullOrWhiteSpace(s);
 
-    // Case-insensitive on both strings for the reason DeviceId is (issue #231): Windows
-    // re-enumerates the same device with different casing, and a bind that stopped matching after a
-    // replug would silently disarm the fixture.
+    /// <summary>
+    /// Whether this identity is pinned to the device itself rather than to the socket it sits in.
+    /// </summary>
+    public bool IsSerialBound => SerialNumber is not null;
+
+    // One discriminator, not both. A serial names the bridge itself, so a bridge that moves to
+    // another socket is still that bridge and must keep matching — requiring the location to agree
+    // as well would silently unbind a fixture for being replugged, which is the opposite of what
+    // binding is for. Location is the fallback for bridges that expose no serial (CH340s commonly
+    // do not), and it binds to the socket: an identical model plugged in there does match, which is
+    // the accepted cost of having nothing better to bind to.
+    //
+    // Both comparisons are case-insensitive for the reason DeviceId is (issue #231): Windows
+    // re-enumerates the same device with different casing.
     /// <inheritdoc />
-    public bool Equals(BridgeIdentity other) =>
-        VendorId == other.VendorId
-        && ProductId == other.ProductId
-        && string.Equals(SerialNumber, other.SerialNumber, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(LocationPath, other.LocationPath, StringComparison.OrdinalIgnoreCase);
+    public bool Equals(BridgeIdentity other)
+    {
+        if (VendorId != other.VendorId || ProductId != other.ProductId)
+            return false;
+
+        // A serial on one side and none on the other is two different devices, not a match.
+        if (IsSerialBound || other.IsSerialBound)
+            return string.Equals(SerialNumber, other.SerialNumber, StringComparison.OrdinalIgnoreCase);
+
+        return string.Equals(LocationPath, other.LocationPath, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <inheritdoc />
     public override int GetHashCode() => HashCode.Combine(
         VendorId,
         ProductId,
-        SerialNumber is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(SerialNumber),
-        LocationPath is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(LocationPath));
+        StringComparer.OrdinalIgnoreCase.GetHashCode(SerialNumber ?? LocationPath ?? string.Empty));
 
     /// <inheritdoc />
     public override string ToString() =>
