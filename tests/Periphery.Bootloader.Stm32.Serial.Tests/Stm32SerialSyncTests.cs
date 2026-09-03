@@ -77,7 +77,28 @@ public class Stm32SerialSyncTests
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
             () => programmer.SyncAsync(CancellationToken.None));
 
-        Assert.Contains("no answer to a completed command frame either", ex.Message);
+        Assert.Contains("did not answer Get", ex.Message);
+    }
+
+    [Fact]
+    public async Task Sync_survives_an_ACK_that_lands_after_the_deadline()
+    {
+        // The race the first fix had. A fresh part whose ACK is merely late looks exactly like a
+        // synced part holding our byte — and the two need opposite repairs. Inferring from the
+        // next single byte got this wrong in the dangerous direction: it reported success while a
+        // byte sat pending, and the next command desynchronised. Proving the boundary with Get
+        // makes the distinction unnecessary.
+        await using var device = new FakeStm32Bootloader
+        {
+            SyncAckDelay = TimeSpan.FromMilliseconds(400),   // vs the 250 ms sync deadline below
+        };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+
+        await programmer.SyncAsync(CancellationToken.None);
+
+        // The proof that matters is not that Sync returned — it is that the session is usable.
+        var identity = await programmer.IdentifyAsync();
+        Assert.Equal("3.1", identity.BootloaderVersion);
     }
 
     [Fact]

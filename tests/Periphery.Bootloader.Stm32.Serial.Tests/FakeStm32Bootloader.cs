@@ -34,6 +34,14 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// </summary>
     public bool StartSynced { get => _synced; init => _synced = value; }
 
+    /// <summary>
+    /// Hold the autobaud ACK back by this long — a fresh part whose answer lands after the
+    /// host's sync deadline, because of bridge latency or scheduling. The dangerous case: the
+    /// host has already moved on, so the late ACK arrives looking like a reply to whatever it
+    /// sent next.
+    /// </summary>
+    public TimeSpan SyncAckDelay { get; init; } = TimeSpan.Zero;
+
     /// <summary>Bytes the device corrupts on write, keyed by absolute address — to force a verify failure.</summary>
     public Dictionary<uint, byte> CorruptOnWrite { get; } = new();
 
@@ -124,6 +132,8 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
                 if (command == 0x7F && !_synced)
                 {
                     // AN3155 3.1: the first 0x7F since reset drives autobaud and is ACKed.
+                    if (SyncAckDelay > TimeSpan.Zero)
+                        await Task.Delay(SyncAckDelay, ct).ConfigureAwait(false);
                     await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
                     _synced = true;
                     continue;

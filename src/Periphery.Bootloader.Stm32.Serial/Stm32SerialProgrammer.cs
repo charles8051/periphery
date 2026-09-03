@@ -45,6 +45,9 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     /// <summary>AN3155 section 3.1 autobaud byte. Also, to an already-synced part, an opcode.</summary>
     private const byte SyncByte = 0x7F;
 
+    /// <summary>How many times the handshake will clear a byte and re-test with Get.</summary>
+    private const int SyncProofAttempts = 3;
+
     private readonly Stm32BootloaderClient _client;
     private readonly ITransceiver _transceiver;
     private readonly IDuplexPipe _pipe;
@@ -302,66 +305,108 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         //
         // That state is the common one, not the exotic one. Anything that opened the port before
         // us — a terminal, a previous flash, the probe loop, an operator checking the port is
-        // alive — leaves the part synced with our 0x7F pending as half a command frame. Sending
-        // one more 0x7F then completes THAT frame with a bad checksum instead of syncing, which
-        // is how a stray byte turns into a permanently desynchronised session.
+        // alive — leaves the part synced, and our sync byte becomes half a command frame.
+        byte? answer = await TrySyncByteAsync(ct).ConfigureAwait(false);
+
+        // A byte we actually received is unambiguous. ACK is a fresh autobaud sync; NACK means
+        // the part was already in its command loop and our byte completed an earlier partial
+        // frame. Both leave a live bootloader on a known command boundary.
+        if (answer is Ack or Nack)
+            return;
+
+        if (answer is { } junk)
+            throw new Stm32SerialException(
+                $"the AN3155 sync byte (0x7F) was answered with 0x{junk:X2}, which is neither ACK " +
+                $"(0x{Ack:X2}) nor NACK (0x{Nack:X2}). Check the baud rate and that 8E1 framing is " +
+                "reaching the part.");
+
+        // Silence, and silence is where inference gets dangerous. It usually means a synced part
+        // is holding our sync byte as an opcode — but it can also be a fresh part whose ACK was
+        // merely late, and the two demand opposite repairs. Guessing from the next single byte
+        // cannot tell them apart: a late ACK arriving after the deadline reads exactly like a
+        // reply to whatever we sent next, so we would report a clean session while a byte sat
+        // pending and desynchronise on the following command.
         //
-        // So: try the sync byte, and read the three answers a live bootloader can give.
-        byte answer;
+        // So stop inferring. Push a byte to complete any frame the part is holding, then PROVE
+        // the boundary with Get, whose reply is long and structured enough that a desynchronised
+        // stream cannot fake it. Whether a late ACK was consumed or discarded along the way stops
+        // mattering: the proof is what decides, not the guess.
+        await NudgeAsync(unchecked((byte)~SyncByte), ct).ConfigureAwait(false);
+
+        // Each failed Get leaves exactly one byte pending (its first byte completes the stray
+        // frame, its second becomes the next stray), so one nudge per retry converges.
+        for (int attempt = 0; attempt < SyncProofAttempts; attempt++)
+        {
+            if (await RespondsToGetAsync(ct).ConfigureAwait(false))
+                return;
+
+            await NudgeAsync(0xFF, ct).ConfigureAwait(false);
+        }
+
+        throw new Stm32SerialException(
+            "no answer to the AN3155 sync byte (0x7F), and the bootloader did not answer Get " +
+            $"after {SyncProofAttempts} attempts to clear the command boundary. Check that the " +
+            "part is in system-bootloader mode (BOOT0 asserted and reset), that the port is the " +
+            "right one, and that RX/TX are not swapped.");
+    }
+
+    /// <summary>
+    /// Sends the sync byte and returns what came back, or <see langword="null"/> on silence.
+    /// Only a byte actually received is reported; a deadline is not an answer.
+    /// </summary>
+    private async Task<byte?> TrySyncByteAsync(CancellationToken ct)
+    {
         try
         {
             var reply = await WithTimeout(_options.SyncTimeout, ct,
                 t => _transceiver.SendReceiveExactly(new byte[] { SyncByte }, 1, t)).ConfigureAwait(false);
-            answer = reply.Span[0];
+            return reply.Span[0];
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception ex)
+        catch
         {
-            // Silence. Either nothing is there, or a synced bootloader is holding our sync byte
-            // as an opcode. Complete the frame and find out which — 0x7F's complement is 0x80,
-            // and 0x7F is not a command any documented bootloader implements, so a live part
-            // answers NACK to the completed frame. That also clears the pending byte, which is
-            // the repair: whatever happens next starts from a clean command boundary.
-            if (await CompletesAsAlreadySyncedAsync(ct).ConfigureAwait(false))
-                return;
-
-            throw new Stm32SerialException(
-                "no valid answer to the AN3155 sync byte (0x7F), and no answer to a completed " +
-                "command frame either. Check that the part is in system-bootloader mode (BOOT0 " +
-                "asserted and reset), that the port is the right one, and that RX/TX are not swapped.", ex);
+            return null;
         }
-
-        // ACK is a fresh autobaud sync. NACK means the part was already in its command loop and
-        // our byte completed some earlier partial frame — either way it is a live bootloader on
-        // a known command boundary.
-        if (answer is Ack or Nack)
-            return;
-
-        throw new Stm32SerialException(
-            $"the AN3155 sync byte (0x7F) was answered with 0x{answer:X2}, which is neither ACK " +
-            $"(0x{Ack:X2}) nor NACK (0x{Nack:X2}). Check the baud rate and that 8E1 framing is " +
-            "reaching the part.");
     }
 
     /// <summary>
-    /// Completes the command frame a synced bootloader started when it took our sync byte as an
-    /// opcode, and reports whether a live part answered. Sends the complement of
-    /// <see cref="SyncByte"/> and accepts NACK — the defined answer to an unimplemented command.
+    /// Sends one byte to complete whatever half-frame the part may be holding, and swallows the
+    /// answer. The value is never a real command by accident: a pending opcode <c>X</c> forms a
+    /// valid frame only with <c>~X</c>, so <c>0xFF</c> can only ever complete <c>0x00</c> — Get,
+    /// which is read-only — and every other pairing fails its checksum and is NACKed.
     /// </summary>
-    private async Task<bool> CompletesAsAlreadySyncedAsync(CancellationToken ct)
+    private async Task NudgeAsync(byte value, CancellationToken ct)
     {
         try
         {
-            var reply = await WithTimeout(_options.SyncTimeout, ct,
-                t => _transceiver.SendReceiveExactly(new byte[] { unchecked((byte)~SyncByte) }, 1, t))
-                .ConfigureAwait(false);
+            await WithTimeout(_options.SyncTimeout, ct,
+                t => _transceiver.SendReceiveExactly(new byte[] { value }, 1, t)).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Silence here proves nothing either way; the Get that follows is the test.
+        }
+    }
 
-            // NACK is the expected answer. Accept ACK too rather than failing a live part on a
-            // bootloader that implements 0x7F as something benign.
-            return reply.Span[0] is Nack or Ack;
+    /// <summary>
+    /// Whether the part answers Get with a well-formed reply. This is the synchronisation proof:
+    /// ACK, length, version, command list and a trailing ACK is not something a desynchronised
+    /// stream produces by chance, and Get changes nothing on the part.
+    /// </summary>
+    private async Task<bool> RespondsToGetAsync(CancellationToken ct)
+    {
+        try
+        {
+            var info = await WithTimeout(_options.SyncTimeout, ct,
+                t => _client.GetSupportedCommands(t)).ConfigureAwait(false);
+            return info.SupportedCommands.Any();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
