@@ -19,6 +19,7 @@ using InTheHand.Bluetooth;
 // ─────────────────────────────────────────────────────────────────────────────
 
 Console.WriteLine($"TFM: {Tfm()}");
+Console.WriteLine($"     platform symbols defined: {Symbols()}");
 Console.WriteLine(new string('─', 72));
 
 var asm = typeof(GattCharacteristic).Assembly;
@@ -56,6 +57,26 @@ catch (Exception ex)
 
 Console.WriteLine();
 return 0;
+
+// Which SDK platform symbols are actually defined, reported rather than inferred.
+// An undefined symbol in #if is false, so every candidate compiles either way.
+static string Symbols()
+{
+    var on = new List<string>();
+#if WINDOWS
+    on.Add("WINDOWS");
+#endif
+#if WINDOWS7_0
+    on.Add("WINDOWS7_0");
+#endif
+#if WINDOWS10_0_19041
+    on.Add("WINDOWS10_0_19041");
+#endif
+#if WINDOWS10_0_19041_0
+    on.Add("WINDOWS10_0_19041_0");
+#endif
+    return on.Count == 0 ? "(none — bare TFM)" : string.Join(", ", on);
+}
 
 static string Tfm() =>
 #if WINDOWS10_0_19041_0

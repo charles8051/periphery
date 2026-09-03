@@ -49,6 +49,7 @@ for (int i = 0; i < args.Length - 1; i++)
     if (args[i] is "--watch" or "-w" && int.TryParse(args[i + 1], out int w)) watchSeconds = w;
 
 Console.WriteLine($"TFM: {Tfm()}   masking: {(showAddresses ? "OFF" : "on")}");
+Console.WriteLine($"     platform symbols defined: {Symbols()}");
 Console.WriteLine(new string('─', 78));
 
 // ── Run A — which asset actually loaded ──────────────────────────────────────
@@ -256,6 +257,27 @@ Console.WriteLine();
 return 0;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+// Reports which SDK platform symbols are actually defined, rather than leaving it to
+// be inferred from which branch Tfm() took. An undefined symbol in #if is simply
+// false, so every candidate below compiles whether or not the SDK defines it.
+static string Symbols()
+{
+    var on = new List<string>();
+#if WINDOWS
+    on.Add("WINDOWS");
+#endif
+#if WINDOWS7_0
+    on.Add("WINDOWS7_0");
+#endif
+#if WINDOWS10_0_19041
+    on.Add("WINDOWS10_0_19041");
+#endif
+#if WINDOWS10_0_19041_0
+    on.Add("WINDOWS10_0_19041_0");
+#endif
+    return on.Count == 0 ? "(none — bare TFM)" : string.Join(", ", on);
+}
 
 static string Tfm() =>
 #if WINDOWS10_0_19041_0
