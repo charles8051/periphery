@@ -1,6 +1,7 @@
 // Copyright 2026 Charles Lee
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
+using System.Collections.Immutable;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -30,6 +31,19 @@ internal sealed record Parsed
     public bool NoLeave { get; init; }          // --no-leave
     public bool NoVerify { get; init; }         // --no-verify
     public string? Family { get; init; }        // --family (autoflash provider/family)
+
+    /// <summary>
+    /// <c>--port</c>, repeatable. The serial ports to bind for a probe-identified family. Each is
+    /// resolved at arm time to the identity of the bridge behind it, and that identity is bound —
+    /// a COM name is not an identity, and Windows recycles them (autoflash adr.md Decision 8).
+    /// </summary>
+    public ImmutableArray<SerialPortName> Ports { get; init; } = ImmutableArray<SerialPortName>.Empty;
+
+    /// <summary>
+    /// <c>--repeat</c>. Whether a bound fixture may flash a succession of boards. Off by default:
+    /// the evidence a board left is weaker than the evidence one arrived.
+    /// </summary>
+    public RepeatMode Repeat { get; init; } = RepeatMode.None;
     public bool Verbose { get; init; }          // --verbose / -v (console logging to stderr)
     public TimeSpan? BootloaderTimeout { get; init; } // --bootloader-timeout <seconds>; null = the orchestrator's default
 
@@ -202,6 +216,22 @@ public static class Cli
                     if (++i >= args.Length) return Err("--family requires a name.");
                     p = p with { Family = args[i] };
                     break;
+                case "--port":
+                    // An option-looking value is a missing value, not a port name. Without this,
+                    // "--port --yes" binds a fixture called "--yes" and silently stays in dry run —
+                    // a typo that quietly disables the safety flag it ate.
+                    if (++i >= args.Length || string.IsNullOrWhiteSpace(args[i]) || args[i].StartsWith('-'))
+                        return Err("--port requires a port name (e.g. COM7).");
+                    p = p with { Ports = p.Ports.Add(new SerialPortName(args[i])) };
+                    break;
+                case "--repeat":
+                    // Bare --repeat means the inference mode, which is the only one implemented.
+                    if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                    {
+                        if (RepeatModeError(args[++i]) is { } bad) return Err(bad);
+                    }
+                    p = p with { Repeat = RepeatMode.Silence };
+                    break;
                 case "--bootloader-timeout":
                     if (++i >= args.Length) return Err("--bootloader-timeout requires a number of seconds.");
                     if (!TryParseSeconds(args[i], out var bootTimeout))
@@ -214,7 +244,18 @@ public static class Cli
                 case "--no-verify": p = p with { NoVerify = true }; break;
                 case "--verbose" or "-v": p = p with { Verbose = true }; break;
                 case "-h" or "--help": return Ok(new Parsed { Command = Command.Help });
-                default: return Err($"Unknown option '{a}'.");
+                default:
+                    // --repeat=<mode> is the spelling adr.md uses, so it must reach the same
+                    // explanation rather than falling through to "Unknown option" — being told
+                    // "cts is not implemented, here is what silence does" is the whole point.
+                    if (a.StartsWith("--repeat=", StringComparison.Ordinal))
+                    {
+                        if (RepeatModeError(a["--repeat=".Length..]) is { } badMode) return Err(badMode);
+                        p = p with { Repeat = RepeatMode.Silence };
+                        break;
+                    }
+
+                    return Err($"Unknown option '{a}'.");
             }
         }
 
@@ -226,6 +267,16 @@ public static class Cli
             return Err("--all and --target are mutually exclusive.");
 
         return Ok(p);
+
+        // adr.md describes --repeat=cts, where a present-detect line observes the departure rather
+        // than inferring it from silence. Accepting that spelling and inferring anyway would hide
+        // exactly the difference that matters, so it is refused — with the reason, not a shrug.
+        static string? RepeatModeError(string mode) =>
+            string.Equals(mode, "silence", StringComparison.OrdinalIgnoreCase) ? null
+            : string.Equals(mode, "cts", StringComparison.OrdinalIgnoreCase)
+                ? "--repeat=cts needs a hardware present-detect line and is not implemented yet. " +
+                  "Use --repeat (silence), which infers departure rather than observing it."
+                : $"Unknown --repeat mode '{mode}'; expected 'silence'.";
 
         static ParseResult Ok(Parsed value) => new(value, null);
         static ParseResult Err(string message) => new(null, message);
@@ -288,6 +339,12 @@ public static class Cli
           -t, --target <id>     (flash) A specific target by id (else the only one; or --all).
               --all             (flash) Flash every detected target.
               --family <name>   (autoflash) Provider/family to auto-flash; default the only one.
+              --port <name>     (autoflash) Bind a serial fixture, e.g. COM7. Repeatable.
+                                Required for probe-identified families, which cannot say what
+                                is behind a port without sending it protocol bytes.
+              --repeat          (autoflash) Let a bound fixture flash a succession of boards.
+                                Off by default: departure is inferred from silence, which
+                                cannot tell a board that left from one that reset in place.
           -b, --base <addr>     Base address for a raw .bin (hex 0x.. or decimal); ignored for
                                 .hex / .elf (they carry their own addresses).
                                 Default 0x08000000 (STM32 flash).
