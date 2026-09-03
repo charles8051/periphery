@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -275,8 +276,22 @@ public sealed class FlashAnythingService : IAsyncDisposable
             string family;
             IdentificationMode identification;
             DeviceMode mode;
+            BridgeIdentity? bridge = null;
             if (_registry.Match(device) is { } provider)
+            {
                 (family, identification, mode) = (provider.Name, provider.Identification, DeviceMode.Bootloader);
+
+                // Only probe families need one. A passive target identifies itself, so binding it
+                // to a bridge would add a constraint that buys nothing.
+                if (provider.Identification != IdentificationMode.Passive)
+                {
+                    if (BridgeIdentity.TryFrom(device, out var identified, out string? why))
+                        bridge = identified;
+                    else
+                        _logger.LogDebug(
+                            "Discovery: {Id} is probe-identified but its bridge cannot be bound: {Why}", device.Id, why);
+                }
+            }
             else if (_entries.Match(device) is { } entry)
                 // An app device is identified passively by its USB VID/PID, so it is autoflash-eligible.
                 (family, identification, mode) = (entry.Name, IdentificationMode.Passive, DeviceMode.Application);
@@ -290,7 +305,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
             lock (_gate) { isNew = !_devices.ContainsKey(device.Id); _devices[device.Id] = device; }
             _logger.LogInformation("Discovery: detected {Kind} {Mode} target {Id} '{Name}' [{Family}] status={Status}.",
                 isNew ? "new" : "existing", mode, device.Id, DisplayName(device), family, state.ActivityStatus);
-            Emit(new AppEvent.TargetDetected(device.Id, DisplayName(device), family, identification, mode));
+            Emit(new AppEvent.TargetDetected(device.Id, DisplayName(device), family, identification, mode, bridge));
             if (isNew) MaybeAutoflash(device.Id); // autoflash on first detection; re-arrival after a reset re-evaluates (and dedupes)
         }
         else
@@ -647,12 +662,64 @@ public sealed class FlashAnythingService : IAsyncDisposable
             Emit(new AppEvent.FirmwareLoadFailed("Load a firmware image before arming autoflash."));
             return;
         }
+        if (!TryBindBridges(arm, out var bridges, out string? bindError))
+        {
+            Emit(new AppEvent.FirmwareLoadFailed(bindError));
+            return;
+        }
+
         lock (_gate) _flashedThisSession.Clear();
-        Emit(new AppEvent.AutoflashArmed(new AutoflashConfig(arm.Family, arm.Options)));
+        Emit(new AppEvent.AutoflashArmed(new AutoflashConfig(arm.Family, arm.Options) { Bridges = bridges }));
 
         // Evaluate targets already present at arm time (arming a bench with boards already connected).
         foreach (var id in State.Targets.Select(t => t.Id).ToList())
             MaybeAutoflash(id);
+    }
+
+    /// <summary>
+    /// Resolves the ports named at arm time to the identities of the bridges currently behind them
+    /// (adr.md Decision 8). A COM name is not an identity — Windows recycles them, so a bind
+    /// against the string would follow the number to whatever device inherits it next.
+    /// </summary>
+    /// <remarks>
+    /// Every named port must resolve, and every resolved bridge must be identifiable. A partial
+    /// bind is refused rather than silently arming for a subset: the operator named a bench, and
+    /// arming for part of it while reporting success is how a fixture gets left unattended and
+    /// unflashed.
+    /// </remarks>
+    private bool TryBindBridges(
+        AppIntent.ArmAutoflash arm, out ImmutableHashSet<BridgeIdentity> bridges, out string? error)
+    {
+        bridges = ImmutableHashSet<BridgeIdentity>.Empty;
+        error = null;
+
+        if (arm.Ports.IsDefaultOrEmpty)
+            return true;
+
+        var builder = ImmutableHashSet.CreateBuilder<BridgeIdentity>();
+        foreach (var port in arm.Ports)
+        {
+            DeviceInfo? device;
+            lock (_gate) device = _devices.Values.FirstOrDefault(d => d.PortName == port);
+
+            if (device is null)
+            {
+                error = $"cannot arm on {port.Value}: no device is present on that port.";
+                return false;
+            }
+
+            if (!BridgeIdentity.TryFrom(device, out var identity, out string? why))
+            {
+                error = $"cannot arm on {port.Value}: {why}";
+                return false;
+            }
+
+            builder.Add(identity);
+            _logger.LogInformation("Autoflash: bound {Port} to bridge {Bridge}.", port.Value, identity);
+        }
+
+        bridges = builder.ToImmutable();
+        return true;
     }
 
     private void DisarmAutoflash()

@@ -19,7 +19,11 @@ public abstract record AppEvent
     public sealed record TargetDetected(
         DeviceId Id, string DisplayName, string ProviderName,
         IdentificationMode Identification = IdentificationMode.Passive,
-        DeviceMode Mode = DeviceMode.Bootloader) : AppEvent;
+        DeviceMode Mode = DeviceMode.Bootloader,
+        // The USB-serial bridge this target was found behind, for probe families. Null for passive
+        // ones, which identify themselves, and for a bridge that could not be identified — which
+        // AutoflashPolicy treats as ineligible rather than as a match.
+        BridgeIdentity? Bridge = null) : AppEvent;
 
     /// <summary>A target disappeared.</summary>
     public sealed record TargetRemoved(DeviceId Id) : AppEvent;
