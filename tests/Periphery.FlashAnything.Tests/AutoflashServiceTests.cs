@@ -152,13 +152,18 @@ public class AutoflashServiceTests
         try
         {
             await svc.LoadFirmwareAsync(fw);
+
+            // The guarantee moved earlier and got stronger. Arming a probe family without naming a
+            // port used to produce a session that skipped every target it saw; it is now refused
+            // outright, so there is no armed session for a probe target to be skipped by.
             await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
+            Assert.Null(svc.State.Autoflash);
+            Assert.Contains("without naming a port", svc.State.FirmwareError);
 
             monitor.Plug(FakeDevices.Usb("serial"));
-            await WaitUntil(svc, s => s.AutoflashTally.Skipped >= 1);
+            await Task.Delay(50);
 
             Assert.Equal(0, svc.State.AutoflashTally.Flashed);
-            Assert.Contains("probe-identified", string.Join(" ", svc.State.AutoflashTally.Audit));
         }
         finally { File.Delete(fw); }
     }

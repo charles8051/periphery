@@ -657,14 +657,19 @@ public sealed class FlashAnythingService : IAsyncDisposable
     /// </summary>
     private void ArmAutoflash(AppIntent.ArmAutoflash arm)
     {
+        // Every refusal below disarms as well as reporting, which AutoflashArmFailed does. A failed
+        // re-arm that left the previous session running would be the worst of both: the operator is
+        // told the arm failed while the old family, options and bindings keep flashing whatever
+        // appears. It also leaves the loaded image alone — a port that is absent or unidentifiable
+        // says nothing about the firmware.
         if (CurrentPayload() is null)
         {
-            Emit(new AppEvent.FirmwareLoadFailed("Load a firmware image before arming autoflash."));
+            Emit(new AppEvent.AutoflashArmFailed("Load a firmware image before arming autoflash."));
             return;
         }
         if (!TryBindBridges(arm, out var bridges, out string? bindError))
         {
-            Emit(new AppEvent.FirmwareLoadFailed(bindError));
+            Emit(new AppEvent.AutoflashArmFailed(bindError));
             return;
         }
 
@@ -694,7 +699,21 @@ public sealed class FlashAnythingService : IAsyncDisposable
         error = null;
 
         if (arm.Ports.IsDefaultOrEmpty)
+        {
+            // A probe family with nothing bound is not dangerous — the policy's scope check fails
+            // closed, so such a session skips every target it ever sees. It is useless, which is its
+            // own hazard: an operator who armed a fixture and walked away would come back to a bench
+            // that never flashed anything and never said why. Refuse at arm time instead.
+            if (IsProbeFamily(arm.Family))
+            {
+                error = $"cannot arm '{arm.Family}' without naming a port: it is probe-identified, so " +
+                        "autoflash has no way to know which fixture was meant, and an unbound arm " +
+                        "would skip every target it saw.";
+                return false;
+            }
+
             return true;
+        }
 
         var builder = ImmutableHashSet.CreateBuilder<BridgeIdentity>();
         foreach (var port in arm.Ports)
@@ -721,6 +740,11 @@ public sealed class FlashAnythingService : IAsyncDisposable
         bridges = builder.ToImmutable();
         return true;
     }
+
+    /// <summary>Whether the named family identifies its targets by probing rather than by VID/PID.</summary>
+    private bool IsProbeFamily(string family) =>
+        _registry.Providers.FirstOrDefault(p => string.Equals(p.Name, family, StringComparison.Ordinal))
+            is { Identification: not IdentificationMode.Passive };
 
     private void DisarmAutoflash()
     {

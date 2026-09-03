@@ -154,6 +154,77 @@ public class ProbeArmBindingTests
     }
 
     [Fact]
+    public async Task A_failed_arm_disarms_rather_than_leaving_the_previous_session_running()
+    {
+        // The worst of both outcomes: the operator is told the arm failed while the old family,
+        // options and bindings keep flashing whatever appears.
+        var monitor = new FakeMonitor();
+        await using var svc = new FlashAnythingService(Registry(), FakeDevices.Watcher(monitor));
+        await svc.RefreshAsync();
+        monitor.Plug(Bridge());
+        await WaitUntil(svc, s => s.Targets.Length == 1);
+
+        string fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(
+                Family, FlashOptions.Default, [new SerialPortName("COM7")]));
+            Assert.NotNull(svc.State.Autoflash);
+
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(
+                Family, FlashOptions.Default, [new SerialPortName("COM99")]));
+
+            Assert.Null(svc.State.Autoflash);
+        }
+        finally { File.Delete(fw); }
+    }
+
+    [Fact]
+    public async Task A_failed_arm_keeps_the_loaded_firmware()
+    {
+        // A port that is absent says nothing about the image. Discarding it would be a second
+        // failure caused by the first, and the operator would have to reload to try again.
+        var monitor = new FakeMonitor();
+        await using var svc = new FlashAnythingService(Registry(), FakeDevices.Watcher(monitor));
+        await svc.RefreshAsync();
+
+        string fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(
+                Family, FlashOptions.Default, [new SerialPortName("COM99")]));
+
+            Assert.NotNull(svc.State.Firmware);
+            Assert.Contains("COM99", svc.State.FirmwareError);
+        }
+        finally { File.Delete(fw); }
+    }
+
+    [Fact]
+    public async Task Arming_a_probe_family_with_no_ports_is_refused()
+    {
+        // Not dangerous — the policy's scope check fails closed, and such a session would skip
+        // every target. It is useless, which is its own hazard: an operator who armed a fixture and
+        // walked away would return to a bench that flashed nothing and never said why.
+        var monitor = new FakeMonitor();
+        await using var svc = new FlashAnythingService(Registry(), FakeDevices.Watcher(monitor));
+        await svc.RefreshAsync();
+
+        string fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
+
+            Assert.Null(svc.State.Autoflash);
+            Assert.Contains("without naming a port", svc.State.FirmwareError);
+        }
+        finally { File.Delete(fw); }
+    }
+
+    [Fact]
     public async Task Arming_a_passive_family_still_needs_no_ports()
     {
         var registry = new BootloaderRegistry();

@@ -61,6 +61,13 @@ public abstract record AppEvent
     /// <summary>Autoflash was armed for a family/provider + options; resets the session tally.</summary>
     public sealed record AutoflashArmed(AutoflashConfig Config) : AppEvent;
 
+    /// <summary>
+    /// An arm was refused. Distinct from <see cref="FirmwareLoadFailed"/> because that clears the
+    /// loaded image, and a port that is absent or unidentifiable says nothing about the firmware —
+    /// discarding a good image over a bad port name would be a second failure caused by the first.
+    /// </summary>
+    public sealed record AutoflashArmFailed(string Message) : AppEvent;
+
     /// <summary>Autoflash was disarmed (no more automatic flashing).</summary>
     public sealed record AutoflashDisarmed : AppEvent;
 

@@ -29,6 +29,10 @@ public static class AppReducer
 
         AppEvent.FirmwareLoadFailed ev => state with { Firmware = null, FirmwareError = ev.Message },
 
+        // Surfaces on the same error line the front-ends already render, but leaves the image
+        // alone: the arm failed, the firmware did not.
+        AppEvent.AutoflashArmFailed ev => state with { FirmwareError = ev.Message, Autoflash = null },
+
         // App-mode reboot lifecycle, ahead of the flash. Entering clears any prior error/progress
         // (a fresh attempt); WaitingForBootloader just advances the stage.
         AppEvent.EnteringBootloader ev => state.WithTarget(ev.Id,
