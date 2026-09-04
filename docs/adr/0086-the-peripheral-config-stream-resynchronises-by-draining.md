@@ -163,7 +163,13 @@ change. They are what `treehopper-flash` writes to real boards, and #170's own
    arithmetic changes.
 2. **Reproduce the desync directly** — APA102 flush loop at 252-byte chunks, an
    analyser on EP2 OUT, stall the host to force the abort path, and watch a pixel
-   byte land at `buf[0]`. This is also the test for D1.
+   byte land at `buf[0]`. This is also the test for D1. **Harness written:**
+   `scratch/Apa102Desync`, procedure in
+   `docs/investigations/2026-09-treehopper-peripheral-config-desync.md`. It aims a
+   deliberately inert canary (`0x01 ConfigureDevice`) at `buf[0]` rather than a
+   destructive opcode, detects execution from the EP1 IN pin-report stream rather
+   than from the analyser, and refuses to run at all unless a positive control
+   fires first. Not yet run against hardware.
 3. **Case flips over C2** at varying VDD and temperature. Stable over C2 while
    USB reads vary points at the serve path; drifting over C2 confirms D4.
 4. **Read `0xF800-0xFBBF` over C2 on the two damaged boards before reflashing**,

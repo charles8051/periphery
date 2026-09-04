@@ -118,6 +118,48 @@ public class Apa102EncoderTests
         Assert.Equal(0x00, bytes[7]);
     }
 
+    // ── The #170 bench harness's assumptions ───────────────────────────
+
+    // scratch/Apa102Desync builds this byte layout itself rather than reaching past
+    // Apa102Encoder's `internal`, because the claim it tests is about what the FIRMWARE does
+    // with bytes on the wire. That leaves one thing to pin here: that the shipped encoder
+    // really does lay a frame out the way the harness assumes. If this fails, the harness is
+    // reproducing traffic the library no longer emits, and ADR-0086 D5's reproduction is
+    // measuring nothing.
+    [Fact]
+    public void Encode_GroupLayout_IsWhatTheDesyncHarnessAssumes()
+    {
+        const int LedCount = 63;
+        var frame = LedFrame.Solid(LedCount, new Rgb(R: 0x00, G: 0x00, B: 0x01), brightness: 31);
+        var bytes = Apa102Encoder.Encode(frame);
+
+        // 4 start + 63*4 + ceil(63/16)=4 end. 260 is the number that makes Apa102Strip's
+        // 252-byte chunk a 259-byte command, i.e. USB packets of 64/64/64/64/3 - the
+        // multi-packet path #170 lives on.
+        Assert.Equal(260, bytes.Length);
+
+        // Pixels start at offset 4 in groups of four: header, Blue, Green, Red. At
+        // brightness 31 the header is 0xFF, which is deliberately NOT an opcode.
+        for (int px = 0; px < LedCount; px++)
+        {
+            int pos = 4 + px * 4;
+            Assert.Equal(0xFF, bytes[pos]);
+            Assert.Equal(0x01, bytes[pos + 1]);
+            Assert.Equal(0x00, bytes[pos + 2]);
+            Assert.Equal(0x00, bytes[pos + 3]);
+        }
+
+        // The phase claim: a firmware packet boundary at command offset 64k is stream offset
+        // 64k-7, and every one of them lands on the Blue channel. This is why a desync
+        // reproducibly puts a colour byte - not a header - at Treehopper_PeripheralConfig[0].
+        for (int k = 1; k <= 3; k++)
+        {
+            int streamOffset = 64 * k - 7;
+            Assert.Equal((streamOffset - 4) % 4, 1);
+            Assert.Equal(0x01, bytes[streamOffset]);
+        }
+    }
+
     [Fact]
     public void Encode_EmptyFrame_IsSixBytes()
     {

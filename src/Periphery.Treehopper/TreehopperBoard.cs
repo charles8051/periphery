@@ -450,10 +450,10 @@ public sealed partial class TreehopperBoard : IAsyncDisposable
     /// (<see cref="RebootAsync"/>).
     /// </summary>
     /// <remarks>
-    /// The limit is <see cref="TreehopperWire.IdentityMaxBytes"/> <em>UTF-8 bytes</em>, not
-    /// characters: the board stores the payload one byte per character in a single 64-byte
-    /// flash page. This was a character count, which let a name of 60 non-ASCII characters
-    /// through to a write the board could not hold. See issue #170.
+    /// The limit is 61 <em>UTF-8 bytes</em>, not characters: the board stores the payload one
+    /// byte per character in a single 64-byte flash page, behind a three-byte header. This was
+    /// a character count, which let 31 two-byte characters - 31 characters, 62 bytes - through
+    /// to a write the board could not hold. See issue #170.
     /// </remarks>
     public async Task UpdateNameAsync(string name, CancellationToken ct = default)
     {
