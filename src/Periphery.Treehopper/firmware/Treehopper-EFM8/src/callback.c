@@ -99,20 +99,37 @@ void USBD_DeviceStateChangeCb(USBD_State_TypeDef oldState,
 		USBD_State_TypeDef newState) {
 	if (newState == USBD_STATE_CONFIGURED) {
 		uint16_t i;
-		LED_SetVal(true);
-		for(i=0;i<60000;i++);
-		LED_SetVal(false);
-		for(i=0;i<60000;i++);
-		LED_SetVal(true);
-		for(i=0;i<60000;i++);
-		LED_SetVal(false);
-		for(i=0;i<60000;i++);
-		LED_SetVal(true);
-		for(i=0;i<60000;i++);
-		LED_SetVal(false);
+		// Three on/off blinks to say "enumerated" - the same six LED_SetVal/delay pairs this
+		// used to spell out one at a time, rolled into a loop. Identical sequence and timing,
+		// ~70 bytes smaller, and the app region ends at 0x3A00 (BUILD.md) so the framing fix
+		// below needed the room. See issue #170.
+		//
+		// The counter lives in XDATA because this runs off the USB ISR: LX51 cannot overlay
+		// this function's locals, and DATA is full to the byte - a plain `uint8_t n` here
+		// fails the link with L107 ADDRESS SPACE OVERFLOW. Single-threaded, so static is safe.
+		static uint8_t SI_SEG_XDATA n;
+		for (n = 0; n < 6; n++) {
+			LED_SetVal((n & 1) == 0);
+			for(i=0;i<60000;i++);
+		}
 		// Arm these endpoints once we're configured
 		USBD_Read(EP_PinConfig, (uint8_t *)&Treehopper_PinConfig, sizeof(pinConfigPacket_t), false);
-		USBD_Read(EP_PeripheralConfig, Treehopper_PeripheralConfig, 64, false);
+		// Second desync path from issue #170, the one with no timeout involved. This runs in
+		// USB ISR context and re-points EP_PeripheralConfig at offset 0 - including while the
+		// foreground has the multi-packet continuation read armed at
+		// &Treehopper_PeripheralConfig[64] and is spinning on it. A bus reset or
+		// re-enumeration mid-transfer then desynchronises the stream exactly as the timeout
+		// path does.
+		//
+		// The arm itself has to stay unconditional. A bus reset leaves the endpoint in
+		// D_EP_HALT (efm8_usbdint.c handleUsbResetInt) and this USBD_Read is the only thing
+		// that brings it back, so skipping it whenever the endpoint looked busy would leave
+		// the board permanently deaf on EP2OUT. Say so instead: the foreground re-checks this
+		// bit after its spin and drains, rather than acting on a buffer that is now half an
+		// old command and half a new packet.
+		if (Treehopper_PeripheralConfigMultiRead)
+			Treehopper_PeripheralConfigDesync = 1;
+		USBD_Read(EP_PeripheralConfig, Treehopper_PeripheralConfig, 64, true);
 	}
 
 
@@ -203,5 +220,12 @@ USB_Status_TypeDef USBD_SetupCmdCb(
 
 uint16_t USBD_XferCompleteCb(uint8_t epAddr, USB_Status_TypeDef status,
 		uint16_t xferred, uint16_t remaining) {
+	if (epAddr == EP_PeripheralConfig) {
+		// `xferred` is the byte count of THIS packet, not of the transfer. A packet shorter
+		// than the endpoint's maximum is the host saying its transfer ends here, which is the
+		// only packet boundary the drain in ProcessPeripheralConfigPacket can trust. Recorded,
+		// never acted on here - this runs in ISR context.
+		Treehopper_PeripheralConfigShortPacket = (xferred < 64U);
+	}
 	return 0;
 }

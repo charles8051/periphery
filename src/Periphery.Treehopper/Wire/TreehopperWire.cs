@@ -70,6 +70,19 @@ internal static class TreehopperWire
     private const byte CmdSpiTransaction       = 0x07;
     private const byte CmdUartTransaction      = 0x08;
     private const byte CmdSoftPwmConfig        = 0x09;
+    /// <summary>
+    /// Largest name or serial payload the board can store, in UTF-8 bytes.
+    /// </summary>
+    /// <remarks>
+    /// The name and serial each live in one 64-byte flash page (<c>NAME_ADDR 0xF840</c>,
+    /// <c>SER_ADDR 0xF800</c>), behind a three-byte header: encoding marker, descriptor
+    /// length, descriptor type. That leaves 61 bytes. The firmware rejects anything longer
+    /// (<c>serialNumber.c</c>, <c>USB_STRING_MAX_PACKED_LEN</c>); this is the same bound
+    /// stated on the near side so a too-long string fails as an argument error rather than
+    /// as a silently dropped command.
+    /// </remarks>
+    public const int IdentityMaxBytes = 61;
+
     private const byte CmdFirmwareUpdateSerial = 0x0A;
     private const byte CmdFirmwareUpdateName   = 0x0B;
     private const byte CmdReboot               = 0x0C;
@@ -639,15 +652,28 @@ internal static class TreehopperWire
     }
 
     /// <summary>
-    /// Frames a name / serial-number EEPROM write: command byte, character count, then
-    /// the UTF-8 bytes. Faithful to the original SDK (the count is the string length).
+    /// Frames a name / serial-number EEPROM write: command byte, payload byte count, then
+    /// the UTF-8 bytes.
     /// </summary>
+    /// <remarks>
+    /// This used to write <c>text.Length</c> — a UTF-16 <em>char</em> count — as the length of
+    /// a UTF-8 <em>byte</em> payload, and cap neither. The firmware takes that byte as the
+    /// number of bytes to burn into a 64-byte flash page starting three bytes in, so any
+    /// non-ASCII name under-reported its payload and truncated the write, while a long one
+    /// ran the write off the end of the page into the reserved region that holds bootloader
+    /// data and the lock byte. See <see cref="IdentityMaxBytes"/> and issue #170.
+    /// </remarks>
     private static byte[] IdentityBytes(byte command, string text)
     {
         var bytes = Encoding.UTF8.GetBytes(text);
+        if (bytes.Length > IdentityMaxBytes)
+            throw new ArgumentException(
+                $"Encodes to {bytes.Length} UTF-8 bytes; the board's config page holds at most " +
+                $"{IdentityMaxBytes}.", nameof(text));
+
         var packet = new byte[bytes.Length + 2];
         packet[0] = command;
-        packet[1] = (byte)text.Length;
+        packet[1] = (byte)bytes.Length;
         bytes.CopyTo(packet, 2);
         return packet;
     }

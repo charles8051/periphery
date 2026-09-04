@@ -397,6 +397,49 @@ public class WireEncodeTests
     public void UpdateSerial_FramesLengthAndUtf8()
         => AssertPacket(PerifEp, new byte[] { 0x0A, 0x02, 0x41, 0x42 }, new Command.UpdateSerial("AB"));
 
+    // The length byte is what the firmware burns into a 64-byte flash page, so it has to be
+    // the UTF-8 byte count. It used to be text.Length - a UTF-16 char count - which
+    // under-reported every non-ASCII name and truncated the write. Issue #170.
+    [Fact]
+    public void UpdateName_LengthIsUtf8ByteCount_NotCharCount()
+        => AssertPacket(PerifEp,
+            new byte[] { 0x0B, 0x04, 0xC3, 0xA9, 0xC3, 0xA8 },
+            new Command.UpdateName("\u00e9\u00e8"));
+
+    [Fact]
+    public void UpdateName_AtTheFlashPageBound_Encodes()
+    {
+        var name = new string('a', TreehopperWire.IdentityMaxBytes);
+        var (_, packet) = TreehopperWire.Encode(new Command.UpdateName(name));
+        Assert.Equal(TreehopperWire.IdentityMaxBytes + 2, packet.Length);
+        Assert.Equal(TreehopperWire.IdentityMaxBytes, packet[1]);
+    }
+
+    // Past the bound the firmware's write runs off the config page into the reserved region
+    // that holds bootloader data and the lock byte. Both ends reject it. Issue #170.
+    [Fact]
+    public void UpdateName_OneByteTooLong_Throws()
+    {
+        var name = new string('a', TreehopperWire.IdentityMaxBytes + 1);
+        Assert.Throws<ArgumentException>(() => TreehopperWire.Encode(new Command.UpdateName(name)));
+    }
+
+    // 31 two-byte characters is 31 chars but 62 bytes: under any char-count bound, over the
+    // real one. This is the case the old text.Length check waved through.
+    [Fact]
+    public void UpdateName_ShortInCharsButTooLongInBytes_Throws()
+    {
+        var name = new string('\u00e9', 31);
+        Assert.Throws<ArgumentException>(() => TreehopperWire.Encode(new Command.UpdateName(name)));
+    }
+
+    [Fact]
+    public void UpdateSerial_OneByteTooLong_Throws()
+    {
+        var serial = new string('a', TreehopperWire.IdentityMaxBytes + 1);
+        Assert.Throws<ArgumentException>(() => TreehopperWire.Encode(new Command.UpdateSerial(serial)));
+    }
+
     [Fact]
     public void EnterBootloader_EncodesOpcode()
         => AssertPacket(PerifEp, new byte[] { 0x0D }, new Command.EnterBootloader());
