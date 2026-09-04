@@ -10,6 +10,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CallAndResponse;
+using CallAndResponse.Framing;
 using CallAndResponse.Protocol.Stm32Bootloader;
 using Microsoft.Extensions.Logging;
 using Periphery.Firmware;
@@ -595,7 +596,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         try
         {
             var reply = await WithTimeout(_options.SyncTimeout, ct,
-                t => _transceiver.SendReceiveExactly(new byte[] { SyncByte }, 1, t)).ConfigureAwait(false);
+                t => _transceiver.SendReceive(new byte[] { SyncByte }, Frame.Exactly(1), t)).ConfigureAwait(false);
             _sawBytes = true;
             return reply.Span[0];
         }
@@ -655,7 +656,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         try
         {
             await WithTimeout(_options.SyncTimeout, ct,
-                t => _transceiver.SendReceiveExactly(new byte[] { value }, 1, t)).ConfigureAwait(false);
+                t => _transceiver.SendReceive(new byte[] { value }, Frame.Exactly(1), t)).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -708,7 +709,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         try
         {
             var reply = await WithTimeout(_options.CommandTimeout, ct,
-                t => _transceiver.SendReceiveExactly(new byte[] { 0x02, 0xFD }, 5, t))
+                t => _transceiver.SendReceive(new byte[] { 0x02, 0xFD }, Frame.Exactly(5), t))
                 .ConfigureAwait(false);
 
             if (reply.Length < 5 || reply.Span[0] != Ack)
@@ -778,8 +779,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         try
         {
             await WithTimeout(_options.CommandTimeout, ct,
-                t => _transceiver.SendReceivePerfectMatch(
-                    new byte[] { (byte)Stm32BootloaderCommand.Go, 0xDE }, new byte[] { Ack }, t))
+                t => _transceiver.SendReceive(new byte[] { (byte)Stm32BootloaderCommand.Go, 0xDE }, Frame.UntilPattern(new byte[] { Ack }, keepInPayload: true), t))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -803,7 +803,7 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         try
         {
             var answer = await WithTimeout(_options.CommandTimeout, ct,
-                t => _transceiver.SendReceiveExactly(address, 1, t))
+                t => _transceiver.SendReceive(address, Frame.Exactly(1), t))
                 .ConfigureAwait(false);
             if (answer.Length > 0)
                 reply = answer.Span[0];

@@ -228,7 +228,10 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     private Task GetAsync(PipeWriter writer, CancellationToken ct)
     {
         byte[] commands = { 0x00, 0x01, 0x02, 0x11, 0x21, 0x31, 0x44 };
-        var reply = new List<byte> { Ack, (byte)(commands.Length + 1), ProtocolVersion };
+        // AN3155 3.2: N is the number of bytes to follow minus one. Those bytes are the version
+        // plus the command list, so N is the command count. Hardware agrees: an STM32G431 with
+        // eleven commands reports N = 0x0B.
+        var reply = new List<byte> { Ack, (byte)commands.Length, ProtocolVersion };
         reply.AddRange(commands);
         reply.Add(Ack);
         return SendAsync(writer, reply.ToArray(), ct);
