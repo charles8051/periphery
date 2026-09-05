@@ -527,7 +527,13 @@ It sharpens D3's field evidence. It does not change any decision already made.
 
 ## What is still open
 
-**Nothing that gates the release.** All four ADR-0086 D5 tests are closed and `dist/` is
+> **Superseded by the rollout below (2026-09-05).** The image is sound - a bench board
+> verifies MATCH against it - but it does not reach hardware on a three-board hub: the
+> flasher reports `OK ... verified` while the boards stay on v2.76 (#179). Read the next
+> section before treating v2.77 as deployable.
+
+
+**Nothing gated the image itself.** All four ADR-0086 D5 tests are closed and `dist/` is
 regenerated at v2.77 (14827 HEX bytes, top `0x39EB`; `.tfi` 15433 bytes, 120 records). The
 bench board that reproduced the desync verifies MATCH against the shipped `dist/Treehopper.hex`.
 
