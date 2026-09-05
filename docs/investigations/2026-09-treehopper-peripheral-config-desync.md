@@ -256,7 +256,8 @@ same model unplugged. Both boards here survived (checked: both enumerate `OK` in
 mode with the versions they should have), because the verify round's `RunApp` puts the
 bystander back each time — but a board that is mid-operation does not care that it came back.
 
-Tracked separately; not fixed on this branch.
+Tracked as [#173](https://github.com/charles8051/periphery/issues/173), which carries the full
+`--verbose` trace and the code pointers. Not fixed on this branch.
 
 ## What is still open
 
