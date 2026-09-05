@@ -122,7 +122,7 @@ LED strip. The positive control passed on every run listed here.
 
 ### The threshold
 
-Board `IMNUZ6YW`, unfixed firmware (see the caveat below), 20 iterations per row:
+Board `IMNUZ6YW`, firmware **v2.75** (`REV_0113`), 20 iterations per row:
 
 | `--stall-ms` | desyncs |
 |---|---|
@@ -140,8 +140,12 @@ the firmware's spin budget at **210–220 ms**.
 
 ### The controlled comparison
 
-`IMNUZ6YW` turned out **not** to match `dist/Treehopper.hex` — it is on some other pre-fix
-image, so a two-board comparison against it confounds the fix with whatever else differs.
+`IMNUZ6YW` turned out **not** to match `dist/Treehopper.hex`, so a two-board comparison
+against it confounds the fix with whatever else differs. (It is on v2.75 — the release
+*before* the watchdog change — which is why it does not match a 2.76 `dist/`. Working that
+out took rebooting it into its bootloader for a flash verify, because at the time every
+board on the bus reported the same version. See "identify the board first" below.)
+
 The decisive run is therefore one board, one variable: board `CDYHINBH`, flashed back and
 forth, with the image **verified by `treehopper-flash verify` in both directions**.
 
@@ -158,7 +162,25 @@ firmware image, and the desync goes from every single iteration to none.
 Descriptors were unchanged after every run, on both boards. That is the canary doing its
 job — `0x01 ConfigureDevice` fired 30 times per run and touched no flash.
 
-### Two things worth knowing for the next run
+### Identify the board first — it is one command
+
+`bcdDevice` is now bumped **with the source change**, not with the release, so an unreleased
+image on a bench board is still self-identifying. Read it off the bus without opening,
+rebooting or flashing anything:
+
+```pwsh
+Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match 'VID_10C4&PID_8A7E' } | ForEach-Object { $rev = (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_HardwareIds').Data | Where-Object { $_ -match 'REV_' }; "$($_.InstanceId.Split('\')[-1])  $rev" }
+```
+
+```
+IMNUZ6YW  USB\VID_10C4&PID_8A7E&REV_0113     <- v2.75, pre-watchdog release
+CDYHINBH  USB\VID_10C4&PID_8A7E&REV_0115     <- v2.77, the #170 fix
+```
+
+`REV_0114` is v2.76, i.e. `dist/Treehopper.hex`: the watchdog work, and **still vulnerable to
+#170**. Anything at or below `0114` desyncs.
+
+### Three things worth knowing for the next run
 
 **The harness's descriptor check had a false-alarm bug, now fixed.** It matched the
 re-enumerated board by serial *or* name. A stock board is called `Treehopper`, so with two
@@ -167,11 +189,18 @@ of them connected the name fallback matched the *other* board and reported
 falls back to the name only when exactly one connected board carries it, and otherwise says
 it cannot tell rather than guessing.
 
-**`treehopper-flash flash` reported `FAILED` on both flashes that actually landed.** "The
-write appeared to succeed, but an independent, later bootloader-session check could not
-confirm it landed." A `verify` immediately afterwards returned MATCH both times, against
+**`treehopper-flash flash` reported `FAILED` on all three flashes that actually landed.**
+"The write appeared to succeed, but an independent, later bootloader-session check could not
+confirm it landed." A `verify` immediately afterwards returned MATCH every time, against
 the image just written. The write is fine; the post-flash confirmation is producing false
 negatives on this host. Not a #170 problem, but it will mislead whoever flashes next.
+
+**The version word was nearly missed again.** The whole reason this session had to reboot a
+board into its bootloader to find out what it was running is that the #170 fix originally
+landed without bumping `bcdDevice` — the same omission the 275 -> 276 comment in
+`descriptors.c` was written to warn about. Bump it in the same commit as any firmware
+behaviour change, whether or not `dist/` is being regenerated. An unreleased image on a
+bench board is precisely the case that needs it.
 
 ## What is still open
 

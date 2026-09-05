@@ -36,11 +36,23 @@ SI_SEGMENT_VARIABLE(deviceDesc[],
 	64,	 // bMaxPacketSize
 	USB_VENDOR_ID,// idVendor
 	USB_PRODUCT_ID,// idProduct
-	htole16(0x0114),// bcdDevice (275 -> 276 = v2.75 -> v2.76: self-recovery - MCU watchdog #226,
-	                // EP0 vendor rescue reset #227, SOF-gated watchdog feed #233. Covers all three:
-	                // they landed on top of the v2.75 release without a bump, so a 2.75 board could
-	                // be the released image or any of them, and firmware version-gating could not
-	                // tell a board that self-resets from one that does not.)
+	htole16(0x0115),// bcdDevice (276 -> 277 = v2.76 -> v2.77: EP_PeripheralConfig stream framing
+	                // #170 - the desync drain, the bounded identity write, the marker written last,
+	                // and the supply monitor armed before a flash write. A 2.76 board executes
+	                // pixel data as commands on the abort path and a 2.77 board does not, which is
+	                // the whole reason this word exists.
+	                //
+	                // Bumped WITH the source change, not with the release, and deliberately so.
+	                // The previous entry (275 -> 276: MCU watchdog #226, EP0 vendor rescue reset
+	                // #227, SOF-gated watchdog feed #233) records the cost of the other order:
+	                // those three landed on top of the v2.75 release without a bump, so a 2.75
+	                // board could be the released image or any of them and version-gating could
+	                // not tell a board that self-resets from one that does not. The same thing
+	                // happened again on 2026-09-04 while reproducing #170 on the bench: two
+	                // connected boards both reported the same version, one of them turned out not
+	                // to match dist/Treehopper.hex at all, and telling them apart took rebooting a
+	                // board into its bootloader to run a flash verify. dist/ not being regenerated
+	                // yet is exactly when this matters - an unreleased image is already on a board.)
 	1,// iManufacturer
 	2,// iProduct
 	3,// iSerialNumber

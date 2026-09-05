@@ -191,6 +191,28 @@ release the image.** Test 1 can still move D2's 61-byte bound, and tests 3 and 4
 are the only chance to read the damaged boards before reflashing destroys the
 evidence. The gate is the set, not the interesting member of it.
 
+### D5b. `bcdDevice` bumps to v2.77 with the source change, not with the release
+
+`descriptors.c` goes from `0x0114` to `0x0115`. A 2.76 board executes pixel data as commands
+on the abort path and a 2.77 board does not, and that distinction is the only thing this word
+is for.
+
+**It bumps now, while `dist/` stays put, and the two are not in tension.** The comment this
+change replaces records the last time the other order was chosen: the watchdog work (#226,
+#227, #233) landed on top of the v2.75 release without a bump, so a 2.75 board could be the
+released image or any of them. The identical problem recurred while closing D5 test 2 on
+2026-09-04 — two boards on one bus reporting the same version, one of which turned out not
+to match `dist/Treehopper.hex`, and separating them took rebooting a board into its
+bootloader to run a flash verify. An unreleased image sitting on a bench board is exactly the
+case that needs a distinct version, not an exemption from one.
+
+With the bump, `REV_0113` / `REV_0114` / `REV_0115` read straight off the bus as v2.75 /
+v2.76 / v2.77, and everything at or below `0114` is vulnerable.
+
+Nothing else needed a version change: package versions are MinVer/tag-driven, and
+`TreehopperControlOptions.FirmwareTargetVersion` is supplied by the caller rather than
+defaulted in source.
+
 ### D6. Flash headroom was bought, not borrowed
 
 The EFM8UB1 app region ends at **`0x3A00`**, and the baseline image already sat

@@ -102,8 +102,11 @@ baseline row matches the committed `dist/Treehopper.hex` byte for byte.
 
 | | HEX bytes | Top | Free to `0x3A00` |
 |---|---|---|---|
-| baseline (`= dist/Treehopper.hex`) | 14752 | `0x39A0` | 96 |
-| with the framing fix | 14774 | `0x39B6` | **74** |
+| baseline (`= dist/Treehopper.hex`, v2.76) | 14752 | `0x39A0` | 96 |
+| with the framing fix (v2.77) | 14774 | `0x39B6` | **74** |
+
+The `bcdDevice` bump to `0x0115` in the same change costs nothing — it is a constant in an
+already-present descriptor.
 
 The fix on its own does not fit in 96 bytes. Two size-neutral simplifications in
 the same commit paid for it, rather than any part of the fix being traded away:
