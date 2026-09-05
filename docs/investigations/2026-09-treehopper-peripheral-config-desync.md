@@ -540,3 +540,127 @@ wanted; run it against both boards and record what `bLength` comes back for stri
 Add it here: firmware image and how it was verified, the `--stall-ms` sweep, iterations,
 desyncs, and the analyser trace if you took one. A "no desync" result on unfixed firmware is
 only worth recording alongside the stall values you swept.
+
+## v2.77 rollout attempt - station-A / station-A (2026-09-05)
+
+**Outcome: no board took the update. Station restored to service on 2.76. Nothing bricked.**
+
+### Setup
+
+- Flasher built from `main` at `9cda2f1`, which sits above `a5c6435` (#175), so the
+  wrong-board correlation defect (#173) is fixed in the binary used.
+- Image taken from `main`, not from the rollout brief. The brief described `d39bb5a`
+  (14774 payload bytes, top `0x39B6`, `.tfi` 15380). Two commits landed after it -
+  `4770302` and `435e2f8` "close the EP2 ownership window, and correct the shipped sizes".
+  The merged image is 14827 payload bytes, top `0x39EB`, `.tfi` 15433 / 120 records,
+  `bcdDevice 0x0115`. SHA-256 of the shipped `Treehopper.hex`
+  `1eac521b10944b771ac38da3f87fd278982373f2661c9b301c5fad5e0a3af51d`, hash-checked
+  again after transfer to the station.
+- Vehicle: SSH to the station over the private overlay network, as the standard service account.
+  The "explicitly no SSH" in the ADR-0061 material describes the *the control plane control plane*,
+  not the host. Every other station in this fleet already has an `~/.ssh/config` entry;
+  this one was missing. No OTA workload was published.
+- Station taken to `outOfService` and the host application workload stopped via the management agent before
+  flashing; both restored afterwards.
+
+### Per-board result
+
+| zone | device id | before | flasher said | after |
+|---|---|---|---|---|
+| board-A | `USB\VID_10C4&PID_8A7E\<serial-A>` | REV_0114 | `OK - flashed 15433 bytes, verified` | **REV_0114, verify MISMATCH** |
+| board-B | `USB\VID_10C4&PID_8A7E\6&HUBPATH&0&1` | REV_0114 | `OK - flashed 15433 bytes, verified` | **REV_0114, verify MISMATCH** |
+| board-C | `USB\VID_10C4&PID_8A7E\6&HUBPATH&0&2` | REV_0114 | not flashed | REV_0114, verify MISMATCH |
+
+No board needed a physical reseat. All three enumerated throughout, `Status OK`, names
+(`board-A` / `board-B` / `board-C`) intact. The two serial-less boards still
+enumerate by port path, as expected - the app-region flash does not touch `0xF800`.
+
+### The defect
+
+`flash` reported success *and* content-verification for two boards that were not modified.
+Three independent signals contradict that report:
+
+1. `DEVPKEY_Device_HardwareIds` still reads `REV_0114` (v2.76) on all three boards.
+2. `treehopper-flash verify --file <v2.77 hex>` returns MISMATCH on all three -
+   "the bootloader's own Verify record was rejected".
+3. **Positive control:** `verify` against the pre-PR v2.76 image (`51e8247`, 14752 payload
+   bytes, top `0x39A0`, `bcdDevice 0x0114`) returns **MATCH** on `board-A`. So `verify`
+   works, and the board holds 2.76 byte-for-byte. The write never landed.
+
+Filed as #179. This is not #173: #173 reported FAILED on a flash that had landed; this is the
+mirror image - a flash reported OK *and verified* that did not land. `BootloaderEntryOrchestrator.Verification`
+only sets `Verified: true` when the verify round's content check passes and the application is
+confirmed back, so the in-flash verify round returned a content match that a standalone verify
+minutes later contradicts.
+
+Also observed during the run: a `list` immediately after the second flash showed all three
+boards in the EFM8 USB-HID bootloader (`VID_10C4&PID_EAC9`) at once, including two that were
+not being flashed. They returned to application mode on their own. Whether that is the same
+fault or a separate hub-wide artefact is not established.
+
+Two hypotheses were checked and ruled out: the image is not oversized for the bootloader
+region (both 2.76 at `0x39A0` and 2.77 at `0x39EB` sit below `0x3A00`), and the firmware has
+no golden-image self-recovery that could revert a write - the 2.76 watchdog work only resets.
+
+The bench board in the section above verifies MATCH against this same image, so the image is
+good and the failure is specific to this station or to a multi-board hub.
+
+### State left behind
+
+Station `normal`, workload `the product-host application 2026.8.19-rc.1` running, all three boards
+present. Health is Unhealthy only for the pre-existing `Real.the productApi: host application/ping is not
+reaching the the product API` fault, which predates this work and is unrelated. The staged
+flasher payload was removed from `C:\Windows\Temp` on the station.
+
+**All three boards remain on 2.76 and are still vulnerable to #170.**
+
+Two of the three candidate explanations are since ruled out (see #179 for the working):
+`VerifyOnlyFromBlob` and `VerifyOnly` produce byte-identical streams for this image, and both the
+post-flash and standalone paths read `Efm8UploadResult.Success` the same way. What remains is
+device correlation in the post-flash application wait - the circumstance being three boards
+bouncing into the bootloader at once, two of them without a usable serial identity.
+
+### Reproduction (2026-09-05, same day)
+
+Reproduced on the station with `-v`. Full logs and analysis in #179; the short version:
+
+- **Negative control.** A two-board bench rig (`<serial-X>`, `<serial-Y>`) on *two different* Realtek
+  hubs flashes correctly with the same binary and image: `REV_0113` -> `REV_0115`, standalone
+  verify MATCH. The station's three boards share *one* hub (`USB\hub-1`).
+- **On the station**, all 120 records acknowledge - every Erase (0x32), every Write (0x33), and the
+  embedded Verify (0x34) - and the board still reads `REV_0114` afterwards.
+- **The write does not land at all.** A standalone verify against the pre-PR v2.76 image returns
+  MATCH byte-for-byte. The content is pristine 2.76, not partially programmed, so this is not the
+  supply-dip mechanism `flash.c` describes for #170.
+- `rename` successfully wrote these boards' config page on 2026-09-04, so the *application's*
+  flash-write path works while the *bootloader's* app-region erase/write does not.
+- Flashing one board knocks both others off the bus into their bootloaders. The flashed board's
+  post-flash app-wait is satisfied, then the board resets *again* before the verify round runs.
+
+Also filed #180: `flash --no-verify` and `--no-leave` are silently ignored, which blocked the
+obvious way to hold a board in the bootloader between the write and an independent verify.
+
+### What the flash-read probe established
+
+`scratch/Efm8FlashPeek` reads individual flash bytes out of an EFM8 board by using the bootloader's
+Verify (0x34) record as a read oracle - a one-byte range has only 256 possible CRC-16/XMODEM
+values, so whichever candidate acknowledges is the byte. Verify writes nothing. Validated against a
+bench board on v2.77: `0x0000=0x02`, `0x0001=0x1D`, `0x0002=0x7F`, `0x1000=0xD0`, all matching the
+shipped image.
+
+Applied to the station (full working in #179):
+
+- **Flashing directly from the bootloader also fails.** A board left sitting in the EFM8 bootloader
+  was flashed with no app-mode entry, no reboot, no post-flash app-wait and no device correlation.
+  All 120 records acknowledged; the board came back `REV_0114` with `0x0025=0xBE`, `0x003C=0x06`,
+  `0x005D=0x81` - the v2.76 values. This removes `RunWithVerificationAsync`, the app-wait and #175's
+  identity pin from suspicion. The failure is below the flasher.
+- **The flash lock byte is not the difference.** `0x3DFF` reads `0x0A` on all three station boards
+  *and* on the bench board that flashes correctly.
+- **Erase/write timing is not the difference.** Erase 10.0 ms median (bench) vs 9.0 ms (station),
+  Write 5.0 vs 4.0 ms, across n=29 and n=88 records. Within log resolution.
+
+Still unresolved: the in-stream Verify record acknowledges on a board whose content the same
+bootloader reports as mismatched from a fresh session minutes later. Settling it needs one of these
+boards on a different hub, or a known-good board on this station's hub - both require hands on the
+machine.
