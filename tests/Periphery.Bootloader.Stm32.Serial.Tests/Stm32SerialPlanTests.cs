@@ -58,6 +58,20 @@ public class Stm32SerialPlanTests
     }
 
     [Fact]
+    public void Plan_emits_a_mass_erase_only_when_mass_is_asked_for()
+    {
+        var image = FirmwareImage.FromBytes(FlashBase, new byte[8]);
+        var options = FlashOptions.Default with { Erase = EraseMode.Mass };
+
+        var steps = Stm32SerialPlan.Plan(image, Stm32SerialOptions.Default, options);
+
+        // No page count is computed and none is needed: the whole flash goes, including the parts
+        // the image does not reach.
+        Assert.IsType<Stm32SerialStep.EraseAll>(steps[0]);
+        Assert.DoesNotContain(steps, s => s is Stm32SerialStep.ErasePages);
+    }
+
+    [Fact]
     public void Plan_omits_erase_verify_and_go_when_the_options_turn_them_off()
     {
         var image = FirmwareImage.FromBytes(FlashBase, new byte[8]);

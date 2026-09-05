@@ -47,8 +47,13 @@ public static partial class BootloaderEntryOrchestrator
     /// <param name="flashSucceeded">Decides, from a flash attempt's result, whether it succeeded at all (a hard failure skips verify and ends the run).</param>
     /// <param name="options">
     /// Timeouts, correlation mode, and recovery — shared by both rounds. <see cref="BootloaderEntryOptions.ApplicationFilter"/>
-    /// is required to run this loop safely; when left <see langword="null"/>, a filter is derived
-    /// from <paramref name="applicationDevice"/>'s own USB vendor/product id.
+    /// is required to run this loop safely; when left <see langword="null"/>, a filter is derived from
+    /// <paramref name="applicationDevice"/>'s own identity — its USB port <em>and</em> serial, falling
+    /// back to its USB vendor/product id only when it exposes no such identity. A supplied filter is
+    /// used verbatim; supply one that admits <b>only the board being flashed</b>, because it decides
+    /// which board the verify round re-enters and which board a retry re-flashes. A model-wide filter
+    /// adopts a sibling of the same model that is already on the bus (periphery#173) — see
+    /// <c>WithApplicationFilter</c>.
     /// </param>
     /// <param name="maxAttempts">How many flash-then-verify cycles to try before giving up on a persistent mismatch. Must be at least 1.</param>
     /// <param name="phase">
@@ -141,14 +146,33 @@ public static partial class BootloaderEntryOrchestrator
         return new VerifiedFlashResult<TResult>(lastFlash!.FlashResult, lastVerify!.ApplicationReturned, Verified: false, maxAttempts);
     }
 
-    // A DeviceFilter matching only applicationDevice's own USB vendor/product id - not an identity
-    // (every board of a model shares it, same caveat as IdentityFilterFor's remarks), but sufficient
-    // here: the orchestrator's own FirstAppearance correlation is what actually pins the physical
-    // device on each re-entry, this filter only needs to recognize "an instance of this application."
+    // The filter the post-flash application wait uses to decide which board came back - and therefore
+    // which board the verify round re-enters, and which board a retry re-flashes.
+    //
+    // IT MUST PIN AN IDENTITY, NOT A MODEL. That wait accepts a PRE-EXISTING match (it is a liveness
+    // check, DeviceWaitState.Collecting(FirstAppearance, debouncePreExisting: false)), so a filter
+    // built from VID/PID alone is satisfied the instant it arms by any same-model board sitting on
+    // the bus - a sibling nobody asked to touch. periphery#173: with two Treehoppers connected, the
+    // wait handed back the OTHER board, the verify round rebooted it and checked ITS flash against
+    // the image just written to the first, and the mismatch was reported as a failed flash on a
+    // board that had in fact flashed correctly (an independent `verify` run afterwards said MATCH).
+    // A mismatch that DOES confirm a return is worse than a false FAILED: the retry re-flashes the
+    // adopted board.
+    //
+    // So prefer IdentityFilterFor - the same port-AND-serial conjunction the recovery path already
+    // uses, for the same reason, with the same "both or nothing" rule. Its remarks are the full
+    // argument for why either half alone is not proof of sameness.
+    //
+    // The VID/PID fallback remains for a device that exposes no such identity, because the
+    // alternative there is refusing to flash at all on a platform that reports no port. It carries
+    // the original hazard, and it is the narrowest place left to carry it: one board of a model on
+    // the bus is the case it is still correct for.
     private static BootloaderEntryOptions WithApplicationFilter(BootloaderEntryOptions options, DeviceInfo applicationDevice)
     {
         if (options.ApplicationFilter is not null)
             return options;
+        if (IdentityFilterFor(applicationDevice) is { } identity)
+            return options with { ApplicationFilter = identity };
         if (applicationDevice.VendorId is not { } vid)
             throw new ArgumentException(
                 "RunWithVerificationAsync must be able to recognize the application device again "

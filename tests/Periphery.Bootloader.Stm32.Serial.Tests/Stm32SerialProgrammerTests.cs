@@ -116,17 +116,35 @@ public class Stm32SerialProgrammerTests
     }
 
     [Fact]
-    public async Task Flash_refuses_mass_erase_because_the_client_cannot_express_it()
+    public async Task Flash_mass_erases_with_the_special_code_rather_than_a_page_list()
     {
+        // AN3155 3.7's 0xFFFF is one command with no page list. It used to be unreachable, so the
+        // shell refused EraseMode.Mass outright rather than quietly doing a page erase instead.
         await using var device = new FakeStm32Bootloader();
         await using var programmer = new Stm32SerialProgrammer(Device, device);
 
         var result = await programmer.FlashAsync(
             Payload(FlashBase, Pattern(16)), FlashOptions.Default with { Erase = EraseMode.Mass });
 
-        Assert.False(result.Success);
-        Assert.Contains("mass erase is not available", result.Error);
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(1, device.MassErases);
         Assert.Empty(device.ErasedPageCounts);
+    }
+
+    [Fact]
+    public async Task Flash_erases_only_the_pages_the_image_covers_unless_mass_is_asked_for()
+    {
+        // The counterpart to the test above: Auto must not become a mass erase now that one is
+        // available. Erasing flash the caller did not ask about is not an upgrade.
+        await using var device = new FakeStm32Bootloader();
+        await using var programmer = new Stm32SerialProgrammer(Device, device);
+
+        var result = await programmer.FlashAsync(
+            Payload(FlashBase, Pattern(16)), FlashOptions.Default with { Erase = EraseMode.Auto });
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(0, device.MassErases);
+        Assert.Equal(new[] { 1 }, device.ErasedPageCounts);
     }
 
     [Fact]

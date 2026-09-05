@@ -41,7 +41,14 @@ internal static class Stm32SerialPlan
 
         var steps = ImmutableArray.CreateBuilder<Stm32SerialStep>();
 
-        if (options.Erase != EraseMode.None)
+        if (options.Erase == EraseMode.Mass)
+        {
+            // One command, no page list, and it clears flash the image does not cover. Only ever
+            // on an explicit request: Auto stays a page erase, which is the "better" the mode's
+            // own documentation offers.
+            steps.Add(new Stm32SerialStep.EraseAll());
+        }
+        else if (options.Erase != EraseMode.None)
         {
             int pages = PageCountToCover(image, serial.ErasePageSize);
 
