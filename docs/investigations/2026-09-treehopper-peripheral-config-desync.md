@@ -397,9 +397,12 @@ passes the device's own string through, the SetupAPI/PnP enumeration path upperc
 
 | reported as "before" | reported as "after" | uppercase of "after"? |
 |---|---|---|
-| `VOQXRNTN` | `vOQxrntn` | yes |
-| `0PM1YKJO` | `0PM1YKjO` | yes |
-| `KISSUEDM` | `kIssUEDM` | yes |
+| `XXXXXXXX` | `xXXxxxxx` | yes |
+| `0XX1XXXX` | `0XX1XXxX` | yes |
+| `XXXXXXXX` | `xXxxXXXX` | yes |
+
+Serials are masked: `X`/`x` stands for a letter, digits are shown as themselves, and the case of
+every position is preserved exactly as reported. Raw serials are held out of this public document.
 
 Every character that differs is a lowercase letter in the mixed-case reading; every digit is
 untouched. That is what case normalisation does, and it is not what a drifting flash cell does
@@ -449,17 +452,17 @@ Two further things fall out of the same reads:
 
 ## Test 4, mostly answered from artifacts already off the station
 
-**No deployment, no C2, no site visit.** Station `cindy` / `SV3-01-ENMOVS6` (meshware
-`4QV9B54J`) uploads `shredvault.diagnostic_snapshot` artifacts - gzipped NDJSON - and two of
-them bracket the incident. `meshware --env production artifacts get` is read-only.
+**No deployment, no C2, no site visit.** The station (control-plane id
+withheld) uploads gzipped-NDJSON diagnostic snapshot artifacts, and two of
+them bracket the incident. The control-plane artifact fetch is read-only.
 
 The incident is 2026-09-01 22:02 local = **2026-09-02 03:02 UTC**.
 
 ### The garbage name, from the station's own logs
 
 ```
-03:02:21.928  USB\VID_10C4&PID_8A7E&5D32C7&0&1   name='ÿ	ÿ	'
-03:02:21.932  USB\VID_10C4&PID_8A7E&5D32C7&0&2   name='ÿ	ÿ	'
+03:02:21.928  USB\VID_10C4&PID_8A7E&HUBPATH&0&1   name='ÿ	ÿ	'
+03:02:21.932  USB\VID_10C4&PID_8A7E&HUBPATH&0&2   name='ÿ	ÿ	'
 ```
 
 `06 FF 0B 09 06 FF 0B 09 06` - the nine bytes the issue derived, byte-identical, on both
@@ -468,9 +471,9 @@ boards. Confirmed rather than reconstructed.
 ### The bootloader entries, confirmed
 
 ```
-03:02:25.072  VOQXRNTN disappears            -> PID_EAC9&5d32c7&0&3 at 03:02:25.303
-03:02:35.856  6&5D32C7&0&1 disappears        -> PID_EAC9&5d32c7&0&1 at 03:02:36.076
-03:02:35.916  6&5D32C7&0&2 disappears        -> PID_EAC9&5d32c7&0&2 at 03:02:36.190
+03:02:25.072  board-A  disappears            -> PID_EAC9&hubpath&0&3 at 03:02:25.303
+03:02:35.856  6&HUBPATH&0&1 disappears        -> PID_EAC9&hubpath&0&1 at 03:02:36.076
+03:02:35.916  6&HUBPATH&0&2 disappears        -> PID_EAC9&hubpath&0&2 at 03:02:36.190
 03:02:37.5-6  all three bootloaders vanish; the boards come back
 ```
 
@@ -482,7 +485,7 @@ requests a bootloader entry.
 **The identity loss PREDATES the bootloader event.** At `03:02:21` - four seconds before the
 first board enters its bootloader, during the app's own startup device snapshot - both damaged
 boards are *already* carrying the garbage name and are *already* enumerating by port path
-(`6&5D32C7&0&1`) rather than by serial. So these are two separate events and the descriptor
+(`6&HUBPATH&0&1`) rather than by serial. So these are two separate events and the descriptor
 damage came first. The issue treats the 22:02 bootloader arrivals as the visible edge of the
 same incident; they are the second act, and the snapshot does not reach back to the first.
 
@@ -503,8 +506,8 @@ invalid to the USB stack, which is exactly the marker-written-first failure D3 f
 ### The case flip, caught in the act
 
 ```
-03:02:25.072  USB\VID_10C4&PID_8A7E\VOQXRNTN     <- before the reboot
-03:02:37.793  USB\VID_10C4&PID_8A7EOQxrntn     <- 12 s later, same board
+03:02:25.072  USB\VID_10C4&PID_8A7E\XXXXXXXX     <- before the reboot
+03:02:37.793  USB\VID_10C4&PID_8A7E\xXXxxxxx     <- 12 s later, same board
 ```
 
 The issue's own first example, with timestamps, in the instance id itself, across one

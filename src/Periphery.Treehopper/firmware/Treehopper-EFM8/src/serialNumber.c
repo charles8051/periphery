@@ -88,7 +88,7 @@ void generateRandomString()
 //   [1] (len+1)*2, so always even, at least 4 (one character), at most (61+1)*2
 //   [2] the descriptor type, always USB_STRING_DESCRIPTOR
 //
-// This is not just belt-and-braces. Two boards at SV3-01-ENMOVS6 are in precisely the
+// This is not just belt-and-braces. Two boards in the field are in precisely the
 // falsely-valid state right now - marker present, record unserveable, no self-repair across
 // four days and many reboots (ADR-0086 D5 test 4). Under this test they regenerate on the next
 // boot after the update instead of staying broken.

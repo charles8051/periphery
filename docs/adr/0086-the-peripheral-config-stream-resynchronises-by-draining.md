@@ -23,7 +23,7 @@ and `dist/treehopper.tfi` are regenerated at **v2.77** (14827 bytes, top
 
 ## Context
 
-Issue #170. On shred-vault station `SV3-01-ENMOVS6`, two of three Treehopper
+Issue #170. On one production station, two of three Treehopper
 boards on one hub permanently lost both their `iProduct` and `iSerialNumber`
 descriptors on 2026-09-01, and all three entered their bootloaders within eleven
 seconds of each other. The corruption re-reads from EEPROM on every enumeration.
@@ -167,7 +167,7 @@ Confirmed on hardware - a bench board flashed with this change kept its serial
 `cDYhINBh` across the update.
 
 **And it is not hypothetical.** D5 test 4 found two boards at
-`SV3-01-ENMOVS6` in precisely the falsely-valid state right now: marker present,
+those two boards in precisely the falsely-valid state right now: marker present,
 record unserveable, no self-repair across four days and many reboots. Under the
 old one-byte test they stay broken forever. Under this one they regenerate on the
 first boot after the update - which means the fix reaches boards already damaged,
@@ -184,8 +184,8 @@ which is the only place this firmware writes flash.
 **Corrected 2026-09-05 - this decision loses its supporting symptom, and keeps
 its justification.** It previously read as the leading candidate for a second,
 lower-severity symptom seen on all three boards including the healthy one:
-serial strings whose letter case changed between reads (`VOQXRNTN` ->
-`vOQxrntn`), every flip setting bit 5, i.e. drifting toward the erased state.
+serial strings whose letter case changed between reads - four of the eight
+characters flipped, every flip setting bit 5, i.e. drifting toward the erased state.
 
 D5 test 3 dissolved that. The case difference is a host-side presentation
 artefact: the stored serial genuinely is mixed case (`generateRandomString`
@@ -226,10 +226,11 @@ without the hardware the test list assumed.
 3. **Case flips - a host artefact, not the flash.** Five byte-identical C2 reads
    while one host log reports the same serials in three cases at once. The stored
    form is the mixed-case one. Caught in the act in the field logs too:
-   `VOQXRNTN` at `03:02:25.072`, `vOQxrntn` at `03:02:37.793`, same board, across
+   the serial read one way at `03:02:25.072` and with four characters case-flipped at
+   `03:02:37.793`, same board, across
    one re-enumeration. D4 keeps its justification and loses its symptom.
 4. **Read the damaged boards - answered from artifacts already off the station.**
-   `cindy`'s uploaded diagnostic snapshots carry the garbage name byte-for-byte
+   the station's uploaded diagnostic snapshots carry the garbage name byte-for-byte
    (`06 FF 0B 09 06 FF 0B 09 06`, both boards) and both waves of bootloader
    entries. They also **move the timeline**: at `03:02:21`, four seconds before
    the first bootloader entry, both boards already carry the garbage name and
