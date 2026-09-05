@@ -282,7 +282,11 @@ v2.76 / v2.77, so which image a board is running can be checked without a verify
 useful precisely because the round-trip is the thing that misbehaves.
 
 Tracked as [#173](https://github.com/charles8051/periphery/issues/173), which carries the full
-`--verbose` trace and the code pointers. Not fixed on this branch.
+`--verbose` trace, the corrected mechanism, and a second trace showing every ordering reversed
+once the right board is checked. Fixed by
+[#175](https://github.com/charles8051/periphery/pull/175), which pins the post-flash
+application wait to an identity rather than a model - a separate PR against `main`, because it
+is in `Periphery.Bootloader` and touches nothing #170 owns.
 
 ## What is still open
 
