@@ -112,14 +112,31 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-// Refusing these is the difference between a harness and a weapon. The mechanism is proven
-// by any opcode that fires, and these four are the ones that end boards.
-if (canary is CmdFirmwareUpdateSerial or CmdFirmwareUpdateName or CmdReboot or CmdEnterBootloader)
+// Only ConfigureDevice is accepted, and the reason is the detector, not squeamishness.
+//
+// The detector watches EP1 IN for an all-pins-reserved report, which is what Treehopper_Init()
+// produces - so it can see 0x01 and NOTHING ELSE. Point --canary at, say, 0x0E LedConfig and a
+// desync would fire, light the board's LED, and the run would still report a clean 0/30. That
+// is a false negative dressed as a result, which is the exact failure the positive control
+// below exists to prevent; leaving the flag open for opcodes the detector is blind to would
+// reintroduce it through the front door.
+//
+// The four destructive opcodes are refused for the separate and more obvious reason: they end
+// boards, and the mechanism is proven by any opcode that fires.
+//
+// Widening this means adding an observation path first. Then the check moves, and this comment
+// with it.
+if (canary != CmdConfigureDevice)
 {
     Console.Error.WriteLine(
-        $"--canary 0x{canary:X2} is a destructive opcode (serial write, name write, reboot, or "
-        + "bootloader entry). This harness will not aim pixel data at it. The default 0x01 "
-        + "ConfigureDevice proves the same mechanism without touching flash.");
+        canary is CmdFirmwareUpdateSerial or CmdFirmwareUpdateName or CmdReboot or CmdEnterBootloader
+            ? $"--canary 0x{canary:X2} is a destructive opcode (serial write, name write, reboot, "
+              + "or bootloader entry). This harness will not aim pixel data at it."
+            : $"--canary 0x{canary:X2} is not observable by this harness. The detector watches "
+              + "EP1 IN for the all-pins-reserved report that Treehopper_Init() produces, so it "
+              + $"can only see 0x{CmdConfigureDevice:X2} ConfigureDevice. A run with an "
+              + "unobservable canary would report a clean result even when the canary executed. "
+              + "Add an observation path before widening this.");
     return 2;
 }
 
@@ -374,14 +391,25 @@ else
 }
 
 Console.WriteLine();
+// An incomplete run is not a clean run. If the loop stopped early - cancelled, the board
+// dropped off, a transfer faulted - then "0 desyncs" describes the iterations that happened and
+// says nothing about the ones that did not. Reporting that as success is how a bench result
+// gets quoted later as evidence the firmware is fine.
+bool incomplete = done < iterations;
+
 Console.WriteLine(
     desyncs > 0
         ? "RESULT: reproduced. This firmware executes pixel data as commands on the abort path."
-        : $"RESULT: no desync in {done} iterations. That is the expected result on firmware with "
-          + "the #170 fix. On UNFIXED firmware it means the stall did not run the spin out - raise "
-          + "--stall-ms and re-run before concluding anything.");
+        : incomplete
+            ? $"RESULT: INCOMPLETE - {done} of {iterations} iterations ran, and no desync was seen "
+              + "in those. This is not a clean result and must not be recorded as one; find out "
+              + "why the run stopped and repeat it."
+            : $"RESULT: no desync in {done} iterations. That is the expected result on firmware "
+              + "with the #170 fix. On UNFIXED firmware it means the stall did not run the spin "
+              + "out - raise --stall-ms and re-run before concluding anything.");
 
-return desyncs > 0 ? 1 : 0;
+if (desyncs > 0) return 1;
+return incomplete ? 4 : 0;
 
 static byte ParseByte(string s)
     => s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)

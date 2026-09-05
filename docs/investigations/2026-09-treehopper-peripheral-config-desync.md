@@ -123,7 +123,9 @@ LED strip. The positive control passed on every run listed here.
 
 ### The threshold
 
-Board `IMNUZ6YW`, firmware **v2.75** (`REV_0113`), 20 iterations per row:
+Board `IMNUZ6YW`, firmware **v2.75** (`REV_0113`). The sample size differs by row - the
+sweep was narrowed as the knee showed itself - so it is given per row rather than stated
+once:
 
 | `--stall-ms` | desyncs |
 |---|---|

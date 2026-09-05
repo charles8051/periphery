@@ -103,7 +103,13 @@ baseline row matches the committed `dist/Treehopper.hex` byte for byte.
 | | HEX bytes | Top | Free to `0x3A00` |
 |---|---|---|---|
 | baseline (`= dist/Treehopper.hex`, v2.76) | 14752 | `0x39A0` | 96 |
-| with the framing fix (v2.77) | 14774 | `0x39B6` | **74** |
+| with the framing fix | 14774 | `0x39B6` | 74 |
+| plus header validity + short-packet clear (v2.77, shipped) | 14825 | `0x39E9` | **23** |
+
+> [!WARNING]
+> **23 bytes is the whole remaining budget.** The next change to this firmware will
+> very likely need to buy its own room first, the way this one did. Measure from the
+> HEX records before assuming otherwise, and do not trust `code=`.
 
 The `bcdDevice` bump to `0x0115` in the same change costs nothing — it is a constant in an
 already-present descriptor.

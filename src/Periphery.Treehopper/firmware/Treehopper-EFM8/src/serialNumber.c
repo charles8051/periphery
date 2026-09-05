@@ -70,14 +70,44 @@ void generateRandomString()
 
 
 
+// Is this config record one this firmware could have written?
+//
+// The old test was `[0] == 0xFF` - "not erased, therefore good". D3 (writing the marker last)
+// makes that test meaningful for an interruption during PROGRAMMING, and does nothing for one
+// during the ERASE: a brownout mid-erase can leave [0] reading something other than 0xFF over a
+// payload that is already gone, and the record then looks valid forever. Peanut Gallery raised
+// exactly that on #170; D4's supply monitor narrows the window but does not close it, because
+// no erase is atomic.
+//
+// So check the whole header instead of one byte. All three fields are fixed or tightly bounded
+// by construction, and a partially-erased page fails at least one of them with high
+// probability. Deliberately conservative - it rejects only what this firmware could not have
+// written, so a healthy record can never be thrown away and regenerated:
+//
+//   [0] the packed-encoding marker, always USB_STRING_DESCRIPTOR_UTF16LE_PACKED
+//   [1] (len+1)*2, so always even, at least 4 (one character), at most (61+1)*2
+//   [2] the descriptor type, always USB_STRING_DESCRIPTOR
+//
+// This is not just belt-and-braces. Two boards at SV3-01-ENMOVS6 are in precisely the
+// falsely-valid state right now - marker present, record unserveable, no self-repair across
+// four days and many reboots (ADR-0086 D5 test 4). Under this test they regenerate on the next
+// boot after the update instead of staying broken.
+static bit recordIsValid(uint8_t SI_SEG_CODE * rec) {
+	return rec[0] == USB_STRING_DESCRIPTOR_UTF16LE_PACKED
+	    && rec[2] == USB_STRING_DESCRIPTOR
+	    && (rec[1] & 1) == 0
+	    && rec[1] >= 4
+	    && rec[1] <= (USB_STRING_MAX_PACKED_LEN + 1) * 2;
+}
+
 void SerialNumber_Init() {
-	if (serialNumber_serial[0] == 0xFF) // blank, program with default
+	if (!recordIsValid((uint8_t SI_SEG_CODE *)serialNumber_serial))
 	{
 		generateRandomString();
 		SerialNumber_update(serialString, 8);
 	}
 
-	if (serialNumber_name[0] == 0xFF) {
+	if (!recordIsValid((uint8_t SI_SEG_CODE *)serialNumber_name)) {
 		SerialNumber_updateName("Treehopper", 10);
 	}
 }

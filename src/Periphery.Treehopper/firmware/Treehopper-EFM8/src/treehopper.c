@@ -366,6 +366,11 @@ void ProcessPeripheralConfigPacket() {
 	}
 
 	memset(Treehopper_PeripheralConfig, 0, sizeof(Treehopper_PeripheralConfig)); // reset the buffer to zero to avoid accidentally re-processing data
+	// Clear the short-packet bit as the read is armed, so it can only ever be true because the
+	// ISR set it for THIS packet. Left over from the previous transfer it is a stale boundary:
+	// the drain would read a short packet that ended some earlier command as the end of the one
+	// it is currently discarding, and resynchronise a packet early.
+	Treehopper_PeripheralConfigShortPacket = 0;
 	// when we're all done, re-arm the endpoint. The completion callback is enabled (the
 	// trailing `true`) purely so the ISR can record whether the packet was short; that is the
 	// only signal the drain above has for finding the next real packet boundary.

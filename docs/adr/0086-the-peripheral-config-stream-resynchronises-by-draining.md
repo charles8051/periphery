@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Shipped. All four D5 tests closed; dist/ regenerated to v2.77 (14774 bytes, top 0x39B6) with a matching .tfi."
+status_note: "Shipped. All four D5 tests closed; dist/ regenerated to v2.77 (14825 bytes, top 0x39E9) with a matching .tfi."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
@@ -18,7 +18,7 @@ depends_on: "ADR-0075 (out-of-band soft reset - same endpoint, same wedged-foreg
 `src/Periphery.Treehopper/firmware/Treehopper-EFM8` and in the host codec, and
 D5's gate has cleared: all four bench tests are closed, so `dist/Treehopper.hex`
 and `dist/treehopper.tfi` are regenerated at **v2.77** (14774 bytes, top
-`0x39B6`, 74 under the `0x3A00` ceiling).
+`0x39E9`, 23 under the `0x3A00` ceiling).
 
 
 ## Context
@@ -136,14 +136,42 @@ The host had the mirror-image bug: `IdentityBytes` wrote `text.Length`, a UTF-16
 characters. Thirty-one two-byte characters is 31 characters and 62 bytes — under
 the old bound, over the real one.
 
-### D3. The validity marker is written last
+### D3. The validity marker is written last, and validity is the whole header
 
-Byte `[0]` is the only thing `SerialNumber_Init` tests, so it is the record's
-validity flag — and it was written **first**. Any interruption after byte 0 and
-before the payload left a record that looked valid forever: self-repair was dead
-and the damage survived every reboot, which is exactly the durability observed in
-the field. It is now written after the payload, so an interrupted write leaves
-`[0] == 0xFF` and the next boot regenerates the string.
+Byte `[0]` is the record's validity flag, and it was written **first**. Any
+interruption after byte 0 and before the payload left a record that looked valid
+forever: self-repair was dead and the damage survived every reboot, which is
+exactly the durability observed in the field. It is now written after the
+payload.
+
+**Corrected 2026-09-05.** This decision previously claimed that "an interrupted
+write leaves `[0] == 0xFF` and the next boot regenerates the string." That is
+true of an interruption during **programming** and false of one during the
+**erase**: the erase precedes everything, and a brownout part-way through it can
+leave `[0]` reading something other than `0xFF` over a payload that is already
+gone. Marker-last is not transactional across an erase, and no ordering of
+single-byte writes can be. D4's supply monitor narrows that window; it cannot
+close it, because no erase is atomic.
+
+So validity stops being one byte. `SerialNumber_Init` now checks the whole
+three-byte header - the packed-encoding marker at `[0]`, an even length at `[1]`
+between 4 and `(61+1)*2`, and the descriptor type at `[2]` - and regenerates
+unless all three hold. A partially-erased page fails at least one with high
+probability.
+
+**Deliberately conservative**, because the failure mode of being too strict is
+worse than the one it fixes: a healthy record wrongly rejected means a board
+silently changing its identity. Every field checked is fixed or tightly bounded
+by construction, so nothing this firmware could have written can fail the test.
+Confirmed on hardware - a bench board flashed with this change kept its serial
+`cDYhINBh` across the update.
+
+**And it is not hypothetical.** D5 test 4 found two boards at
+`SV3-01-ENMOVS6` in precisely the falsely-valid state right now: marker present,
+record unserveable, no self-repair across four days and many reboots. Under the
+old one-byte test they stay broken forever. Under this one they regenerate on the
+first boot after the update - which means the fix reaches boards already damaged,
+not only boards not yet damaged.
 
 ### D4. The supply monitor is enabled and selected before any flash write
 

@@ -60,6 +60,7 @@ if (boards.Count == 0)
 }
 
 var results = new List<string>();
+int failures = 0;
 
 foreach (var board in boards)
 {
@@ -84,8 +85,14 @@ foreach (var board in boards)
     }
     catch (Exception ex)
     {
+        // A failed read must never leave a clean-looking result behind. This probe exists to
+        // produce evidence about damaged boards, and a board too damaged to answer is the most
+        // interesting case there is - it must not be silently absent from a JSON array that
+        // downstream analysis then reads as "these are the boards".
+        failures++;
         Console.Error.WriteLine($"  FAILED to read {board.Id}: {ex.Message}");
-        if (!json) Console.Error.WriteLine(
+        if (json) results.Add(ErrorFor(board.Id, ex.Message));
+        else Console.Error.WriteLine(
             "  A board whose descriptors cannot be read at all is itself a finding - record it, "
             + "and do not reflash before someone has looked.");
     }
@@ -93,7 +100,11 @@ foreach (var board in boards)
 }
 
 if (json) Console.WriteLine("[\n  " + string.Join(",\n  ", results) + "\n]");
-return 0;
+if (failures > 0)
+    Console.Error.WriteLine(
+        $"{failures} of {boards.Count} board(s) could not be read. Exit status reflects that; do "
+        + "not treat this run as a complete picture.");
+return failures > 0 ? 1 : 0;
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
@@ -134,6 +145,19 @@ static void Report(string which, byte index, byte[] raw)
 
     Console.WriteLine($"    descriptor : {Hex(raw)}");
     Console.WriteLine($"    bLength    : 0x{raw[0]:X2} ({raw[0]})   bDescriptorType: 0x{raw[1]:X2}");
+
+    // bLength is the device's own claim about the record; a short transfer means it did not
+    // deliver what it advertised. Reconstructing anyway would turn a transfer problem into
+    // what reads as a shortened identity - which on these boards is the very thing under
+    // investigation, so it must not be manufactured here.
+    if (raw.Length != raw[0])
+    {
+        Console.WriteLine(
+            $"    TRUNCATED  : bLength says {raw[0]} bytes, {raw.Length} arrived. The "
+            + "reconstruction below is NOT the record - fix the transfer and re-read before "
+            + "drawing any conclusion from it.");
+        return;
+    }
 
     // The packed bytes are every other descriptor byte after the 2-byte header. This is the
     // widening in reverse, and it is what is physically in the flash page.
@@ -178,16 +202,28 @@ static string Printable(byte[] b)
     return sb.Append('"').ToString();
 }
 
+static string ErrorFor(string id, string message) =>
+    "{"
+    + $"\"device\":\"{Esc(id)}\","
+    + "\"error\":true,"
+    + $"\"message\":\"{Esc(message)}\""
+    + "}";
+
+static string Esc(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
 static string JsonFor(string id, string which, byte index, byte[] raw)
 {
     var packed = new byte[Math.Max(0, (raw.Length - 2) / 2)];
     for (int i = 0; i < packed.Length; i++) packed[i] = raw[2 + i * 2];
+    bool truncated = raw.Length < 2 || raw.Length != raw[0];
     return "{"
         + $"\"device\":\"{id.Replace("\\", "\\\\")}\","
         + $"\"record\":\"{which.Trim()}\","
         + $"\"stringIndex\":{index},"
         + $"\"descriptor\":\"{Convert.ToHexString(raw)}\","
         + $"\"flashLengthByte\":{(raw.Length >= 1 ? raw[0] : 0)},"
-        + $"\"packed\":\"{Convert.ToHexString(packed)}\""
+        + $"\"bytesReturned\":{raw.Length},"
+        + $"\"truncated\":{(truncated ? "true" : "false")},"
+        + $"\"packed\":\"{(truncated ? "" : Convert.ToHexString(packed))}\""
         + "}";
 }
