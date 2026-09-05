@@ -255,6 +255,25 @@ public sealed class BufferExhaustionTests
     /// this session does not revoke an active lease (ADR-0035 D9). The newest
     /// frame is refused, and counted.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Bounded at thirty frames so the producer parks and the session settles,
+    /// rather than left unbounded and polled. An unbounded producer has no
+    /// settled state, so every assertion has to synchronise on a live counter —
+    /// and the obvious counter to pick, <c>FramesDropped</c>, is not a proxy for
+    /// the state this test is about. Latest-wins counts two different drops into
+    /// it: eviction on a write, which needs only a full queue and starts at frame
+    /// 2, and the <c>TryDeliver</c> refusal that is the subject here. Waiting for
+    /// the first drop can therefore return while the queue is momentarily empty
+    /// and only the two held leases are outstanding, which is a legal transient
+    /// and is what CI caught (expected 3, actual 2).
+    /// </para>
+    /// <para>
+    /// Both counts below are hand-derived from the fake's contract and hold
+    /// whichever path produced the drops, so nothing here depends on the
+    /// consumer winning a race against the producer at start-up.
+    /// </para>
+    /// </remarks>
     [Fact]
     public async Task LatestWins_CountsTheDrop_WhenTheConsumerHoldsMoreThanItsAllowance()
     {
@@ -263,6 +282,7 @@ public sealed class BufferExhaustionTests
         // assertions below do not depend on the rate.
         await using var backend = new InMemoryCameraBackend
         {
+            MaxFrames = 30,
             FrameDelay = TimeSpan.FromMilliseconds(5),
         };
         await using var session = await CameraTestHarness.OpenSessionAsync(
@@ -273,17 +293,29 @@ public sealed class BufferExhaustionTests
 
         await session.StartCaptureAsync();
 
-        // Two leases against an allowance of one. With the queue holding the
-        // third seeded buffer, the pool is empty and stays empty.
+        // Two leases against an allowance of one, neither disposed.
         using var held = await session.ReadFrameAsync();
         using var alsoHeld = await session.ReadFrameAsync();
 
-        await WaitUntil(() => session.Metrics.FramesDropped >= 1,
-            "the producer to refuse a frame it has no buffer for");
+        // The producer parks after frame 30, so what follows is a settled state.
+        await backend.ReadHangReached.WaitAsync(Patience);
+        Assert.Equal(30, backend.FrameCounter);
 
-        // Two in the consumer's hands, one queued — the three buffers this
-        // session seeded, all accounted for.
+        // Three is the only value the pool can settle at. The consumer holds two
+        // and disposes neither, the third seeded buffer goes into the queue, and
+        // an empty pool is absorbing — nothing returns a buffer from here.
         Assert.Equal(3, session.Metrics.OutstandingLeases);
+
+        // Thirty produced; three of them occupy the three buffers above; every
+        // other one was dropped. A leaked buffer or a double count moves this.
+        Assert.Equal(27, session.Metrics.FramesDropped);
+
+        // The counts alone cannot say which drop path ran, and the refusal is the
+        // subject. A dry pool has no buffer to copy frame 30 into, so the frame
+        // left in the queue is a stale one. Its sibling test above, which has the
+        // spare buffer, reads frame 30 out of this same state.
+        using var queued = await session.ReadFrameAsync();
+        AssertNotFrame(30, queued);
 
         await session.StopCaptureAsync();
     }
@@ -345,6 +377,21 @@ public sealed class BufferExhaustionTests
                     $"Expected frame {frameIndex} (every byte 0x{expected:X2}), but byte {i} of "
                         + $"{span.Length} is 0x{span[i]:X2}.");
         }
+    }
+
+    /// <summary>
+    /// The complement of <see cref="AssertEveryByteIs"/>, for where the point is
+    /// that a frame could not be delivered. The fake fills a frame uniformly, so
+    /// one byte names it.
+    /// </summary>
+    private static void AssertNotFrame(int frameIndex, LeasedCameraFrame frame)
+    {
+        byte unwanted = (byte)(frameIndex & 0xFF);
+        byte actual = frame.ContiguousBuffer.Span[0];
+        if (actual == unwanted)
+            Assert.Fail(
+                $"Expected a frame older than {frameIndex}, but byte 0 is 0x{actual:X2} — "
+                    + $"frame {frameIndex} reached the queue, so the pool was not exhausted.");
     }
 
     /// <summary>
