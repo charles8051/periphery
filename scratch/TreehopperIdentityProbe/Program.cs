@@ -50,6 +50,15 @@ const byte IManufacturer = 1;
 const byte IProduct      = 2;   // the NAME record at NAME_ADDR 0xF840
 const byte ISerialNumber = 3;   // the SERIAL record at SER_ADDR 0xF800
 
+const string BackslashEscape = @"\\";
+const string QuoteEscape     = "\\\"";
+const string NewlineEscape   = @"\n";
+const string ReturnEscape    = @"\r";
+const string TabEscape       = @"\t";
+const string BackspaceEscape = @"\b";
+const string FormFeedEscape  = @"\f";
+const string UnicodeEscape   = @"\u";
+
 bool json = args.Contains("--json");
 
 var boards = await TreehopperBoard.EnumerateAsync();
@@ -209,7 +218,36 @@ static string ErrorFor(string id, string message) =>
     + $"\"message\":\"{Esc(message)}\""
     + "}";
 
-static string Esc(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+// Full JSON string escaping, not just quote-and-backslash. An exception message is arbitrary
+// text - a newline or a tab in it produces a document that will not parse, and the caller
+// most likely to hit that is the one reading a FAILED board, which is the row that matters
+// most. Control characters below 0x20 have no literal form in JSON and must be escaped.
+static string Esc(string s)
+{
+    var sb = new StringBuilder(s.Length + 8);
+    foreach (char c in s)
+    {
+        // Compared by code point rather than by character literal, so neither this source nor
+        // anything that rewrites it has to survive a second round of escaping.
+        switch ((int)c)
+        {
+            case 0x5C: sb.Append(BackslashEscape); break;
+            case 0x22: sb.Append(QuoteEscape); break;
+            case 0x0A: sb.Append(NewlineEscape); break;
+            case 0x0D: sb.Append(ReturnEscape); break;
+            case 0x09: sb.Append(TabEscape); break;
+            case 0x08: sb.Append(BackspaceEscape); break;
+            case 0x0C: sb.Append(FormFeedEscape); break;
+            default:
+                if (c < 0x20)
+                    sb.Append(UnicodeEscape).Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                else
+                    sb.Append(c);
+                break;
+        }
+    }
+    return sb.ToString();
+}
 
 static string JsonFor(string id, string which, byte index, byte[] raw)
 {
@@ -217,8 +255,8 @@ static string JsonFor(string id, string which, byte index, byte[] raw)
     for (int i = 0; i < packed.Length; i++) packed[i] = raw[2 + i * 2];
     bool truncated = raw.Length < 2 || raw.Length != raw[0];
     return "{"
-        + $"\"device\":\"{id.Replace("\\", "\\\\")}\","
-        + $"\"record\":\"{which.Trim()}\","
+        + $"\"device\":\"{Esc(id)}\","
+        + $"\"record\":\"{Esc(which.Trim())}\","
         + $"\"stringIndex\":{index},"
         + $"\"descriptor\":\"{Convert.ToHexString(raw)}\","
         + $"\"flashLengthByte\":{(raw.Length >= 1 ? raw[0] : 0)},"

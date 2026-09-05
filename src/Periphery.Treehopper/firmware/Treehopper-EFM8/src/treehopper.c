@@ -256,7 +256,6 @@ void ProcessPeripheralConfigPacket() {
 			Treehopper_PeripheralConfigMultiRead = 1;
 			USBD_Read(EP_PeripheralConfig, &Treehopper_PeripheralConfig[64], (totalTransactionBytes+7)-64, false);
 			while(timeout++ < 65000 && USBD_EpIsBusy(EP_PeripheralConfig));
-			Treehopper_PeripheralConfigMultiRead = 0;
 			// Two ways this read did not deliver what was asked for: it never finished inside the
 			// spin budget, or a re-enumeration re-armed the endpoint at offset 0 underneath it -
 			// the ISR latches the desync bit for that second case. Either way the host is still
@@ -271,8 +270,21 @@ void ProcessPeripheralConfigPacket() {
 			{
 				USBD_AbortTransfer(EP_PeripheralConfig);
 				Treehopper_PeripheralConfigDesync = 1;
+				Treehopper_PeripheralConfigMultiRead = 0;
 				break; // the payload is incomplete; do not run the transaction on it
 			}
+			// Cleared only now, AFTER the test, and the ordering is the point. Clearing it before
+			// the test left a two-statement window where the foreground still owned a pending
+			// transfer while the ISR saw an unowned endpoint: a CONFIGURED transition landing
+			// there would re-arm at offset 0 and latch nothing, and if the packet also completed
+			// before the test, both the desync bit and EpIsBusy would read false and the
+			// transaction would run on a buffer that is half old command and half new packet.
+			// Vanishingly narrow - it needs a full re-enumeration between two adjacent
+			// statements - but free to close, and the review was right to keep pressing on it.
+			//
+			// Holding the bit one test longer can only ever cost a spurious drain after a bus
+			// reset, which is one dropped command. That is the direction to be wrong in.
+			Treehopper_PeripheralConfigMultiRead = 0;
 		}
 
 		SPI_Transaction(&spiConfig, totalTransactionBytes, &Treehopper_PeripheralConfig[7], Treehopper_RxBuffer);
@@ -301,14 +313,15 @@ void ProcessPeripheralConfigPacket() {
 			Treehopper_PeripheralConfigMultiRead = 1;
 			USBD_Read(EP_PeripheralConfig, &Treehopper_PeripheralConfig[64], (totalTransactionBytes+4)-64, false);
 			while(timeout++ < 65000 && USBD_EpIsBusy(EP_PeripheralConfig));
-			Treehopper_PeripheralConfigMultiRead = 0;
 			if (Treehopper_PeripheralConfigDesync || USBD_EpIsBusy(EP_PeripheralConfig))
 			{
 				// Same abandoned-remainder case as SPITransaction above.
 				USBD_AbortTransfer(EP_PeripheralConfig);
 				Treehopper_PeripheralConfigDesync = 1;
+				Treehopper_PeripheralConfigMultiRead = 0;
 				break; // the payload is incomplete; do not run the transaction on it
 			}
+			Treehopper_PeripheralConfigMultiRead = 0; // after the test - see SPITransaction
 		}
 
 		I2C_Transaction(Treehopper_PeripheralConfig[1], &Treehopper_PeripheralConfig[4],

@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Shipped. All four D5 tests closed; dist/ regenerated to v2.77 (14825 bytes, top 0x39E9) with a matching .tfi."
+status_note: "Shipped. All four D5 tests closed; dist/ regenerated to v2.77 (14827 bytes, top 0x39EB) with a matching .tfi."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
@@ -17,8 +17,8 @@ depends_on: "ADR-0075 (out-of-band soft reset - same endpoint, same wedged-foreg
 **Accepted and shipped.** The source change has landed in
 `src/Periphery.Treehopper/firmware/Treehopper-EFM8` and in the host codec, and
 D5's gate has cleared: all four bench tests are closed, so `dist/Treehopper.hex`
-and `dist/treehopper.tfi` are regenerated at **v2.77** (14774 bytes, top
-`0x39E9`, 23 under the `0x3A00` ceiling).
+and `dist/treehopper.tfi` are regenerated at **v2.77** (14827 bytes, top
+`0x39EB`, 21 under the `0x3A00` ceiling).
 
 
 ## Context
@@ -250,11 +250,11 @@ but it no longer needs to be: `Efm8BootRecordGenerator` with
 `Efm8BootOptions.Ub1` is an in-repo replacement, driven by `scratch/Hex2Tfi`.
 Positive control - regenerating from the *old* committed `.hex` reproduces the
 *old* committed `.tfi` byte for byte - so the generator is doing what hex2boot
-did. The new pair is 14774 HEX bytes / 15380 boot-record bytes in 120 records,
+did. The new pair is 14827 HEX bytes / 15433 boot-record bytes in 120 records,
 and the bench board that passed test 2 verifies MATCH against the shipped
 `dist/Treehopper.hex`.
 
-**Ceiling checked by hand, as `BUILD.md` requires.** Top is `0x39B6`, under
+**Ceiling checked by hand, as `BUILD.md` requires.** Top is `0x39EB`, under
 `0x3A00`. `hex2boot -m ub1` and its C# mirror still assume `0x3DFF` (#100), so
 this check is not delegated.
 
@@ -301,7 +301,8 @@ computed from the actual HEX records per `BUILD.md`:
 | | HEX bytes | Top | Free to `0x3A00` |
 |---|---|---|---|
 | baseline (matches `dist/Treehopper.hex`) | 14752 | `0x39A0` | 96 |
-| with this change | 14774 | `0x39B6` | **74** |
+| with the framing fix | 14774 | `0x39B6` | 74 |
+| as shipped, after the review | 14827 | `0x39EB` | **21** |
 
 ## Consequences
 

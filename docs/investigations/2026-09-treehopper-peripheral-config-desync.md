@@ -525,7 +525,7 @@ It sharpens D3's field evidence. It does not change any decision already made.
 ## What is still open
 
 **Nothing that gates the release.** All four ADR-0086 D5 tests are closed and `dist/` is
-regenerated at v2.77 (14774 HEX bytes, top `0x39B6`; `.tfi` 15380 bytes, 120 records). The
+regenerated at v2.77 (14827 HEX bytes, top `0x39EB`; `.tfi` 15433 bytes, 120 records). The
 bench board that reproduced the desync verifies MATCH against the shipped `dist/Treehopper.hex`.
 
 One reading was deliberately not taken: the raw `iSerialNumber` descriptor bytes from the two

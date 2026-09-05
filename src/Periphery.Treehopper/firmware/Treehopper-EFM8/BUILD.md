@@ -104,10 +104,10 @@ baseline row matches the committed `dist/Treehopper.hex` byte for byte.
 |---|---|---|---|
 | baseline (`= dist/Treehopper.hex`, v2.76) | 14752 | `0x39A0` | 96 |
 | with the framing fix | 14774 | `0x39B6` | 74 |
-| plus header validity + short-packet clear (v2.77, shipped) | 14825 | `0x39E9` | **23** |
+| plus header validity, short-packet clear, EP2 ownership window (v2.77, shipped) | 14827 | `0x39EB` | **21** |
 
 > [!WARNING]
-> **23 bytes is the whole remaining budget.** The next change to this firmware will
+> **21 bytes is the whole remaining budget.** The next change to this firmware will
 > very likely need to buy its own room first, the way this one did. Measure from the
 > HEX records before assuming otherwise, and do not trust `code=`.
 
