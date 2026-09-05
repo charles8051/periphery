@@ -740,4 +740,43 @@ the flasher's orchestration of suspicion; it was reverted like all the others.
 v2.77 cannot be deployed to this station until the auto-updater is retired or repointed (#183). Flashing
 it by hand will keep being undone. Its presence also deserves its own look against #170: it flashes
 often, in parallel, on a station with known marginal supply, and a flash write is the operation that
-destroys descriptors. There is a log from 2026-09-01, the day the two boards lost their descriptors.
+destroys descriptors. There is a log from 2026-09-01, the day the two boards lost their descriptors. It has now been
+read - see below.
+
+### The 2026-09-01 log: the agent did not cause the descriptor damage
+
+It was read on 2026-09-05 and does not support the suspicion above.
+
+```
+2026-09-01 22:01:47  watcher start (boot 9/1/2026 10:01:21 PM) target=REV_0114 poll=5s
+2026-09-01 22:01:48  arrival: board-A  (...\<serial-A>)
+2026-09-01 22:01:49    board-A at ...&REV_0114 - nothing to do
+2026-09-01 22:01:49  arrival: ?	?	  (...&HUBPATH&0&2)      <-- garbage name, no serial
+2026-09-01 22:01:50  arrival: ?	?	  (...&HUBPATH&0&1)      <-- garbage name, no serial
+2026-09-01 22:02:28  flash cycle: 2 board(s) stray in bootloader
+2026-09-01 22:03:00  Flashing 3 targets in parallel...
+```
+
+Three things follow.
+
+1. **The boards were already damaged at first enumeration**, 71 s before the agent's only flash
+   cycle that day.
+2. **The agent was not running when the damage happened.** The station reboots nightly around
+   22:01, and the 2026-09-01 log has no entries at all before 22:01:47 - no arrivals, departures or
+   cycles - so the boards did not re-enumerate at any point that day until the reboot. At
+   2026-08-31 22:01:38 all three were still healthy, named, and enumerating by serial. That puts
+   the damage in the shutdown/boot window.
+3. **It writes the wrong region regardless.** The agent flashes the application region; the serial
+   and name live in the config page at `0xF800`, which an app-region flash does not touch. The only
+   writer of `0xF800` is `writeUsbString`, reached from `SerialNumber_Init` at boot - which is
+   exactly the D4 erase-window mechanism this ADR already describes.
+
+**Correction to this document's own timeline.** The 03:02 UTC timestamp treated above as the moment
+of damage is the *bootloader-entry* event. It happened about 35 s after the boards had already come
+up damaged. The descriptor loss happened earlier, across the nightly reboot.
+
+**What the log does support:** 35 flash cycles and 20 stray-bootloader events over 36 days. Boards
+drop into their bootloaders on their own - the #170 symptom - and each cycle ends in a RunApp reset
+that re-runs `SerialNumber_Init` and re-opens the damage window. The agent multiplies exposure
+without being the trigger. (Eight of the 35 cycles are 2026-09-05: the agent and this investigation
+fighting over the same three boards.)
