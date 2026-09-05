@@ -255,15 +255,42 @@ public sealed class BufferExhaustionTests
     /// this session does not revoke an active lease (ADR-0035 D9). The newest
     /// frame is refused, and counted.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The producer is gated frame by frame through <c>FrameFactory</c> rather
+    /// than paced by a delay, so the consumer's two leases are established before
+    /// any frame the test does not want exists. A delay only makes the start-up
+    /// race unlikely: with the test thread descheduled past it, the producer
+    /// reaches its cap before the consumer has read anything, and the second read
+    /// then waits on a frame that will never be produced.
+    /// </para>
+    /// <para>
+    /// The gate is also why nothing here reads <c>FramesDropped</c> as a proxy for
+    /// an empty pool. Latest-wins counts two different drops into it: eviction on
+    /// a write, which needs only a full queue, and the <c>TryDeliver</c> refusal
+    /// this test is about. Synchronising on the first drop returns on either, and
+    /// on an eviction the queue is momentarily empty with only the two held leases
+    /// outstanding — a legal transient, and what CI caught (expected 3, actual 2).
+    /// Under the gate no eviction ever happens, so every drop below is a refusal.
+    /// </para>
+    /// </remarks>
     [Fact]
     public async Task LatestWins_CountsTheDrop_WhenTheConsumerHoldsMoreThanItsAllowance()
     {
-        // A small pacing delay so the producer runs at a few hundred frames a
-        // second rather than as fast as a synthetic backend can allocate. The
-        // assertions below do not depend on the rate.
+        // One permit per frame. Declared before the session so it outlives the
+        // producer, which is torn down first.
+        using var frameGate = new SemaphoreSlim(0);
         await using var backend = new InMemoryCameraBackend
         {
-            FrameDelay = TimeSpan.FromMilliseconds(5),
+            MaxFrames = 30,
+            FrameFactory = spec =>
+            {
+                if (!frameGate.Wait(Patience))
+                    throw new TimeoutException(
+                        $"The producer waited {Patience.TotalSeconds:F0}s for the test to release "
+                            + $"frame {spec.FrameIndex}.");
+                return CameraFramePatterns.FrameIndexConstant(spec);
+            },
         };
         await using var session = await CameraTestHarness.OpenSessionAsync(
             backend,
@@ -273,17 +300,38 @@ public sealed class BufferExhaustionTests
 
         await session.StartCaptureAsync();
 
-        // Two leases against an allowance of one. With the queue holding the
-        // third seeded buffer, the pool is empty and stays empty.
+        // Frame 1 is the only frame that exists, so this read takes it and keeps
+        // it. Frame 2 likewise: two leases against an allowance of one, neither
+        // disposed, and no frame ever queued long enough to be evicted.
+        frameGate.Release();
         using var held = await session.ReadFrameAsync();
+        frameGate.Release();
         using var alsoHeld = await session.ReadFrameAsync();
 
-        await WaitUntil(() => session.Metrics.FramesDropped >= 1,
-            "the producer to refuse a frame it has no buffer for");
+        // Frame 3 takes the third and last seeded buffer and sits in the queue.
+        // The pool is empty from here and stays empty — the only buffers left are
+        // inside leases this session will not revoke. Frames 4 to 30 have nothing
+        // to be copied into, so each is refused before it can reach the channel.
+        frameGate.Release(28);
+
+        // The cap parks the producer without calling the factory again, so this
+        // is a settled state rather than a moment caught between two frames.
+        await backend.ReadHangReached.WaitAsync(Patience);
+        Assert.Equal(30, backend.FrameCounter);
 
         // Two in the consumer's hands, one queued — the three buffers this
         // session seeded, all accounted for.
         Assert.Equal(3, session.Metrics.OutstandingLeases);
+
+        // Frames 4 to 30, every one of them refused for want of a buffer.
+        Assert.Equal(27, session.Metrics.FramesDropped);
+
+        // A count cannot tell a refusal from an eviction, and the refusal is the
+        // subject. Frame 3 is what a refusal leaves in the queue; an eviction
+        // would have traded it for a newer one. Its sibling test above, which has
+        // the spare buffer, reads frame 30 out of this same state.
+        using var queued = await session.ReadFrameAsync();
+        AssertEveryByteIs(3, queued);
 
         await session.StopCaptureAsync();
     }
@@ -347,6 +395,7 @@ public sealed class BufferExhaustionTests
         }
     }
 
+    /// <summary>
     /// <summary>
     /// Polls a producer-thread observation until it holds. The producer runs
     /// concurrently with the test, so there is no synchronous moment to read
