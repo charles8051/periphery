@@ -41,11 +41,8 @@ internal static unsafe partial class DevNodeHelper
     private const uint DEVPROP_TYPE_GUID        = 0x0000000D;
 
     // ── CM_NOTIFY constants ────────────────────────────────────────────
-    internal const int CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE         = 0;
     internal const int CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE          = 2;
     internal const int CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES    = 0x00000002;
-    internal const int CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL       = 0;
-    internal const int CM_NOTIFY_ACTION_DEVICEINTERFACEREMOVAL       = 1;
     internal const int CM_NOTIFY_ACTION_DEVICEINSTANCEENUMERATED     = 7;
     internal const int CM_NOTIFY_ACTION_DEVICEINSTANCESTARTED        = 8;
     internal const int CM_NOTIFY_ACTION_DEVICEINSTANCEREMOVED        = 9;
@@ -511,52 +508,6 @@ internal static unsafe partial class DevNodeHelper
         const int instanceIdOffset = 8;
         if (eventData == 0 || eventDataSize < instanceIdOffset + 2) return null;
         return Marshal.PtrToStringUni(eventData + instanceIdOffset);
-    }
-
-    /// <summary>
-    /// Extracts a device instance ID from a device interface symbolic link.
-    /// </summary>
-    internal static string? ParseInstanceIdFromSymbolicLink(string symbolicLink)
-    {
-        // Symbolic link format:
-        // \\?\USB#VID_046D&PID_C077#5&2c0e5f28&0&1#{a5dcbf10-...}
-        // → Device instance: USB\VID_046D&PID_C077\5&2c0e5f28&0&1
-
-        const string prefix = @"\\?\";
-        ReadOnlySpan<char> span = symbolicLink;
-
-        if (span.StartsWith(prefix))
-            span = span[prefix.Length..];
-
-        // Remove the interface GUID suffix (last #{guid})
-        int lastHash = span.LastIndexOf('#');
-        if (lastHash < 0)
-            return null;
-
-        if (lastHash + 1 < span.Length && span[lastHash + 1] == '{')
-            span = span[..lastHash];
-
-        // Replace # with backslash to get standard instance ID format
-        return span.ToString().Replace('#', '\\');
-    }
-
-    /// <summary>
-    /// Reads the symbolic link string from <c>CM_NOTIFY_EVENT_DATA</c>
-    /// for device interface events.
-    /// </summary>
-    internal static string? ReadSymbolicLinkFromEventData(nint eventData, int eventDataSize)
-    {
-        // CM_NOTIFY_EVENT_DATA layout for DeviceInterface:
-        //   offset 0:  FilterType  (int, 4 bytes)
-        //   offset 4:  Reserved    (int, 4 bytes)
-        //   offset 8:  ClassGuid   (Guid, 16 bytes)
-        //   offset 24: SymbolicLink (null-terminated UTF-16 string)
-        const int symbolicLinkOffset = 24;
-
-        if (eventData == 0 || eventDataSize < symbolicLinkOffset + 2)
-            return null;
-
-        return Marshal.PtrToStringUni(eventData + symbolicLinkOffset);
     }
 
     // ── Private helpers ────────────────────────────────────────────────
