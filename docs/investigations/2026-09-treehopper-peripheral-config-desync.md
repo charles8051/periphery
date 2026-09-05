@@ -105,9 +105,9 @@ until the 3-byte short packet.
 
 Not covered by this harness; ADR-0086 D5 lists them and they gate the release just as hard.
 
-- **Test 1 — EFM8UB10F16G page size at `0xF800`.** A datasheet confirmation, not a bench run.
-  If it is 512 bytes rather than 64, the erase-overlap hypothesis returns as a primary cause
-  and the 61-byte bound is wrong.
+- **Test 1 — EFM8UB10F16G page size at `0xF800`. CLOSED 2026-09-05, from documentation.**
+  **64 bytes.** The serial and name pages do not overlap, and D2's 61-byte bound stands. See
+  "Test 1: the page size" below — including the way this check goes wrong.
 - **Test 3 — case flips over C2.** Read the serial page repeatedly at varying VDD and
   temperature. Stable over C2 while USB reads vary points at the serve path; drifting over C2
   confirms the supply-monitor defect.
@@ -287,6 +287,63 @@ once the right board is checked. Fixed by
 [#175](https://github.com/charles8051/periphery/pull/175), which pins the post-flash
 application wait to an identity rather than a model - a separate PR against `main`, because it
 is in `Periphery.Bootloader` and touches nothing #170 owns.
+
+## Test 1: the page size at `0xF800` — 64 bytes, closed
+
+**Answered from Silicon Labs' own sources, no hardware needed.** The EFM8UB10F16G has **two
+flash regions with different page sizes**, and only one of them is the scratchpad the config
+records live in.
+
+`examples/EFM8UB1_SLSTK2000A/Bootloader/USB/inc/efm8_device.h` in the 8051 SDK — the AN945
+factory USB bootloader, built for `EFM8UB10F16G_QFN28`, the Treehopper part:
+
+```c
+#define EFM8UB1_DEVICE   EFM8UB10F16G_QFN28
+...
+#define BL_FLASH0_LIMIT  DEVICE_FLASH_SIZE   // 0x4000
+#define BL_FLASH0_PSIZE  512                 // code flash 0x0000-0x3FFF
+#define BL_FLASH1_START  0xF800
+#define BL_FLASH1_LIMIT  0xFC00
+#define BL_FLASH1_PSIZE  64                  // scratchpad 0xF800-0xFBFF  <-- ours
+```
+
+| Region | Range | Page size |
+|---|---|---|
+| Flash0, code | `0x0000`-`0x3FFF` | 512 |
+| Flash1, scratchpad | `0xF800`-`0xFBFF` | **64** |
+
+`SER_ADDR 0xF800` and `NAME_ADDR 0xF840` are both in Flash1, `0x40` apart — **exactly one
+page**. They are separate erase pages, `flash_erasePage` on one does not touch the other, and
+the erase-overlap hypothesis stays ruled out. The 61-byte bound in ADR-0086 D2 stands, and so
+does hex2boot's `[0xF800, 0xFBBF, 64]`, which matches `BL_FLASH1_PSIZE` exactly rather than
+being the unrelated record granularity it could have been mistaken for.
+
+### How this check goes wrong
+
+Grepping the SDK for a page size finds **512** first, in
+`EFM8UB1_FlashPrimitives.h` (`#define FLASH_PAGESIZE 512`) and in every `EFM8*_FlashPrimitives`
+example. Those describe **Flash0 only** — the code region — and say nothing about the
+scratchpad. Take that number and the arithmetic inverts: `0xF800` is 512-aligned, so a
+512-byte page would span `0xF800`-`0xF9FF` and swallow both records, making every name write
+erase the serial and every serial write erase the name. That is a dramatic, plausible, and
+completely wrong conclusion, and it was two minutes from being written down here.
+
+**The device header for the specific part is the source that settles it**, because it is the
+only one that distinguishes the two regions.
+
+### A correction this turned up
+
+The issue text, carried into ADR-0086 D2 and the changelog, said an unbounded write "runs past
+`0xF87F` into the unerased reserved region, which holds bootloader data and the lock byte — a
+zero written there can permanently lock the part." **The lock byte is out of reach**, and the
+same header shows why: `BL_LOCK_ADDRESS = BL_FLASH1_LIMIT - 1 = 0xFBFF`, while `len` is a
+single byte, so a name write reaches at most `0xF840 + 3 + 254 = 0xF941` and a serial write at
+most `0xF901`. Neither can get near `0xFBFF`.
+
+What an unbounded write *can* do is real and is what the bound is for: a **serial** write with
+`len > 61` runs from `0xF803` through `0xF901`, straight across the unerased name page at
+`0xF840`-`0xF87F`, AND-corrupting it — precisely the "spills into the name page without erasing
+it" case. Beyond that it corrupts scratchpad pages the firmware does not own.
 
 ## What is still open
 

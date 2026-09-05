@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Source change landed and D5 test 2 is closed on hardware; the image is still NOT released - dist/ is unchanged pending D5 tests 1, 3 and 4."
+status_note: "Source change landed; D5 tests 1 and 2 closed; the image is still NOT released - dist/ is unchanged pending D5 tests 3 and 4, both of which need C2."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
@@ -108,13 +108,20 @@ The 259-byte APA102 case that caused #170 is not a multiple of 64.
 ### D2. The identity length is a UTF-8 byte count, bounded at 61 on both ends
 
 `writeUsbString` took its length from `Treehopper_PeripheralConfig[1]` and never
-checked it. `SER_ADDR 0xF800` and `NAME_ADDR 0xF840` are one 64-byte page apart,
-and the record carries a three-byte header, so the payload cannot exceed **61**
-bytes. A longer name write ran past `0xF87F` into the unerased reserved region
-that holds bootloader data and the lock byte — where a zero can permanently lock
-the part. A longer serial write spilled into the name page without erasing it and
-AND-corrupted it. In the desync scenario `[1]` was frequently the APA102 header
-`0xFF`, asking for a 255-byte write.
+checked it. `SER_ADDR 0xF800` and `NAME_ADDR 0xF840` are one 64-byte scratchpad
+page apart (D5 test 1), and the record carries a three-byte header, so the payload
+cannot exceed **61** bytes. A longer **serial** write runs from `0xF803` through
+`0xF901`, straight across the unerased name page at `0xF840`-`0xF87F` and
+AND-corrupting it, then on into scratchpad pages the firmware does not own; a
+longer **name** write does the same to everything above `0xF87F`. In the desync
+scenario `[1]` was frequently the APA102 header `0xFF`, asking for a 255-byte
+write.
+
+**Corrected 2026-09-05.** This previously repeated the issue's claim that such a
+write reaches "the lock byte - where a zero can permanently lock the part." It
+cannot. `BL_LOCK_ADDRESS` is `0xFBFF` and `len` is a single byte, so the furthest
+any write reaches is `0xF941`. The bound is still right and still necessary; the
+consequence was overstated.
 
 The firmware now **rejects** — not truncates — a length over 61. A silently
 shortened identity is still corruption.
@@ -158,9 +165,19 @@ mains passthrough and loses power on any mains dip. **Candidate, not conclusion*
 change. They are what `treehopper-flash` writes to real boards, and #170's own
 "needs a bench test" list is not closed:
 
-1. **Confirm the EFM8UB10F16G page size at `0xF800`.** If it is 512 bytes rather
-   than 64, the erase-overlap hypothesis returns as a primary cause and D2's
-   arithmetic changes.
+1. **Confirm the EFM8UB10F16G page size at `0xF800`. CLOSED 2026-09-05, from
+   documentation - it is 64 bytes and D2's arithmetic stands.** The part has two
+   flash regions with different page sizes, and the AN945 factory USB
+   bootloader's device header for `EFM8UB10F16G_QFN28` gives both:
+   `BL_FLASH0_PSIZE 512` for code flash `0x0000`-`0x3FFF`, and
+   `BL_FLASH1_PSIZE 64` for the scratchpad `0xF800`-`0xFBFF`, where the config
+   records live. `SER_ADDR` and `NAME_ADDR` are `0x40` apart, exactly one
+   scratchpad page, so the erase-overlap hypothesis stays ruled out.
+   **The trap:** grepping the SDK for a page size finds 512 first, in the generic
+   `FlashPrimitives` examples, which describe the code region only - and 512
+   inverts the conclusion, since `0xF800` is 512-aligned and such a page would
+   swallow both records. Only the per-part device header distinguishes the two
+   regions. Details in the investigation doc.
 2. **Reproduce the desync directly** — APA102 flush loop at 252-byte chunks, an
    analyser on EP2 OUT, stall the host to force the abort path, and watch a pixel
    byte land at `buf[0]`. This is also the test for D1. **Harness written:**
@@ -179,8 +196,10 @@ change. They are what `treehopper-flash` writes to real boards, and #170's own
    doc.
 3. **Case flips over C2** at varying VDD and temperature. Stable over C2 while
    USB reads vary points at the serve path; drifting over C2 confirms D4.
-4. **Read `0xF800-0xFBBF` over C2 on the two damaged boards before reflashing**,
-   in particular the lock byte, given D2's unbounded write.
+4. **Read `0xF800-0xFBBF` over C2 on the two damaged boards before reflashing.**
+   Still worth doing before the evidence is destroyed - it is the only direct look
+   at what the desync actually wrote. No longer motivated by the lock byte, which
+   D5 test 1 showed is out of a single-byte `len`'s reach.
 
 Regenerating the `.tfi` also needs `hex2boot`, which is not in the repo
 (`docs/explorations/treehopper-firmware-update.md`). Shipping a `.hex` without
