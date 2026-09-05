@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Source change landed; the image is NOT released - dist/ is unchanged pending the bench tests in D5."
+status_note: "Source change landed and D5 test 2 is closed on hardware; the image is still NOT released - dist/ is unchanged pending D5 tests 1, 3 and 4."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
@@ -169,7 +169,14 @@ change. They are what `treehopper-flash` writes to real boards, and #170's own
    deliberately inert canary (`0x01 ConfigureDevice`) at `buf[0]` rather than a
    destructive opcode, detects execution from the EP1 IN pin-report stream rather
    than from the analyser, and refuses to run at all unless a positive control
-   fires first. Not yet run against hardware.
+   fires first.
+   **CLOSED 2026-09-04.** One board, one variable, image verified in both
+   directions: on `dist/Treehopper.hex` it desynced on **30 of 30** iterations at
+   a 250 ms stall; reflashed with `build/Treehopper.hex` it desynced **0 of 30**
+   at 250 ms and **0 of 100** at 600 ms. The firmware's spin budget measured
+   210–220 ms — the knee is sharp, nothing under 200 ms and everything over
+   235 ms. Descriptors unchanged throughout. Full numbers in the investigation
+   doc.
 3. **Case flips over C2** at varying VDD and temperature. Stable over C2 while
    USB reads vary points at the serve path; drifting over C2 confirms D4.
 4. **Read `0xF800-0xFBBF` over C2 on the two damaged boards before reflashing**,
@@ -178,6 +185,11 @@ change. They are what `treehopper-flash` writes to real boards, and #170's own
 Regenerating the `.tfi` also needs `hex2boot`, which is not in the repo
 (`docs/explorations/treehopper-firmware-update.md`). Shipping a `.hex` without
 its matching `.tfi` would leave `dist/` internally inconsistent.
+
+**Test 2 is now closed and the fix is demonstrated on hardware. That does not
+release the image.** Test 1 can still move D2's 61-byte bound, and tests 3 and 4
+are the only chance to read the damaged boards before reflashing destroys the
+evidence. The gate is the set, not the interesting member of it.
 
 ### D6. Flash headroom was bought, not borrowed
 

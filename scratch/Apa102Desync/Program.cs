@@ -3,7 +3,7 @@
 // command.
 //
 //   dotnet run --project scratch/Apa102Desync -- \
-//       [--iterations 200] [--stall-ms 50] [--canary 0x01] [--serial <sn>] [--list]
+//       [--iterations 200] [--stall-ms 250] [--canary 0x01] [--serial <sn>] [--list]
 //
 // WHAT IT DOES
 //
@@ -88,7 +88,12 @@ const int  PinReportLength    = 1 + PinCount * 2;
 // ── Arguments ────────────────────────────────────────────────────────────────
 
 int iterations = 200;
-int stallMs = 50;
+
+// 250 ms, because the firmware's spin budget measured 210-220 ms on 2026-09-04 and the knee
+// is sharp: nothing at or under 200 ms desyncs, everything at or over 235 ms desyncs on every
+// iteration. The original default of 50 ms found nothing and looked like a clean board. See
+// docs/investigations/2026-09-treehopper-peripheral-config-desync.md.
+int stallMs = 250;
 byte canary = CmdConfigureDevice;
 string? wantSerial = null;
 bool listOnly = false;
@@ -325,13 +330,36 @@ Console.WriteLine($"Reports    : {Interlocked.Read(ref reports)}");
 
 // Re-enumerate rather than trusting the DeviceInfo we opened with: the descriptors are the
 // thing #170 destroyed, and a fresh read is the only honest check.
-var after = (await TreehopperBoard.EnumerateAsync())
-    .FirstOrDefault(b => b.SerialNumber == serialBefore || b.Name == nameBefore);
+//
+// Identifying the board again is the hard part, and getting it wrong is worse than not
+// checking. The serial is the identity, but it is also one of the two things this run might
+// have destroyed, so a serial miss cannot be read as "gone". The name is the only other
+// handle - and a stock board is called "Treehopper", so on a bench with two of them the
+// name matches the WRONG board and reports damage that did not happen. That false alarm is
+// not hypothetical: it is what this harness did on its first two-board run. So the name
+// fallback is taken only when exactly one connected board carries it.
+var boardsAfter = await TreehopperBoard.EnumerateAsync();
+var after = boardsAfter.FirstOrDefault(b => b.SerialNumber == serialBefore);
+string how = "serial";
+
 if (after is null)
 {
-    Console.Error.WriteLine(
-        "The board did not re-enumerate under its old name OR serial. Check whether it is now on "
-        + "VID_10C4&PID_EAC9 (the EFM8 bootloader) before assuming it is gone.");
+    var byName = boardsAfter.Where(b => b.Name == nameBefore).ToList();
+    if (byName.Count == 1) { after = byName[0]; how = "name"; }
+    else if (byName.Count > 1)
+        Console.Error.WriteLine(
+            $"Descriptors: cannot tell. Serial '{serialBefore}' is gone from the bus and "
+            + $"{byName.Count} connected boards share the name '{nameBefore}', so matching by name "
+            + "would be a guess. Unplug the others and re-enumerate.");
+}
+
+if (after is null)
+{
+    if (!boardsAfter.Any(b => b.Name == nameBefore))
+        Console.Error.WriteLine(
+            "The board did not re-enumerate under its old serial, and nothing on the bus carries "
+            + "its old name. Check whether it is now on VID_10C4&PID_EAC9 (the EFM8 bootloader) "
+            + "before assuming it is gone.");
 }
 else if (after.Name == nameBefore && after.SerialNumber == serialBefore)
 {
@@ -340,9 +368,9 @@ else if (after.Name == nameBefore && after.SerialNumber == serialBefore)
 else
 {
     Console.Error.WriteLine(
-        $"Descriptors: CHANGED. name '{nameBefore}' -> '{after.Name}', serial '{serialBefore}' -> "
-        + $"'{after.SerialNumber}'. Capture the config page over C2 before reflashing (#170 bench "
-        + "test 4).");
+        $"Descriptors: CHANGED (matched by {how}). name '{nameBefore}' -> '{after.Name}', serial "
+        + $"'{serialBefore}' -> '{after.SerialNumber}'. Capture the config page over C2 before "
+        + "reflashing (#170 bench test 4).");
 }
 
 Console.WriteLine();

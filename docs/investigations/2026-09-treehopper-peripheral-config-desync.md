@@ -27,7 +27,7 @@ dotnet run --project scratch/Apa102Desync -- --list
 ```
 
 ```bash
-dotnet run --project scratch/Apa102Desync -- --iterations 200 --stall-ms 50
+dotnet run --project scratch/Apa102Desync -- --iterations 200 --stall-ms 250
 ```
 
 Exit code 1 means the desync reproduced. 0 means it did not. 3 means the positive control
@@ -44,11 +44,15 @@ whole experiment: it runs out the firmware's fixed spin budget on the continuati
 armed at `&Treehopper_PeripheralConfig[64]`, which is what puts it on the
 `USBD_AbortTransfer` path.
 
-`--stall-ms 50` is a starting point, not a measurement. The spin is
-`while(timeout++ < 65000 && USBD_EpIsBusy(...))`, so the budget is a function of the core
-clock and of how long each `USBD_EpIsBusy` call takes — order tens of milliseconds. **A run
-that reports no desync on unfixed firmware has not disproved anything until you have swept
-`--stall-ms` upward** (try 100, 250, 500). The harness says so in its own output.
+The spin is `while(timeout++ < 65000 && USBD_EpIsBusy(...))`, so the budget is a function of
+the core clock and of how long each `USBD_EpIsBusy` call takes. **Measured on 2026-09-04 it
+is 210–220 ms** — an order of magnitude longer than a back-of-the-envelope guess, and the
+reason the harness's default `--stall-ms 50` finds nothing. Start at **250**.
+
+**A run that reports no desync on unfixed firmware has not disproved anything until you have
+swept `--stall-ms` upward.** The harness says so in its own output, and the sweep below is
+why: everything at or under 200 ms is silent, and everything at or over 235 ms fires on
+every iteration.
 
 ## Why the canary is safe
 
@@ -101,18 +105,82 @@ until the 3-byte short packet.
 
 Not covered by this harness; ADR-0086 D5 lists them and they gate the release just as hard.
 
-1. **EFM8UB10F16G page size at `0xF800`.** A datasheet confirmation, not a bench run. If it
-   is 512 bytes rather than 64, the erase-overlap hypothesis returns as a primary cause and
-   the 61-byte bound is wrong.
-3. **Case flips over C2.** Read the serial page repeatedly at varying VDD and temperature.
-   Stable over C2 while USB reads vary points at the serve path; drifting over C2 confirms
-   the supply-monitor defect.
-4. **Read `0xF800`–`0xFBBF` over C2 on the two damaged boards before reflashing**, the lock
-   byte in particular. Do this before anything else touches them — reflashing destroys the
-   evidence, and the unbounded write means the lock byte is a real possibility.
+- **Test 1 — EFM8UB10F16G page size at `0xF800`.** A datasheet confirmation, not a bench run.
+  If it is 512 bytes rather than 64, the erase-overlap hypothesis returns as a primary cause
+  and the 61-byte bound is wrong.
+- **Test 3 — case flips over C2.** Read the serial page repeatedly at varying VDD and
+  temperature. Stable over C2 while USB reads vary points at the serve path; drifting over C2
+  confirms the supply-monitor defect.
+- **Test 4 — read `0xF800`–`0xFBBF` over C2 on the two damaged boards before reflashing**,
+  the lock byte in particular. Do this before anything else touches them: reflashing destroys
+  the evidence, and the unbounded write means a locked part is a real possibility.
 
-## Recording the result
+## Result, 2026-09-04
 
-Add the run to this file: firmware image, `--stall-ms` sweep, iterations, desyncs, and the
-analyser trace if you took one. A "no desync" result on unfixed firmware is only worth
-recording alongside the stall values you swept.
+**Reproduced, and the fix stops it.** Windows 11, two boards on one host, no analyser and no
+LED strip. The positive control passed on every run listed here.
+
+### The threshold
+
+Board `IMNUZ6YW`, unfixed firmware (see the caveat below), 20 iterations per row:
+
+| `--stall-ms` | desyncs |
+|---|---|
+| 50 | 0 / 25 |
+| 150 | 0 / 20 |
+| 200 | 0 / 20 |
+| 220 | **17 / 20** |
+| 235 | 20 / 20 |
+| 250 | 50 / 50 |
+| 300 | 20 / 20 |
+| 600 | 20 / 20 |
+
+The knee is at 220 ms and it is sharp: nothing under 200, everything over 235. That brackets
+the firmware's spin budget at **210–220 ms**.
+
+### The controlled comparison
+
+`IMNUZ6YW` turned out **not** to match `dist/Treehopper.hex` — it is on some other pre-fix
+image, so a two-board comparison against it confounds the fix with whatever else differs.
+The decisive run is therefore one board, one variable: board `CDYHINBH`, flashed back and
+forth, with the image **verified by `treehopper-flash verify` in both directions**.
+
+| `CDYHINBH` running | verified | `--stall-ms` | desyncs |
+|---|---|---|---|
+| `dist/Treehopper.hex` (unfixed) | MATCH | 250 | **30 / 30** |
+| `build/Treehopper.hex` (fixed) | MATCH | 250 | 0 / 30 |
+| `build/Treehopper.hex` (fixed) | MATCH | 600 | 0 / 30 |
+| `build/Treehopper.hex` (fixed) | MATCH | 600 | 0 / 100 |
+
+Same board, same host, same traffic, same stall. The only thing that changed is the
+firmware image, and the desync goes from every single iteration to none.
+
+Descriptors were unchanged after every run, on both boards. That is the canary doing its
+job — `0x01 ConfigureDevice` fired 30 times per run and touched no flash.
+
+### Two things worth knowing for the next run
+
+**The harness's descriptor check had a false-alarm bug, now fixed.** It matched the
+re-enumerated board by serial *or* name. A stock board is called `Treehopper`, so with two
+of them connected the name fallback matched the *other* board and reported
+`serial 'CDYHINBH' -> 'IMNUZ6YW'` — damage that had not happened. It now matches on serial,
+falls back to the name only when exactly one connected board carries it, and otherwise says
+it cannot tell rather than guessing.
+
+**`treehopper-flash flash` reported `FAILED` on both flashes that actually landed.** "The
+write appeared to succeed, but an independent, later bootloader-session check could not
+confirm it landed." A `verify` immediately afterwards returned MATCH both times, against
+the image just written. The write is fine; the post-flash confirmation is producing false
+negatives on this host. Not a #170 problem, but it will mislead whoever flashes next.
+
+## What is still open
+
+Test 2 is closed. Tests 1, 3 and 4 in ADR-0086 D5 are not, and they still gate regenerating
+`dist/`. Test 1 in particular — the page size at `0xF800` — can still change D2's 61-byte
+arithmetic.
+
+## Recording the next result
+
+Add it here: firmware image and how it was verified, the `--stall-ms` sweep, iterations,
+desyncs, and the analyser trace if you took one. A "no desync" result on unfixed firmware is
+only worth recording alongside the stall values you swept.
