@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Decision accepted; dist/ regenerated to v2.77 (14827 bytes, top 0x39EB) with a matching .tfi and all four D5 tests closed. NOT yet deployable: on a three-board hub the flasher reports OK and verified while the boards stay on v2.76 (#179), and --no-verify/--no-leave are ignored (#180). Do not treat v2.77 as rolled out until #179 has a trustworthy post-flash check."
+status_note: "Decision accepted; dist/ regenerated to v2.77 (14827 bytes, top 0x39EB) with a matching .tfi and all four D5 tests closed. The image is good and verifies on a bench board. NOT yet rolled out: production stations run an on-box auto-updater (C:/ProgramData/TreehopperAutoUpdate) pinned to the v2.76 image, which re-flashes v2.76 over any hand-flashed board within seconds. Retire or repoint that agent before rolling v2.77 out. Tracked as #183. See the 2026-09-05 correction in the #170 investigation; #180 (flash --no-verify/--no-leave ignored) is also open."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
