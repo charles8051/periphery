@@ -108,9 +108,10 @@ Not covered by this harness; ADR-0086 D5 lists them and they gate the release ju
 - **Test 1 — EFM8UB10F16G page size at `0xF800`. CLOSED 2026-09-05, from documentation.**
   **64 bytes.** The serial and name pages do not overlap, and D2's 61-byte bound stands. See
   "Test 1: the page size" below — including the way this check goes wrong.
-- **Test 3 — case flips over C2.** Read the serial page repeatedly at varying VDD and
-  temperature. Stable over C2 while USB reads vary points at the serve path; drifting over C2
-  confirms the supply-monitor defect.
+- **Test 3 - case flips over C2. CLOSED 2026-09-05, and the premise dissolves.** The case
+  difference is a host-side presentation artefact, not marginal cells. See "Test 3: the case
+  flips" below. D4 stays in on the reference manual's authority, but it no longer explains a
+  symptom.
 - **Test 4 — read `0xF800`–`0xFBBF` over C2 on the two damaged boards before reflashing**,
   the lock byte in particular. Do this before anything else touches them: reflashing destroys
   the evidence, and the unbounded write means a locked part is a real possibility.
@@ -345,11 +346,117 @@ What an unbounded write *can* do is real and is what the bound is for: a **seria
 `0xF840`-`0xF87F`, AND-corrupting it — precisely the "spills into the name page without erasing
 it" case. Beyond that it corrupts scratchpad pages the firmware does not own.
 
+## Test 3: the case flips are a host artefact - closed
+
+**Equipment:** Silicon Labs J-Link (DBG1015A, S/N 440305956) on C2, target `CDYHINBH`.
+`VTref = 3.301 V`. Reads via:
+
+```bash
+JLink.exe -usb 440305956 -device EFM8UB10F16G -if C2 -speed 100 -autoconnect 1 \
+          -CommanderScript <script with: mem 0xF800 0xC0>
+```
+
+C2 needs `-if C2` on the **command line**; `si 3` selects FINE, and a `connect` inside a
+CommanderScript stops at an interactive interface prompt the script cannot answer.
+
+### Ground truth
+
+```
+0000F800 = 01 12 03 63 44 59 68 49  4E 42 68 FF FF FF FF FF  ...cDYhINBh.....
+0000F840 = 01 16 03 54 72 65 65 68  6F 70 70 65 72 FF FF FF  ...Treehopper...
+```
+
+Both records decode exactly: marker `0x01`, length `(len+1)*2`, descriptor `0x03`, payload.
+`0x12` -> 8 chars `cDYhINBh`; `0x16` -> 10 chars `Treehopper`. Everything above `0xF87F` is
+erased. **Five consecutive reads were byte-identical** at nominal VDD.
+
+### The stored serial is genuinely mixed case
+
+`cDYhINBh`, not `CDYHINBH`. That is not corruption - `getRandomPrintableCharacter` in
+`serialNumber.c` deliberately draws from `0-9`, `A-Z` **and** `a-z`, so a mixed-case serial is
+what the firmware is supposed to produce.
+
+### The same board reports three different cases, simultaneously
+
+One `treehopper-flash --verbose` log, one host, one session, both boards:
+
+```
+     18  cDYhINBh     <- matches the C2 bytes exactly
+     10  CDYHINBH
+     16  imnuz6yw
+      8  IMNUZ6YW
+```
+
+Windows normalises device instance ids differently depending on the API: the notification path
+passes the device's own string through, the SetupAPI/PnP enumeration path uppercases it.
+`Get-PnpDevice` reports `CDYHINBH` at the same moment C2 says the flash holds `cDYhINBh`.
+
+### Which accounts for every example in the issue
+
+| reported as "before" | reported as "after" | uppercase of "after"? |
+|---|---|---|
+| `VOQXRNTN` | `vOQxrntn` | yes |
+| `0PM1YKJO` | `0PM1YKjO` | yes |
+| `KISSUEDM` | `kIssUEDM` | yes |
+
+Every character that differs is a lowercase letter in the mixed-case reading; every digit is
+untouched. That is what case normalisation does, and it is not what a drifting flash cell does
+- a cell has no notion of "letter".
+
+**And "every flip sets bit 5" is tautological, not evidence.** Bit 5 (`0x20`) *is* the ASCII
+case bit: `V`(0x56) -> `v`(0x76) sets it by definition. Any uppercase/lowercase pair differs in
+exactly that bit, whatever produced the difference. The issue read it as drift toward the
+erased `0xFF`; it is simply what upper- and lower-case letters are.
+
+### What this does and does not settle
+
+**Settles:** the reported symptom needs no flash explanation, and the strings are stable over
+C2 at nominal VDD.
+
+**Does not settle:** nothing here varied VDD or temperature, so a marginal-cell effect at the
+extremes is unevidenced rather than excluded. **D4 stays in regardless** - the reference manual
+requires the supply monitor enabled and selected before any flash write, and that is reason
+enough on its own. What changes is that D4 must stop being presented as the explanation for the
+case flips, because there is no longer anything for it to explain.
+
+## Test 1 again, this time on silicon
+
+While the probe was attached: two `treehopper-flash rename` cycles on `CDYHINBH`, each of which
+erases and rewrites the name page at `0xF840`, with a C2 read of `0xF800`-`0xF84F` after each.
+
+```
+after rename to "DesyncBench":
+0000F800 = 01 12 03 63 44 59 68 49  4E 42 68 FF ...   <- serial UNCHANGED
+0000F840 = 01 18 03 44 65 73 79 6E  63 42 65 6E 63 68 ...DesyncBench
+
+after rename back to "Treehopper":
+0000F800 = 01 12 03 63 44 59 68 49  4E 42 68 FF ...   <- serial UNCHANGED
+0000F840 = 01 16 03 54 72 65 65 68  6F 70 70 65 72 FF ...Treehopper
+```
+
+The serial page is byte-identical across both erase-and-write cycles 64 bytes above it. **The
+scratchpad page really is 64 bytes on this silicon**, not just in the device header, and
+`flash_erasePage(NAME_ADDR)` does not reach `SER_ADDR`.
+
+Two further things fall out of the same reads:
+
+- **D3 (marker written last) is confirmed on hardware.** Byte `[0]` is `0x01` and each record is
+  complete and correctly framed after the write.
+- **The C2 read is live, not cached.** It changed exactly where a rename should change it and
+  nowhere else, which is the positive control for every other read in this section.
+
 ## What is still open
 
-Test 2 is closed. Tests 1, 3 and 4 in ADR-0086 D5 are not, and they still gate regenerating
-`dist/`. Test 1 in particular — the page size at `0xF800` — can still change D2's 61-byte
-arithmetic.
+**Only test 4.** Read `0xF800`-`0xFBBF` over C2 on the two damaged boards before anything
+reflashes them - it is the only direct look at what the desync actually wrote, and reflashing
+destroys it. Those boards are at station `SV3-01-ENMOVS6`, not on this bench.
+
+The read procedure is now known-good and is written out above; point it at a damaged board and
+compare against the two clean records in "Ground truth". Expect the name page to hold the
+period-4 `0B 09 06 FF` pattern rather than a framed record.
+
+Tests 1, 2 and 3 are closed. `dist/` stays unregenerated until test 4 is done, because it is
+the one that cannot be repeated later.
 
 ## Recording the next result
 

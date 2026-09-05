@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Source change landed; D5 tests 1 and 2 closed; the image is still NOT released - dist/ is unchanged pending D5 tests 3 and 4, both of which need C2."
+status_note: "Source change landed; D5 tests 1, 2 and 3 closed, D2 and D3 confirmed on silicon; the image is still NOT released - dist/ is unchanged pending D5 test 4, which needs the damaged field boards."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
@@ -151,13 +151,28 @@ without them a supply dip leaves cells *partially programmed* rather than
 resetting the part. `flash_armVddMonitor()` does it once per config-page update,
 which is the only place this firmware writes flash.
 
-This is the leading candidate for a second, lower-severity symptom seen on all
-three boards including the healthy one, and predating the total failure: serial
-strings whose letter **case** changed between reads (`VOQXRNTN` → `vOQxrntn`).
-Every flip sets bit 5, i.e. drifts toward the erased state — what a weakly-erased
-cell does and what a write-without-erase cannot do. This station's hub runs on
-mains passthrough and loses power on any mains dip. **Candidate, not conclusion**
-— D5 says what would settle it.
+**Corrected 2026-09-05 - this decision loses its supporting symptom, and keeps
+its justification.** It previously read as the leading candidate for a second,
+lower-severity symptom seen on all three boards including the healthy one:
+serial strings whose letter case changed between reads (`VOQXRNTN` ->
+`vOQxrntn`), every flip setting bit 5, i.e. drifting toward the erased state.
+
+D5 test 3 dissolved that. The case difference is a host-side presentation
+artefact: the stored serial genuinely is mixed case (`generateRandomString`
+draws from `0-9`, `A-Z` and `a-z`), C2 reads it byte-identically five times
+running, and one `--verbose` log shows the same board reported as `cDYhINBh`,
+`CDYHINBH` and - for its neighbour - `imnuz6yw` and `IMNUZ6YW`, simultaneously,
+because Windows normalises instance ids differently per API. Every example in
+the issue is the uppercase of its own "after" reading, digits untouched. And
+"every flip sets bit 5" is tautological: bit 5 **is** the ASCII case bit, so any
+upper/lower pair differs in exactly that bit whatever caused it.
+
+**The decision stands unchanged.** The reference manual requires the supply
+monitor enabled and selected before any flash write or erase, and that is
+sufficient reason on its own. Nothing here varied VDD or temperature, so a
+marginal-cell effect at the extremes is unevidenced rather than excluded - but
+this is no longer the explanation for anything observed, and must stop being
+presented as one.
 
 ### D5. The source change ships; the image does not
 
@@ -166,7 +181,11 @@ change. They are what `treehopper-flash` writes to real boards, and #170's own
 "needs a bench test" list is not closed:
 
 1. **Confirm the EFM8UB10F16G page size at `0xF800`. CLOSED 2026-09-05, from
-   documentation - it is 64 bytes and D2's arithmetic stands.** The part has two
+   documentation AND on silicon - it is 64 bytes and D2's arithmetic stands.**
+   Hardware check: two `rename` cycles on a bench board, each erasing and
+   rewriting the name page at `0xF840`, left the serial page at `0xF800`
+   byte-identical over C2 both times. The same reads confirm D3 on hardware -
+   the marker is present and each record correctly framed after the write. The part has two
    flash regions with different page sizes, and the AN945 factory USB
    bootloader's device header for `EFM8UB10F16G_QFN28` gives both:
    `BL_FLASH0_PSIZE 512` for code flash `0x0000`-`0x3FFF`, and
@@ -194,8 +213,15 @@ change. They are what `treehopper-flash` writes to real boards, and #170's own
    210–220 ms — the knee is sharp, nothing under 200 ms and everything over
    235 ms. Descriptors unchanged throughout. Full numbers in the investigation
    doc.
-3. **Case flips over C2** at varying VDD and temperature. Stable over C2 while
-   USB reads vary points at the serve path; drifting over C2 confirms D4.
+3. **Case flips over C2. CLOSED 2026-09-05 - a host artefact, not the flash.**
+   The criterion was "stable over C2 while USB reads vary points at the serve
+   path". That is exactly what was measured: five byte-identical C2 reads, while
+   a single host log reports the same serials in three different cases at once.
+   The stored value is the mixed-case one. See D4 above and the investigation
+   doc. No VDD or temperature sweep was needed, because there is no anomaly left
+   to explain.
+
+
 4. **Read `0xF800-0xFBBF` over C2 on the two damaged boards before reflashing.**
    Still worth doing before the evidence is destroyed - it is the only direct look
    at what the desync actually wrote. No longer motivated by the lock byte, which
