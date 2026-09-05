@@ -550,9 +550,15 @@ Add it here: firmware image and how it was verified, the `--stall-ms` sweep, ite
 desyncs, and the analyser trace if you took one. A "no desync" result on unfixed firmware is
 only worth recording alongside the stall values you swept.
 
-## v2.77 rollout attempt - station-A / station-A (2026-09-05)
+## v2.77 rollout attempt - station-A (2026-09-05)
 
-**Outcome: no board took the update. Station restored to service on 2.76. Nothing bricked.**
+**Outcome: no board was left on v2.77. Station restored to service on 2.76. Nothing bricked.**
+
+> **CORRECTED 2026-09-05 (later).** The original verdict below - "the write never landed" -
+> was wrong. The writes DID land. An on-box auto-updater re-flashed v2.76 over them within
+> seconds, every time. See "What actually happened" at the end of this document. The
+> per-board table and the reasoning that follows it are preserved as written, because the
+> observations were real; only the conclusion drawn from them was wrong.
 
 ### Setup
 
@@ -638,7 +644,8 @@ Reproduced on the station with `-v`. Full logs and analysis in #179; the short v
   verify MATCH. The station's three boards share *one* hub (`USB\hub-1`).
 - **On the station**, all 120 records acknowledge - every Erase (0x32), every Write (0x33), and the
   embedded Verify (0x34) - and the board still reads `REV_0114` afterwards.
-- **The write does not land at all.** A standalone verify against the pre-PR v2.76 image returns
+- **The flash content read back as v2.76.** (Corrected: because it had already been
+  overwritten - see the end of this document.) A standalone verify against the pre-PR v2.76 image returns
   MATCH byte-for-byte. The content is pristine 2.76, not partially programmed, so this is not the
   supply-dip mechanism `flash.c` describes for #170.
 - `rename` successfully wrote these boards' config page on 2026-09-04, so the *application's*
@@ -673,3 +680,64 @@ Still unresolved: the in-stream Verify record acknowledges on a board whose cont
 bootloader reports as mismatched from a fresh session minutes later. Settling it needs one of these
 boards on a different hub, or a known-good board on this station's hub - both require hands on the
 machine.
+
+## What actually happened (correction, 2026-09-05)
+
+**An on-box auto-updater was re-flashing v2.76 over every write, within seconds.** The writes
+landed. The flasher's `OK - flashed 15433 bytes, verified` was truthful at the moment it was
+printed. Everything above that concluded "the write does not land" is wrong, and #179 was filed on
+that wrong conclusion.
+
+### The agent
+
+```
+C:\ProgramData\TreehopperAutoUpdate\
+  th-autoupdate.ps1        12843 bytes   2026-08-07
+  treehopper-flash.exe  74693524 bytes   2026-08-07
+  treehopper.tfi           15358 bytes   2026-08-07
+  logs\autoupdate-YYYYMMDD.log           (daily, back to 2026-07-27)
+```
+
+Its `treehopper.tfi` is SHA-256 `a6173636...dd8bc12` - a byte-for-byte match for this repository's
+**v2.76** image at `51e8247`. It runs from boot, watches for board arrivals, and re-flashes
+anything that is not on v2.76. It is pinned to the vulnerable version.
+
+### The timeline, from its own log
+
+| time | event |
+|---|---|
+| 12:04:59 | my flash of board-A completes, reports `OK ... verified` |
+| 12:05:03 | `flash cycle: 2 board(s) stray in bootloader` - it starts flashing |
+| **12:05:17** | `OK board-A - flashed 15358 bytes` -> `OK board-A now ...&REV_0114` |
+| 12:07:07, 12:07:40 | reverts again after each `--no-leave` run |
+| 12:50:46 | my bootloader-direct flash completes |
+| **12:50:56** | `OK board-A - flashed 15358 bytes` -> `OK board-A now ...&REV_0114` |
+
+Ten seconds, on the last one. The bootloader-direct flash was the experiment used above to clear
+the flasher's orchestration of suspicion; it was reverted like all the others.
+
+### What this re-explains
+
+- **All three boards bouncing into their bootloaders during a flash.** Not the flasher disturbing
+  the hub - the auto-updater running `Flashing 3 targets in parallel` concurrently with me.
+- **The board stranded in the bootloader.** Contention over the same devices. Its log for the same
+  minute: `Access denied opening USB device ... It may be owned by another process`.
+- **Why it never reproduced on the bench rig.** The bench has no auto-updater. The relevant
+  difference was never the hub topology.
+- **The probe reading v2.76 immediately after a flash.** Correct reading, taken after the revert.
+
+### What survives
+
+- The image is good, and the bench evidence for it stands.
+- The read oracle works; its positive control was independent of any of this.
+- **#180 stands.** `--no-verify` and `--no-leave` being ignored was observed inside this session's
+  own process log, not inferred from board state.
+- The flash lock byte and erase/write timing comparisons stand as measurements. They were answering
+  a question that turned out not to need asking.
+
+### What this means for the rollout
+
+v2.77 cannot be deployed to this station until the auto-updater is retired or repointed. Flashing
+it by hand will keep being undone. Its presence also deserves its own look against #170: it flashes
+often, in parallel, on a station with known marginal supply, and a flash write is the operation that
+destroys descriptors. There is a log from 2026-09-01, the day the two boards lost their descriptors.
