@@ -325,15 +325,6 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
             return FlashResult.Fail(
                 $"STM32 UART cannot flash {payload.Format}; it accepts {string.Join(", ", s_acceptedFormats)}.");
 
-        // AN3155 mass erase is Extended Erase with the 0xFFFF special code. The CallAndResponse
-        // client always builds an explicit page list, so it cannot express it. Refusing is better
-        // than silently doing a page erase the caller did not ask for.
-        if (options.Erase == EraseMode.Mass)
-            return FlashResult.Fail(
-                "STM32 UART mass erase is not available: the AN3155 client sends an explicit page list, " +
-                "not the 0xFFFF mass-erase code. Use EraseMode.Auto or PerPage to erase the pages the " +
-                "image covers, or EraseMode.None.");
-
         try
         {
             var steps = Stm32SerialPlan.Plan(image, _options, options);
@@ -348,10 +339,15 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
                     case Stm32SerialStep.ErasePages erase:
                         progress?.Report(new FlashProgress(
                             FlashPhase.Erasing, 0, total, $"Extended erase, {erase.PageCount} page(s)"));
-                        // The client's parameter is the AN3155 half-word N, which erases pages 0..N —
-                        // one fewer than the count. The planner never emits a zero count.
                         await WithTimeout(_options.EraseTimeout, ct,
-                            t => _client.ExtendedEraseMemoryPages((ushort)(erase.PageCount - 1), t))
+                            t => _client.ExtendedErasePages(PageRun(erase.PageCount), t))
+                            .ConfigureAwait(false);
+                        break;
+
+                    case Stm32SerialStep.EraseAll:
+                        progress?.Report(new FlashProgress(
+                            FlashPhase.Erasing, 0, total, "Extended erase, whole flash"));
+                        await WithTimeout(_options.EraseTimeout, ct, t => _client.ExtendedEraseMass(t))
                             .ConfigureAwait(false);
                         break;
 
@@ -701,20 +697,14 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         }
     }
 
-    // Stm32BootloaderClient.GetId returns byte [4] of the reply, which is the trailing ACK rather
-    // than the id. AN3155 section 3.3 answers ACK, N=1, PID_MSB, PID_LSB, ACK — the id is bytes
-    // [2..3]. Read it off the transceiver directly until the upstream accessor is fixed.
+    // Informational, like Get: a part that refuses Get ID is still flashable, so a failure here
+    // leaves the chip unreported rather than failing the identify.
     private async Task<uint?> TryGetChipIdAsync(CancellationToken ct)
     {
         try
         {
-            var reply = await WithTimeout(_options.CommandTimeout, ct,
-                t => _transceiver.SendReceive(new byte[] { 0x02, 0xFD }, Frame.Exactly(5), t))
+            return await WithTimeout(_options.CommandTimeout, ct, t => _client.GetId(t))
                 .ConfigureAwait(false);
-
-            if (reply.Length < 5 || reply.Span[0] != Ack)
-                return null;
-            return (uint)((reply.Span[2] << 8) | reply.Span[3]);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -724,6 +714,16 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         {
             return null;
         }
+    }
+
+    // AN3155 Extended Erase carries the page numbers themselves. The planner's count is always a
+    // run starting at page 0, so the list is 0..count-1.
+    private static ushort[] PageRun(int count)
+    {
+        var pages = new ushort[count];
+        for (int i = 0; i < count; i++)
+            pages[i] = (ushort)i;
+        return pages;
     }
 
     // Read the segment back with Read Memory and compare to what we wrote. A mismatch throws,

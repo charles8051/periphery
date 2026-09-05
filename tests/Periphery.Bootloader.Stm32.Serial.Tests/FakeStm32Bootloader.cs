@@ -48,6 +48,9 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// <summary>Pages erased so far, in the order Extended Erase reported them.</summary>
     public List<int> ErasedPageCounts { get; } = new();
 
+    /// <summary>How many times Extended Erase arrived with the mass-erase code rather than a page list.</summary>
+    public int MassErases { get; private set; }
+
     /// <summary>The 16-bit product id reported by Get ID.</summary>
     public ushort ProductId { get; init; } = 0x0413;
 
@@ -247,6 +250,18 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
         var header = await ReadExactAsync(reader, 2, ct).ConfigureAwait(false);
         int n = (header[0] << 8) | header[1];          // AN3155 half-word: pages - 1
+
+        // AN3155 3.7: 0xFFFF, 0xFFFE and 0xFFFD are special codes carrying no page list, just the
+        // checksum. Reading one as a page count would wait for 128 KB of list that never comes.
+        if (n >= 0xFFFD)
+        {
+            await ReadExactAsync(reader, 1, ct).ConfigureAwait(false);
+            Array.Fill(_flash, (byte)0xFF);
+            MassErases++;
+            await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
+            return;
+        }
+
         int pageCount = n + 1;
         await ReadExactAsync(reader, pageCount * 2 + 1, ct).ConfigureAwait(false); // page list + checksum
 

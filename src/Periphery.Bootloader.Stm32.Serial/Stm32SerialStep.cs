@@ -16,12 +16,19 @@ internal abstract record Stm32SerialStep
     /// <summary>
     /// Extended Erase of <paramref name="PageCount"/> pages starting at page 0.
     /// <para>
-    /// Starting at page 0 is not a choice — AN3155's Extended Erase takes an explicit page list,
-    /// and the CallAndResponse client builds that list as 0..N. Erasing a window that starts
-    /// above page 0 needs an upstream change.
+    /// The run always starts at page 0. AN3155's Extended Erase takes an explicit page list and
+    /// the client now sends whatever list it is given, so a window starting above page 0 is
+    /// expressible on the wire; the planner does not yet emit one.
     /// </para>
     /// </summary>
     public sealed record ErasePages(int PageCount) : Stm32SerialStep;
+
+    /// <summary>
+    /// Extended Erase with the AN3155 mass-erase code (0xFFFF): the whole flash, in one command,
+    /// with no page list. Emitted only for <see cref="EraseMode.Mass"/>, because it erases memory
+    /// the image does not cover.
+    /// </summary>
+    public sealed record EraseAll : Stm32SerialStep;
 
     /// <summary>Write Memory of one chunk at an absolute address (AN3155 caps a chunk at 256 bytes).</summary>
     public sealed record Write(uint Address, ReadOnlyMemory<byte> Data) : Stm32SerialStep;
