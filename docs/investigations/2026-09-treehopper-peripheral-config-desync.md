@@ -234,27 +234,52 @@ Two consequences, and the second is much the worse:
 2. **Flashing one board takes an uninvolved board of the same model off the bus**, repeatedly.
    On a kiosk hub that is every other Treehopper on it.
 
-**Why.** `RunWithVerificationAsync` derives its application filter from the device's USB
-vendor/product id when the caller supplies none, and `FlashAnythingService` supplies none.
-Every Treehopper is `VID_10C4&PID_8A7E`, so the filter matches both boards. Correlation is
-`DeviceCorrelationMode.FirstAppearance`, which "ignore[s] candidates already present when the
-wait arms, accept[s] the first one to appear afterwards" — and the flashed board is already
-back (logged as *existing*) when that wait arms, while the bystander re-enumerates in the
-bus churn a moment later and is taken as *new*. `WithApplicationFilter`'s own comment
-predicts this and then argues it is fine because "the orchestrator's own FirstAppearance
-correlation is what actually pins the physical device." It does not, when a second board of
-the same model re-enumerates in the same window.
+**Why.** Two things combine.
 
-**The fix is named in the code already.** `DeviceCorrelationMode.ByLocationPath`'s
-documentation says to prefer it "when the family exposes a stable USB port" and calls out
-"Treehopper/EFM8" by name — a board does not change port when it resets, so the correlation
-becomes exact and parallel-safe. `FlashAnythingService` constructs a bare
-`new BootloaderEntryOptions()`, which defaults to `FirstAppearance`.
+`RunWithVerificationAsync` derives its application filter from the device's USB vendor/product
+id when the caller supplies none, and `FlashAnythingService` supplies none. Every Treehopper is
+`VID_10C4&PID_8A7E`, so the filter matches both boards.
 
-**Until it is fixed: flash Treehopper boards one at a time**, with every other board of the
-same model unplugged. Both boards here survived (checked: both enumerate `OK` in application
-mode with the versions they should have), because the verify round's `RunApp` puts the
-bystander back each time — but a board that is mid-operation does not care that it came back.
+And the application-return wait adopts an arbitrary already-present match **immediately**. It is
+armed with `debouncePreExisting: false` (`BootloaderEntryOrchestrator.cs:321`, "liveness check,
+not a re-enumeration correlation"), so in `DeviceWaitState.Arm()` the `ignored` set is empty,
+`Correlates` for `FirstAppearance` reduces to `!_ignored.Contains(id)` - unconditionally true -
+and `Arm()` returns the first entry of an `ImmutableDictionary` of present boards.
+
+> **This replaces an earlier, wrong paragraph.** It said the two boards raced to re-enumerate
+> inside the mode-switch window. There is no race. The debounce that `FirstAppearance`'s own
+> documentation describes is switched off on this particular wait, so the wrong board is adopted
+> synchronously at arm, before anything re-enumerates - which is exactly why the bystander
+> enters its bootloader 20 ms after the write while the flashed board does not return for
+> another 350 ms. It reproduces every time; "a race" reads as flaky and would have sent the fix
+> hunting a timing window that is not there.
+
+`WithApplicationFilter`'s own comment anticipates the ambiguity and argues it is fine because
+"the orchestrator's own FirstAppearance correlation is what actually pins the physical device."
+The correlation pins nothing here, because the debounce it relies on is disabled.
+
+**The retry can also write to the adopted board.** On a mismatch with a confirmed return,
+`RunWithVerificationAsync` sets `device = confirmedForRetry` and the next iteration *flashes*
+it, from the same arbitrary-first-present wait. It did not happen here (`IMNUZ6YW` still read
+v2.75 after three retries that each wrote 15380 bytes), but the path allows it - a write to a
+bystander, not merely a reboot.
+
+**The fix.** `DeviceCorrelationMode.ByLocationPath` names Treehopper/EFM8 in its own
+documentation, but a port identifies a slot rather than its occupant, and switching the mode
+would leave the flash round's own wait - the one feeding the retry above - still undebounced.
+The stronger fix is one level up in `WithApplicationFilter`: derive an identity, the
+port-AND-serial conjunction `IdentityFilterFor` already applies on the recovery path in the same
+file, keeping VID/PID only as the fallback for a device exposing no identity.
+
+**Until it is fixed: flash Treehopper boards one at a time**, with every other board of the same
+model unplugged. Both boards here survived - both enumerate `OK` in application mode on the
+versions they should have - because the verify round's `RunApp` puts the bystander back each
+time. A board that is mid-operation does not care that it came back, and the retry hazard above
+is a write.
+
+Since the `bcdDevice` bump, `REV_0113` / `REV_0114` / `REV_0115` on the bus read as v2.75 /
+v2.76 / v2.77, so which image a board is running can be checked without a verify round-trip -
+useful precisely because the round-trip is the thing that misbehaves.
 
 Tracked as [#173](https://github.com/charles8051/periphery/issues/173), which carries the full
 `--verbose` trace and the code pointers. Not fixed on this branch.
