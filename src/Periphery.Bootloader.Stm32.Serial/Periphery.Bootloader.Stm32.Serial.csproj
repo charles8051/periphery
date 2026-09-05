@@ -4,13 +4,25 @@
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- XML Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;SYSLIB1051</NoWarn>
 
-    <!-- ADR-0061 phase 3 (STM32 USART / AN3155). IsPackable=false while the platform
-         contract is still in-progress, matching the .Usb sibling. -->
-    <IsPackable>false</IsPackable>
-    <Description>STM32 UART bootloader flasher (ST AN3155): a pure planner, an AN3155 shell over the CallAndResponse Stm32BootloaderClient, and an IFirmwareProgrammer / IBootloaderProvider adapter. ADR-0061.</Description>
+    <!-- Package Metadata -->
+    <!-- Packable as of the Datafeel dot flasher, which lives in its own repo and needs the AN3155
+         programmer from a feed rather than a project reference. It held IsPackable=false while
+         ADR-0061 phase 3 was in progress, matching the .Usb sibling, which stays unpackable until
+         something outside this repo needs it too. The contract this publishes is the one the
+         Treehopper and FlashAnything compositions have been building against for several
+         releases, and periphery#169 verified it against a live STM32G431. -->
+    <PackageId>Periphery.Bootloader.Stm32.Serial</PackageId>
+    <Description>STM32 UART bootloader flasher (ST AN3155): a pure planner, an AN3155 shell over the CallAndResponse Stm32BootloaderClient, and an IFirmwareProgrammer / IBootloaderProvider adapter. Drives the system bootloader over a serial port - sync, extended erase, write, read-back verify, and Go - on a part already in system-bootloader mode. ADR-0061.</Description>
+    <PackageTags>hardware;serial;uart;stm32;an3155;bootloader;firmware;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
 
     <!-- ADR-0061 DEC-006, fulfilled: OpenAsync builds its port and pipe over Periphery.Serial
          (System.IO.Ports, zero third-party dep) rather than CallAndResponse.Transport.Serial,
@@ -39,6 +51,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Periphery.Bootloader.Stm32.Serial.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>
