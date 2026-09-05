@@ -189,11 +189,12 @@ of them connected the name fallback matched the *other* board and reported
 falls back to the name only when exactly one connected board carries it, and otherwise says
 it cannot tell rather than guessing.
 
-**`treehopper-flash flash` reported `FAILED` on all three flashes that actually landed.**
-"The write appeared to succeed, but an independent, later bootloader-session check could not
-confirm it landed." A `verify` immediately afterwards returned MATCH every time, against
-the image just written. The write is fine; the post-flash confirmation is producing false
-negatives on this host. Not a #170 problem, but it will mislead whoever flashes next.
+**`treehopper-flash flash` verified the WRONG BOARD, and rebooted it.** Reported `FAILED` on
+every application-mode flash in this session while a `verify` immediately afterwards returned
+MATCH against the image just written. That looked like a false negative on the confirmation
+step. It is not — the confirmation is telling the truth, about a board nobody asked it to
+touch. See "The wrong-board flash defect" below. Not a #170 problem, and worse than it first
+looked.
 
 **The version word was nearly missed again.** The whole reason this session had to reboot a
 board into its bootloader to find out what it was running is that the #170 fix originally
@@ -201,6 +202,61 @@ landed without bumping `bcdDevice` — the same omission the 275 -> 276 comment 
 `descriptors.c` was written to warn about. Bump it in the same commit as any firmware
 behaviour change, whether or not `dist/` is being regenerated. An unreleased image on a
 bench board is precisely the case that needs it.
+
+## The wrong-board flash defect
+
+Found while explaining the `FAILED` above, with `treehopper-flash flash --verbose`. **This is
+a defect in shipped code, not in the bench setup, and it is not a #170 problem.**
+
+`FlashAnythingService.RebootAndFlashApplicationAsync` flashes, then confirms the write in a
+separate, later bootloader session (`BootloaderEntryOrchestrator.RunWithVerificationAsync`).
+Between those two steps it waits for the application to come back and correlates *which*
+device came back. With two Treehopper boards connected it correlated the wrong one:
+
+```
+19:57:52.025  Flash USB\...\CDYHINBH: identified EFM8; transfer size 64 bytes
+19:57:53.138  detected EXISTING Application target ...\cDYhINBh          <- the board we flashed
+19:57:53.403  detected NEW Application target ...\imnuz6yw               <- correlated as "it came back"
+19:57:54.582  target ...\imnuz6yw removed (no longer present)            <- verify round REBOOTS IT
+              EFM8 upload #8: record 1/2 (command 0x34) -> reply OtherError (0x43)
+              EFM8 upload #9: record 0/1 (command 0x36) -> Acknowledge   <- RunApp, puts it back
+```
+
+Command `0x34` is the bootloader's Verify; `0x43` is a content mismatch. Correct answer,
+wrong board — `IMNUZ6YW` holds v2.75, not the image just written to `CDYHINBH`. The whole
+cycle then repeats for all three attempts, so **one flash reboots a bystander board into its
+bootloader three times.**
+
+Two consequences, and the second is much the worse:
+
+1. The `FAILED` is not a false negative. The verify genuinely failed, on a board that was
+   never going to match.
+2. **Flashing one board takes an uninvolved board of the same model off the bus**, repeatedly.
+   On a kiosk hub that is every other Treehopper on it.
+
+**Why.** `RunWithVerificationAsync` derives its application filter from the device's USB
+vendor/product id when the caller supplies none, and `FlashAnythingService` supplies none.
+Every Treehopper is `VID_10C4&PID_8A7E`, so the filter matches both boards. Correlation is
+`DeviceCorrelationMode.FirstAppearance`, which "ignore[s] candidates already present when the
+wait arms, accept[s] the first one to appear afterwards" — and the flashed board is already
+back (logged as *existing*) when that wait arms, while the bystander re-enumerates in the
+bus churn a moment later and is taken as *new*. `WithApplicationFilter`'s own comment
+predicts this and then argues it is fine because "the orchestrator's own FirstAppearance
+correlation is what actually pins the physical device." It does not, when a second board of
+the same model re-enumerates in the same window.
+
+**The fix is named in the code already.** `DeviceCorrelationMode.ByLocationPath`'s
+documentation says to prefer it "when the family exposes a stable USB port" and calls out
+"Treehopper/EFM8" by name — a board does not change port when it resets, so the correlation
+becomes exact and parallel-safe. `FlashAnythingService` constructs a bare
+`new BootloaderEntryOptions()`, which defaults to `FirstAppearance`.
+
+**Until it is fixed: flash Treehopper boards one at a time**, with every other board of the
+same model unplugged. Both boards here survived (checked: both enumerate `OK` in application
+mode with the versions they should have), because the verify round's `RunApp` puts the
+bystander back each time — but a board that is mid-operation does not care that it came back.
+
+Tracked separately; not fixed on this branch.
 
 ## What is still open
 
