@@ -737,7 +737,7 @@ the flasher's orchestration of suspicion; it was reverted like all the others.
 
 ### What this means for the rollout
 
-v2.77 cannot be deployed to this station until the auto-updater is retired or repointed. Flashing
+v2.77 cannot be deployed to this station until the auto-updater is retired or repointed (#183). Flashing
 it by hand will keep being undone. Its presence also deserves its own look against #170: it flashes
 often, in parallel, on a station with known marginal supply, and a flash write is the operation that
 destroys descriptors. There is a log from 2026-09-01, the day the two boards lost their descriptors.
