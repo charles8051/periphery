@@ -522,18 +522,16 @@ It sharpens D3's field evidence. It does not change any decision already made.
 
 ## What is still open
 
-## What is still open
+**Nothing that gates the release.** All four ADR-0086 D5 tests are closed and `dist/` is
+regenerated at v2.77 (14774 HEX bytes, top `0x39B6`; `.tfi` 15380 bytes, 120 records). The
+bench board that reproduced the desync verifies MATCH against the shipped `dist/Treehopper.hex`.
 
-**Only test 4.** Read `0xF800`-`0xFBBF` over C2 on the two damaged boards before anything
-reflashes them - it is the only direct look at what the desync actually wrote, and reflashing
-destroys it. Those boards are at station `SV3-01-ENMOVS6`, not on this bench.
-
-The read procedure is now known-good and is written out above; point it at a damaged board and
-compare against the two clean records in "Ground truth". Expect the name page to hold the
-period-4 `0B 09 06 FF` pattern rather than a framed record.
-
-Tests 1, 2 and 3 are closed. `dist/` stays unregenerated until test 4 is done, because it is
-the one that cannot be repeated later.
+One reading was deliberately not taken: the raw `iSerialNumber` descriptor bytes from the two
+damaged boards. It needs code running on a production station, and the control plane has no
+run-a-binary path - deployment there means publishing an OTA workload to a live shredder. It
+would sharpen D3's field evidence and change no decision, so it was skipped rather than
+scheduled. `scratch/TreehopperIdentityProbe` is built and validated against C2 if it is ever
+wanted; run it against both boards and record what `bLength` comes back for string index 3.
 
 ## Recording the next result
 
