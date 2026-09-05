@@ -5,6 +5,7 @@ using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -444,32 +445,43 @@ public sealed partial class TreehopperBoard : IAsyncDisposable
     }
 
     /// <summary>
-    /// Writes a new device name to the board's EEPROM (≤ 60 characters). The change
-    /// persists across power cycles but is not visible to other applications until the
-    /// board is rebooted (<see cref="RebootAsync"/>).
+    /// Writes a new device name to the board's EEPROM. The change persists across power
+    /// cycles but is not visible to other applications until the board is rebooted
+    /// (<see cref="RebootAsync"/>).
     /// </summary>
+    /// <remarks>
+    /// The limit is 61 <em>UTF-8 bytes</em>, not characters: the board stores the payload one
+    /// byte per character in a single 64-byte flash page, behind a three-byte header. This was
+    /// a character count, which let 31 two-byte characters - 31 characters, 62 bytes - through
+    /// to a write the board could not hold. See issue #170.
+    /// </remarks>
     public async Task UpdateNameAsync(string name, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(name);
-        if (name.Length > 60)
-            throw new ArgumentOutOfRangeException(nameof(name), "Device name must be 60 characters or fewer.");
+        if (Encoding.UTF8.GetByteCount(name) > TreehopperWire.IdentityMaxBytes)
+            throw new ArgumentOutOfRangeException(
+                nameof(name),
+                $"Device name must encode to {TreehopperWire.IdentityMaxBytes} UTF-8 bytes or fewer.");
         await ExecuteTransactionAsync(new Command.UpdateName(name), ct).ConfigureAwait(false);
         // The flash write disables interrupts while it runs; give it time to settle.
         await Task.Delay(100, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Writes a new serial number to the board's EEPROM (≤ 60 characters). The change
-    /// persists across power cycles but is not visible to other applications until the
-    /// board is rebooted (<see cref="RebootAsync"/>).
+    /// Writes a new serial number to the board's EEPROM. The change persists across power
+    /// cycles but is not visible to other applications until the board is rebooted
+    /// (<see cref="RebootAsync"/>). Bounded in UTF-8 bytes, as
+    /// <see cref="UpdateNameAsync"/> explains.
     /// </summary>
     public async Task UpdateSerialAsync(string serialNumber, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(serialNumber);
-        if (serialNumber.Length > 60)
-            throw new ArgumentOutOfRangeException(nameof(serialNumber), "Serial number must be 60 characters or fewer.");
+        if (Encoding.UTF8.GetByteCount(serialNumber) > TreehopperWire.IdentityMaxBytes)
+            throw new ArgumentOutOfRangeException(
+                nameof(serialNumber),
+                $"Serial number must encode to {TreehopperWire.IdentityMaxBytes} UTF-8 bytes or fewer.");
         await ExecuteTransactionAsync(new Command.UpdateSerial(serialNumber), ct).ConfigureAwait(false);
         await Task.Delay(100, ct).ConfigureAwait(false);
     }

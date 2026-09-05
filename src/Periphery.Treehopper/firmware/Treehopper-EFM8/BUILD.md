@@ -95,6 +95,39 @@ Measured with the same toolchain, same flags, base commit vs. this change:
 | with the watchdog | 14862 | 14734 | `0x398E` | **114** |
 | | **-86** | **-86** | | **+86** |
 
+### The `#170` stream-framing change
+
+Measured the same way, from the actual HEX records rather than from `code=`. The
+baseline row matches the committed `dist/Treehopper.hex` byte for byte.
+
+| | HEX bytes | Top | Free to `0x3A00` |
+|---|---|---|---|
+| baseline (`= dist/Treehopper.hex`, v2.76) | 14752 | `0x39A0` | 96 |
+| with the framing fix | 14774 | `0x39B6` | 74 |
+| plus header validity, short-packet clear, EP2 ownership window (v2.77, shipped) | 14827 | `0x39EB` | **21** |
+
+> [!WARNING]
+> **21 bytes is the whole remaining budget.** The next change to this firmware will
+> very likely need to buy its own room first, the way this one did. Measure from the
+> HEX records before assuming otherwise, and do not trust `code=`.
+
+The `bcdDevice` bump to `0x0115` in the same change costs nothing — it is a constant in an
+already-present descriptor.
+
+The fix on its own does not fit in 96 bytes. Two size-neutral simplifications in
+the same commit paid for it, rather than any part of the fix being traded away:
+the enumeration blink in `USBD_DeviceStateChangeCb` became a loop over the six
+`LED_SetVal`/delay pairs it used to spell out (identical sequence and timing),
+and `configureDevice(uint8_t)` — which ignored its argument and called
+`Treehopper_Init()` — was inlined at its one call site.
+
+> [!NOTE]
+> The blink counter lives in **XDATA**, deliberately. LX51 cannot overlay that
+> function's locals and DATA is full to the byte: a plain `uint8_t n` there fails
+> the link with `*** ERROR L107: ADDRESS SPACE OVERFLOW / SPACE: DATA`. If you add
+> a local to anything reachable from the USB ISR, expect that error rather than a
+> code-size one.
+
 ## ⚠️ `code=` is NOT a safe proxy for flash usage — measure the HEX file directly
 
 **Corrected 2026-08-07, then corrected again the same day.** This doc

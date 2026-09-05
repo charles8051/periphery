@@ -34,6 +34,26 @@ void SendPinStatus();
 
 uint16_t timeout = 0;
 
+// ── EP_PeripheralConfig stream framing (issue #170) ──────────────────────────
+// Set from the USB ISR (USBD_XferCompleteCb, callback.c) on every EP_PeripheralConfig
+// packet: true when that packet was short, which is how the host marks the end of its
+// transfer. A single bit is deliberate - SETB / CLR on a bdata bit is one instruction, so
+// there is no read-modify-write window between the ISR and the foreground.
+volatile bit Treehopper_PeripheralConfigShortPacket = 0;
+
+// Latched when the stream's framing is known to be lost - by the foreground when it
+// abandons a multi-packet read, and by the USB ISR when a re-enumeration re-points the
+// endpoint out from under one. Consumed by the drain at the top of
+// ProcessPeripheralConfigPacket.
+volatile bit Treehopper_PeripheralConfigDesync = 0;
+
+// Set by the foreground for exactly as long as it owns a continuation read armed at
+// &Treehopper_PeripheralConfig[64]. Read by USBD_DeviceStateChangeCb, which must re-arm at
+// offset 0 on every transition to CONFIGURED (that is what recovers the endpoint from the
+// D_EP_HALT a bus reset leaves it in) and so needs to know when doing that steals a read
+// the foreground is still spinning on.
+volatile bit Treehopper_PeripheralConfigMultiRead = 0;
+
 // LOCALS
 SI_SEGMENT_VARIABLE(pins[TREEHOPPER_NUM_PINS], uint8_t, SI_SEG_XDATA);
 
@@ -90,11 +110,6 @@ void Treehopper_Init() {
 
 	}
 
-}
-
-void configureDevice(uint8_t config) {
-	// we may have to pass specific configurations in the future, but for now, just re-init everything
-	Treehopper_Init();
 }
 
 void Treehopper_Task() {
@@ -167,14 +182,50 @@ void ProcessPinConfigPacket() {
 }
 
 // this gets called whenever we received peripheral config data from the host
+//
+// FRAMING. This stream has none: no length prefix, no sequence number, no magic, no
+// opcode validation. Whatever byte sits at Treehopper_PeripheralConfig[0] is executed as a
+// command, and every low value is a live one - 0x0A FirmwareUpdateSerial,
+// 0x0B FirmwareUpdateName, 0x0C Reboot, 0x0D EnterBootloader. So the ONLY thing standing
+// between a desynchronised stream and a destroyed board is never re-arming this endpoint at
+// offset 0 while the host is still sending the middle of a command.
+//
+// That is not hypothetical. Issue #170: an APA102 pixel flush chunks at 252 bytes, so every
+// animation tick takes the multi-packet path below. When the remainder missed the spin
+// budget, the abort discarded in-flight packets, the re-arm at the bottom of this function
+// went back to offset 0, and the next surviving packet - pure pixel data - landed where an
+// opcode was expected. A dim blue-white pixel is FF 0B 09 06; entered one byte late its Blue
+// channel 0x0B is FirmwareUpdateName and its Green channel 0x09 is the length, so the board
+// wrote its own pixel data over its name page. Two production boards permanently lost both
+// their name and serial descriptors and three went into their bootloaders on a 0x0D.
 void ProcessPeripheralConfigPacket() {
 	uint8_t totalTransactionBytes;
 	uint8_t totalReadBytes;
 	uint8_t burst;
 	SpiConfigData_t spiConfig;
+
+	// DRAIN TO A PACKET BOUNDARY. Treehopper_PeripheralConfigDesync means we abandoned a multi-packet
+	// read with the host still sending, so these bytes are the middle of that command and
+	// not the start of a new one. Discard them, and keep discarding until a short packet -
+	// the host's own end-of-transfer marker, and therefore the next boundary we can trust.
+	//
+	// If the abandoned command happened to be an exact multiple of the 64-byte packet size,
+	// no short packet ends it and this eats the first packet of the NEXT command instead,
+	// resynchronising on that command's short tail. One dropped command is a far better
+	// failure than executing pixel data as EnterBootloader.
+	if (Treehopper_PeripheralConfigDesync)
+	{
+		if (Treehopper_PeripheralConfigShortPacket)
+			Treehopper_PeripheralConfigDesync = 0;
+	}
+	else
 	switch (Treehopper_PeripheralConfig[0]) {
 	case ConfigureDevice:
-		configureDevice(Treehopper_PeripheralConfig[1]);
+		// Was a configureDevice(Treehopper_PeripheralConfig[1]) wrapper that ignored its
+		// argument and called this. Inlined to buy back flash for the framing fix below; the
+		// app region ends at 0x3A00 (BUILD.md). A future per-configuration variant can read
+		// Treehopper_PeripheralConfig[1] here.
+		Treehopper_Init();
 		break;
 
 	case PWMConfig:
@@ -202,9 +253,38 @@ void ProcessPeripheralConfigPacket() {
 		{
 			timeout = 0;
 			// we can request all the remaining bytes at once; just hang in while() until they all come in.
+			Treehopper_PeripheralConfigMultiRead = 1;
 			USBD_Read(EP_PeripheralConfig, &Treehopper_PeripheralConfig[64], (totalTransactionBytes+7)-64, false);
 			while(timeout++ < 65000 && USBD_EpIsBusy(EP_PeripheralConfig));
-			USBD_AbortTransfer(EP_PeripheralConfig);
+			// Two ways this read did not deliver what was asked for: it never finished inside the
+			// spin budget, or a re-enumeration re-armed the endpoint at offset 0 underneath it -
+			// the ISR latches the desync bit for that second case. Either way the host is still
+			// sending, or has just stopped sending, bytes we cannot place.
+			//
+			// The unconditional USBD_AbortTransfer that used to sit here ran on the healthy path
+			// too, where it did nothing. On this path it discards up to two in-flight packets
+			// while the host keeps sending, and the re-arm at the bottom of this function then
+			// goes back to offset 0 - landing the next surviving packet where an opcode is
+			// expected. Latch it so the drain throws those bytes away.
+			if (Treehopper_PeripheralConfigDesync || USBD_EpIsBusy(EP_PeripheralConfig))
+			{
+				USBD_AbortTransfer(EP_PeripheralConfig);
+				Treehopper_PeripheralConfigDesync = 1;
+				Treehopper_PeripheralConfigMultiRead = 0;
+				break; // the payload is incomplete; do not run the transaction on it
+			}
+			// Cleared only now, AFTER the test, and the ordering is the point. Clearing it before
+			// the test left a two-statement window where the foreground still owned a pending
+			// transfer while the ISR saw an unowned endpoint: a CONFIGURED transition landing
+			// there would re-arm at offset 0 and latch nothing, and if the packet also completed
+			// before the test, both the desync bit and EpIsBusy would read false and the
+			// transaction would run on a buffer that is half old command and half new packet.
+			// Vanishingly narrow - it needs a full re-enumeration between two adjacent
+			// statements - but free to close, and the review was right to keep pressing on it.
+			//
+			// Holding the bit one test longer can only ever cost a spurious drain after a bus
+			// reset, which is one dropped command. That is the direction to be wrong in.
+			Treehopper_PeripheralConfigMultiRead = 0;
 		}
 
 		SPI_Transaction(&spiConfig, totalTransactionBytes, &Treehopper_PeripheralConfig[7], Treehopper_RxBuffer);
@@ -230,9 +310,18 @@ void ProcessPeripheralConfigPacket() {
 		{
 		   // we've only read 64 bytes into our buffer, so for long transactions read the remaining data
 			timeout = 0;
+			Treehopper_PeripheralConfigMultiRead = 1;
 			USBD_Read(EP_PeripheralConfig, &Treehopper_PeripheralConfig[64], (totalTransactionBytes+4)-64, false);
 			while(timeout++ < 65000 && USBD_EpIsBusy(EP_PeripheralConfig));
-			USBD_AbortTransfer(EP_PeripheralConfig);
+			if (Treehopper_PeripheralConfigDesync || USBD_EpIsBusy(EP_PeripheralConfig))
+			{
+				// Same abandoned-remainder case as SPITransaction above.
+				USBD_AbortTransfer(EP_PeripheralConfig);
+				Treehopper_PeripheralConfigDesync = 1;
+				Treehopper_PeripheralConfigMultiRead = 0;
+				break; // the payload is incomplete; do not run the transaction on it
+			}
+			Treehopper_PeripheralConfigMultiRead = 0; // after the test - see SPITransaction
 		}
 
 		I2C_Transaction(Treehopper_PeripheralConfig[1], &Treehopper_PeripheralConfig[4],
@@ -290,6 +379,13 @@ void ProcessPeripheralConfigPacket() {
 	}
 
 	memset(Treehopper_PeripheralConfig, 0, sizeof(Treehopper_PeripheralConfig)); // reset the buffer to zero to avoid accidentally re-processing data
-	// when we're all done, re-arm the endpoint.
-	USBD_Read(EP_PeripheralConfig, Treehopper_PeripheralConfig, 64, false);
+	// Clear the short-packet bit as the read is armed, so it can only ever be true because the
+	// ISR set it for THIS packet. Left over from the previous transfer it is a stale boundary:
+	// the drain would read a short packet that ended some earlier command as the end of the one
+	// it is currently discarding, and resynchronise a packet early.
+	Treehopper_PeripheralConfigShortPacket = 0;
+	// when we're all done, re-arm the endpoint. The completion callback is enabled (the
+	// trailing `true`) purely so the ISR can record whether the packet was short; that is the
+	// only signal the drain above has for finding the next real packet boundary.
+	USBD_Read(EP_PeripheralConfig, Treehopper_PeripheralConfig, 64, true);
 }

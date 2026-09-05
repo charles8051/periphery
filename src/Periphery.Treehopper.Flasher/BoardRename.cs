@@ -157,10 +157,12 @@ public static class BoardRename
         foreach (char c in name)
         {
             if (c is < ' ' or > '~')
-                return $"A board name must be printable ASCII; U+{(int)c:X4} is not. The wire codec "
-                     + "sends UTF-8 bytes under a character-count length byte, and the firmware stores "
-                     + "one byte per character - so a wider character is written truncated and read "
-                     + "back mangled. Lifting this needs a codec and firmware change, not a longer name.";
+                return $"A board name must be printable ASCII; U+{(int)c:X4} is not. The firmware "
+                     + "stores the name one byte per character and the EFM8 USB stack widens each of "
+                     + "those bytes back to a UTF-16 code unit on read, so a character that takes more "
+                     + "than one UTF-8 byte reads back mangled. The codec's length byte is a UTF-8 "
+                     + "byte count as of issue #170, but that fixes truncation, not the widening. "
+                     + "Lifting this needs a firmware change, not a longer name.";
         }
 
         return null;

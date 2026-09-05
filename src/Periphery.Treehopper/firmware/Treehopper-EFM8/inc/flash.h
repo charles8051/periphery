@@ -8,6 +8,12 @@
 #define __FLASH_H__
 
 /**************************************************************************//**
+ * Enable the supply monitor and select it as a reset source. Must be called before
+ * any flash write or erase; see the definition for why.
+ *****************************************************************************/
+extern void flash_armVddMonitor(void);
+
+/**************************************************************************//**
  * Erase the flash page the contains the specified address.
  *
  * @param addr Flash address that lies within the page to erase.

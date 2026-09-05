@@ -125,6 +125,27 @@ public class BoardPeripheralTests
         Assert.True(Wrote(b, 0x02, 0x0B, 0x02, 0x41, 0x42));
     }
 
+    // The board's own guard, ahead of the wire codec's: the limit is UTF-8 bytes, because
+    // that is what the firmware writes into a single 64-byte flash page. It used to be a
+    // character count, which let 31 two-byte characters (62 bytes) through. Issue #170.
+    [Fact]
+    public async Task UpdateNameAsync_ShortInCharsButTooLongInBytes_Throws()
+    {
+        var b = new FakeUsbBackend();
+        await using var board = BoardOver(b);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => board.UpdateNameAsync(new string('\u00e9', 31)));
+    }
+
+    [Fact]
+    public async Task UpdateSerialAsync_ShortInCharsButTooLongInBytes_Throws()
+    {
+        var b = new FakeUsbBackend();
+        await using var board = BoardOver(b);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => board.UpdateSerialAsync(new string('\u00e9', 31)));
+    }
+
     [Fact]
     public async Task RebootAsync_SendsRebootOpcode()
     {
