@@ -445,6 +445,83 @@ Two further things fall out of the same reads:
 - **The C2 read is live, not cached.** It changed exactly where a rename should change it and
   nowhere else, which is the positive control for every other read in this section.
 
+## Test 4, mostly answered from artifacts already off the station
+
+**No deployment, no C2, no site visit.** Station `cindy` / `SV3-01-ENMOVS6` (meshware
+`4QV9B54J`) uploads `shredvault.diagnostic_snapshot` artifacts - gzipped NDJSON - and two of
+them bracket the incident. `meshware --env production artifacts get` is read-only.
+
+The incident is 2026-09-01 22:02 local = **2026-09-02 03:02 UTC**.
+
+### The garbage name, from the station's own logs
+
+```
+03:02:21.928  USB\VID_10C4&PID_8A7E&5D32C7&0&1   name='ÿ	ÿ	'
+03:02:21.932  USB\VID_10C4&PID_8A7E&5D32C7&0&2   name='ÿ	ÿ	'
+```
+
+`06 FF 0B 09 06 FF 0B 09 06` - the nine bytes the issue derived, byte-identical, on both
+boards. Confirmed rather than reconstructed.
+
+### The bootloader entries, confirmed
+
+```
+03:02:25.072  VOQXRNTN disappears            -> PID_EAC9&5d32c7&0&3 at 03:02:25.303
+03:02:35.856  6&5D32C7&0&1 disappears        -> PID_EAC9&5d32c7&0&1 at 03:02:36.076
+03:02:35.916  6&5D32C7&0&2 disappears        -> PID_EAC9&5d32c7&0&2 at 03:02:36.190
+03:02:37.5-6  all three bootloaders vanish; the boards come back
+```
+
+All three boards, two waves 11 s apart, exactly as the issue reports. Nothing in the log
+requests a bootloader entry.
+
+### What the artifacts change
+
+**The identity loss PREDATES the bootloader event.** At `03:02:21` - four seconds before the
+first board enters its bootloader, during the app's own startup device snapshot - both damaged
+boards are *already* carrying the garbage name and are *already* enumerating by port path
+(`6&5D32C7&0&1`) rather than by serial. So these are two separate events and the descriptor
+damage came first. The issue treats the 22:02 bootloader arrivals as the visible edge of the
+same incident; they are the second act, and the snapshot does not reach back to the first.
+
+**The damaged boards serve no serial at all - not a garbage one.** A port-path instance id is
+what Windows falls back to when a device has no `iSerialNumber`. That matters, because a
+*garbage* serial is what the issue's "second such event with a Blue channel of `0x0A`"
+hypothesis predicts, and it is not what is there.
+
+**And that is field evidence for D3.** `SerialNumber_Init` regenerates whenever
+`serialNumber_serial[0] == 0xFF`, so a blank page would have self-healed into a fresh random
+serial on the very next boot. It has not, across four days and many reboots. So byte `[0]` is
+present while the record is unserveable - a record that looks valid forever to the firmware and
+invalid to the USB stack, which is exactly the marker-written-first failure D3 fixes.
+
+**The rename workaround took, and did not restore the serial.** The 2026-09-05 snapshot shows
+`name='DepositChamber'` and `name='Vending'` on the same two port paths - still no serial.
+
+### The case flip, caught in the act
+
+```
+03:02:25.072  USB\VID_10C4&PID_8A7E\VOQXRNTN     <- before the reboot
+03:02:37.793  USB\VID_10C4&PID_8A7EOQxrntn     <- 12 s later, same board
+```
+
+The issue's own first example, with timestamps, in the instance id itself, across one
+re-enumeration. Twelve seconds is not cell drift, and the later reading is the mixed-case form
+that C2 shows is what is actually stored. Independent confirmation of test 3 on the affected
+station.
+
+### What is genuinely left
+
+One reading: **the raw `iSerialNumber` descriptor bytes from the two damaged boards** - what
+`bLength` comes back, and whether the request fails outright. That is the difference between
+"the length byte is garbage" and "the payload is garbage", and it is the last thing the logs
+cannot say. `scratch/TreehopperIdentityProbe` is built and validated against C2 for exactly
+this, and it needs to run on the station.
+
+It sharpens D3's field evidence. It does not change any decision already made.
+
+## What is still open
+
 ## What is still open
 
 **Only test 4.** Read `0xF800`-`0xFBBF` over C2 on the two damaged boards before anything
