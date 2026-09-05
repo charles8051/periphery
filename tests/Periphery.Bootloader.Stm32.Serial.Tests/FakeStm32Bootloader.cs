@@ -48,6 +48,9 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// <summary>Pages erased so far, in the order Extended Erase reported them.</summary>
     public List<int> ErasedPageCounts { get; } = new();
 
+    /// <summary>How many times Extended Erase arrived with the mass-erase code rather than a page list.</summary>
+    public int MassErases { get; private set; }
+
     /// <summary>The 16-bit product id reported by Get ID.</summary>
     public ushort ProductId { get; init; } = 0x0413;
 
@@ -228,7 +231,10 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     private Task GetAsync(PipeWriter writer, CancellationToken ct)
     {
         byte[] commands = { 0x00, 0x01, 0x02, 0x11, 0x21, 0x31, 0x44 };
-        var reply = new List<byte> { Ack, (byte)(commands.Length + 1), ProtocolVersion };
+        // AN3155 3.2: N is the number of bytes to follow minus one. Those bytes are the version
+        // plus the command list, so N is the command count. Hardware agrees: an STM32G431 with
+        // eleven commands reports N = 0x0B.
+        var reply = new List<byte> { Ack, (byte)commands.Length, ProtocolVersion };
         reply.AddRange(commands);
         reply.Add(Ack);
         return SendAsync(writer, reply.ToArray(), ct);
@@ -244,6 +250,18 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
         var header = await ReadExactAsync(reader, 2, ct).ConfigureAwait(false);
         int n = (header[0] << 8) | header[1];          // AN3155 half-word: pages - 1
+
+        // AN3155 3.7: 0xFFFF, 0xFFFE and 0xFFFD are special codes carrying no page list, just the
+        // checksum. Reading one as a page count would wait for 128 KB of list that never comes.
+        if (n >= 0xFFFD)
+        {
+            await ReadExactAsync(reader, 1, ct).ConfigureAwait(false);
+            Array.Fill(_flash, (byte)0xFF);
+            MassErases++;
+            await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
+            return;
+        }
+
         int pageCount = n + 1;
         await ReadExactAsync(reader, pageCount * 2 + 1, ct).ConfigureAwait(false); // page list + checksum
 
