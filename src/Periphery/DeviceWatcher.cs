@@ -130,6 +130,17 @@ public sealed class DeviceWatcher : IAsyncDisposable
     // startup Appeared: the walk already guards Activated against _knownConnectedIds
     // and has never guarded Appeared.
     //
+    // Recorded from the PRESENCE edges only - Appeared and Disappeared. An activity edge
+    // says nothing about whether the devnode is in the tree, so it must not suppress the
+    // walk's announcement: a device already present at start that merely restarts its
+    // driver mid-walk would otherwise have its only Appeared skipped, leaving every tracker
+    // that needs presence stuck Absent for a device that never went anywhere.
+    //
+    // Suppressing activity edges is also unnecessary, because D1 already covers them: the
+    // walk's stale payload is reconciled against _knownConnectedIds before any consumer
+    // sees it, so a late inactive payload cannot demote a device the live stream activated.
+    // Presence supersession and activity reconciliation are complementary, not overlapping.
+    //
     // Scoped to the start window and cleared on both edges of it, so this is bounded by
     // the devices that happen to change during one enumeration rather than by the tree.
     // _snapshotInFlight is guarded by the set own lock: the flag and the membership
@@ -1063,9 +1074,6 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
                 Appeared?.Invoke(this, new DeviceChangeEventArgs(device));
 
-                    // Seed the property-change cache with the initial snapshot.
-                    lock (_deviceCache) _deviceCache[device.Id] = device;
-
                     // Guard on the Add, exactly as OnProviderActivated does. The
                     // provider goes live before the snapshot walk begins, so a device
                     // that arrived during the walk has already had Activated raised;
@@ -1083,6 +1091,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
                         }
                     }
             }
+
+            // Seed the replay cache for EVERY snapshot device, not only those the
+            // watcher-level filter admits. The tracker fan-out below is unfiltered - a
+            // tracker can match a device this watcher's filter rejects - and Reconfigure
+            // replays from this cache, so caching only the filtered subset means a
+            // reconfigure silently drops devices the tracker was already holding.
+            // Mirrors OnProviderPropertyChanged, which already caches unconditionally.
+            lock (_deviceCache) _deviceCache[device.Id] = device;
 
             // Per-tracker fan-out: always notify appeared
             FanOutAppeared(device);
@@ -1246,7 +1262,6 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void OnProviderActivated(object? sender, DeviceChangeEventArgs e)
     {
-        NoteLiveStreamHandled(e.Device.Id);
 
         // Activation maintains the replay cache (ADR-0087 D3). Written before the
         // dedup returns, so a re-raise for an already-known device still refreshes it.
@@ -1281,7 +1296,6 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void OnProviderDeactivated(object? sender, DeviceChangeEventArgs e)
     {
-        NoteLiveStreamHandled(e.Device.Id);
 
         // Retracts the activity assertion ReconcileActivity reads, so a presence edge
         // arriving after this one is no longer upgraded.

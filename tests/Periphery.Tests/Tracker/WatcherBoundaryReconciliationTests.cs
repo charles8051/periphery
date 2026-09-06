@@ -80,6 +80,41 @@ public class WatcherBoundaryReconciliationTests
         Assert.Equal(DeviceActivityStatus.Absent, tracker.ActivityStatus);
     }
 
+    // ── An activity edge must not suppress the walk's announcement ─────
+
+    /// <summary>
+    /// A device already present at start can take an activity edge mid-walk - a driver
+    /// restart, or a Bluetooth peripheral coming into range - without ever leaving the
+    /// tree. That edge says nothing about presence, so it must not suppress the snapshot,
+    /// which is the only thing establishing presence for a device that never arrived.
+    ///
+    /// <para>Suppressing it is also unnecessary: the reconciliation at the fan-out boundary
+    /// already stops the walk's stale payload demoting a device the live stream activated.
+    /// Presence supersession and activity reconciliation are complementary.</para>
+    /// </summary>
+    [Fact]
+    public async Task ActivityEdgeDuringTheWalk_DoesNotSuppressTheSnapshotAppearance()
+    {
+        var monitor = new FakeDeviceMonitorProvider();
+        var dev = Device(isActive: true);
+        var fired = false;
+        var query = new HookedProvider(() =>
+        {
+            if (fired) return;
+            fired = true;
+            monitor.SimulateStatusChange(dev);   // live Activated, no arrival edge
+        }, dev);
+
+        await using var watcher = new DeviceWatcher(query, monitor);
+        var appeared = new List<DeviceId>();
+        watcher.Appeared += (_, e) => appeared.Add(e.Device.Id);
+        var tracker = watcher.AddTracker(f => f.OfCategory(DeviceCategory.Usb), name: "Device");
+        await watcher.StartAsync();
+
+        Assert.Contains(dev.Id, appeared);
+        Assert.Equal(DeviceActivityStatus.Active, tracker.ActivityStatus);
+    }
+
     // ── Reconfigure must not lose a device that arrived live ───────────
 
     /// <summary>
