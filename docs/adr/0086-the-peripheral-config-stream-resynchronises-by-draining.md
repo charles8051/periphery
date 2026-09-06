@@ -1,7 +1,7 @@
 ---
 title: "ADR-0086: The peripheral-config stream resynchronises by draining to a packet boundary"
 status: "Accepted"
-status_note: "Decision accepted; dist/ regenerated to v2.77 (14827 bytes, top 0x39EB) with a matching .tfi and all four D5 tests closed. The image is good and verifies on a bench board. NOT yet rolled out: production stations run an on-box auto-updater (C:/ProgramData/TreehopperAutoUpdate) pinned to the v2.76 image, which re-flashes v2.76 over any hand-flashed board within seconds. Retire or repoint that agent before rolling v2.77 out. Tracked as #183. See the 2026-09-05 correction in the #170 investigation; #180 (flash --no-verify/--no-leave ignored) is also open."
+status_note: "Decision accepted; dist/ regenerated to v2.77 (14827 bytes, top 0x39EB) with a matching .tfi and all four D5 tests closed. The image is good and verifies MATCH on hardware. Note that a flash does not repair an already-damaged descriptor: the config page at 0xF800 is untouched by an app-region write, and #185 means a malformed-but-well-formed record is never regenerated either. Deployment mechanics are tracked in the private operations tracker."
 date: "2026-09-04"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware", "treehopper", "usb", "flash", "data-loss"]
