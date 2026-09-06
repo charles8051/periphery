@@ -377,15 +377,22 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
     // between "is it new?" and the claim.
     private void PublishMonitorEvents(DeviceInfo device, bool raiseActivated)
     {
-        // Deliberately racy, and only decides whether to pay for enrichment — the
-        // authoritative newness answer is taken under the lock below. A wrong guess
-        // costs one wasted QueryDisplayConfig, or one enrichment that MergeArrival then
-        // supersedes; neither affects correctness, because merge only fills nulls and
-        // the values from here are not null.
-        bool likelyFirstSighting;
-        lock (_cacheLock) likelyFirstSighting = !_lastKnownDevices.ContainsKey(device.Id);
-
-        if (likelyFirstSighting) device = TryEnrichDisplayConfig(device);
+        // Enrich unconditionally rather than only on a guessed first sighting.
+        //
+        // The obvious optimisation - peek at the cache, enrich only if absent - is wrong,
+        // because the peek and the authoritative newness decision are separated by an
+        // unlocked gap. A monitor cached at the peek and removed before the lock below
+        // makes raiseAppeared true while the payload is still the unenriched notification
+        // build, which is exactly the empty first Appeared this is here to prevent. The
+        // enrichment has to be part of the same decision, and it cannot be: Build() does
+        // IO, and holding _cacheLock across it would stall the cfgmgr32 callbacks that
+        // contend on it (issue #153).
+        //
+        // So pay for it every time. The cost is one QueryDisplayConfig per monitor
+        // publish, on a path that already runs one per monitor appearance through the
+        // trailing RequestRefresh, for a device class with few instances and rare
+        // arrivals. MergeArrival still fills anything the enricher could not.
+        device = TryEnrichDisplayConfig(device);
 
         bool raiseAppeared;
         lock (_cacheLock)
