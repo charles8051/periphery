@@ -712,11 +712,18 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     /// <summary>
     /// Raised when a matching device becomes physically active
-    /// (driver started, hardware present and working). For USB devices
-    /// this fires simultaneously with <see cref="Appeared"/>; for
-    /// Bluetooth devices it fires when the device comes into range.
+    /// (driver started, hardware present and working). For a USB device this
+    /// normally follows <see cref="Appeared"/> closely enough to look like one
+    /// event; for a Bluetooth device it fires when the device comes into range,
+    /// which can be long afterwards.
     /// </summary>
     /// <remarks>
+    /// <para><b>Not simultaneous with <see cref="Appeared"/>, and not ordered
+    /// against it.</b> The startup snapshot raises them in sequence, presence
+    /// first. The live paths come from separate provider callbacks, and on
+    /// Windows a devnode is enumerated and started as two notifications with
+    /// nothing serialising the two raises. Treat them as independent edges on
+    /// independent axes (ADR-0004), not one arrival split in two.</para>
     /// <para>This is the edge to open a device on (ADR-0088). Its pair is
     /// <see cref="Deactivated"/> — but that pairing does not hold on Windows, which
     /// pushes no soft driver-stop signal (ADR-0054), so a handle opened here is torn

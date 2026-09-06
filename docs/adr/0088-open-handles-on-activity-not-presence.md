@@ -35,8 +35,12 @@ ADR-0004 gives two orthogonal axes:
 | **Active** | the driver is started and the device is usable | `Activated` / `Deactivated` |
 
 Opening a handle requires a started driver. So the correct edge is not a matter of taste or of
-which event happens to be convenient — `Present` is *definitionally* the state in which an open
-fails.
+which event happens to be convenient: presence alone does not establish that a driver has
+started, so an open on the presence edge can fail.
+
+The two axes are orthogonal, not exclusive. An active device is also present, and opening it is
+correct - what makes `Appeared` the wrong trigger is that it also fires for devices which are
+present and not yet active, and carries no way to tell the two apart.
 
 ### The library already answers this, and it is not discoverable enough
 
@@ -88,13 +92,13 @@ A handler that needs both splits: the presence work stays on `Appeared`, the I/O
 
 Both defects came from consumers that subscribed to the watcher directly instead of using the
 binding primitives. Those primitives already implement this ADR, and they also absorb the
-consequence in **D4** that a hand-rolled consumer will not.
+asymmetry in **D4** that a hand-rolled consumer will not.
 
 ---
 
-## The asymmetry this rule inherits
+### D4 - the paired half does not hold on Windows
 
-The paired half of D1 does not hold on Windows. cfgmgr32 pushes no soft driver-stop signal, so
+A consequence of D1 rather than a separate choice, but numbered because D3 turns on it. cfgmgr32 pushes no soft driver-stop signal, so
 `DeviceDeactivated` is never raised there (ADR-0054) — a handle opened on activity is torn down
 only by `Disappeared`, i.e. by physical removal. A device that stops without leaving the tree, such
 as a Bluetooth peripheral going out of range, produces no close edge at all on Windows.
