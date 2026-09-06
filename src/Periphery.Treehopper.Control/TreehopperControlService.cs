@@ -47,6 +47,22 @@ public sealed class TreehopperControlService : IAsyncDisposable
     private readonly object _stateLock = new();                // guards _state + StateChanged
     private readonly CancellationTokenSource _cts = new();
 
+    // Lifecycle generations, guarded by _stateLock.
+    //
+    // Hotplug handlers enqueue their work behind _gate and return, and
+    // SemaphoreSlim.WaitAsync is not FIFO - so "delivered earlier" does not mean "runs
+    // earlier". Two orderings go wrong without a check, and both survive the gate because
+    // the gate only guarantees one at a time, not the right one first:
+    //
+    //   Activated(X) queued, X removed, activation runs -> repopulates a board that is gone
+    //   Deactivated(X) queued, X replugged and reopened, deactivation runs -> closes the new session
+    //
+    // Each handler captures the relevant generation when the event arrives and re-reads it
+    // once it holds the gate. A change means the world moved underneath it, so it drops the
+    // work rather than applying it to a state it was not written for.
+    private int _sessionGeneration;
+    private readonly Dictionary<DeviceId, int> _removalGeneration = new();
+
     private AppState _state = AppState.Empty;
     private DeviceWatcher? _watcher;
     private Session? _session;                                  // the one open board handle (or null)
@@ -370,6 +386,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
         var session = new Session(id, board, sessionCts);
         session.Pump = Task.Run(() => PumpReportsAsync(id, board, sessionCts.Token));
         _session = session;
+        lock (_stateLock) _sessionGeneration++;
 
         // Version straight from the open session (no separate device open).
         Apply(new AppEvent.BoardVersionRead(id, board.Version));
@@ -434,12 +451,21 @@ public sealed class TreehopperControlService : IAsyncDisposable
     // and a version read for a board the UI never heard of would be dropped by the
     // reducer. Idempotent, because BoardDiscovered is keyed by identity.
     private void OnActivated(object? sender, DeviceChangeEventArgs e)
-        => _ = RunExclusiveAsync(async () =>
+    {
+        int seenRemovals = RemovalGenerationOf(e.Device.Id);
+
+        _ = RunExclusiveAsync(async () =>
         {
+            // A removal for this board was processed after this activation was queued, so
+            // the activation describes a device that is gone. Applying it would put the
+            // board back in the inventory and open a handle on nothing.
+            if (RemovalGenerationOf(e.Device.Id) != seenRemovals) return;
+
             Apply(new AppEvent.BoardDiscovered(ToIdentity(e.Device)));
             await ReadVersionAsync(e.Device.Id, _cts.Token).ConfigureAwait(false);
             await ReconcileSessionAsync(_cts.Token).ConfigureAwait(false);
         }, _cts.Token);
+    }
 
     // Activity out. The device stopped, so any handle on it is already dead - close it
     // rather than waiting for Disappeared, which a soft stop never produces.
@@ -454,11 +480,21 @@ public sealed class TreehopperControlService : IAsyncDisposable
     // cfgmgr32 pushes no soft driver-stop signal (ADR-0054). Linux and macOS deliver it for
     // a genuine stop as well, which is the case that previously left a dead handle open.
     private void OnDeactivated(object? sender, DeviceChangeEventArgs e)
-        => _ = RunExclusiveAsync(async () =>
+    {
+        int seenSessions = SessionGeneration;
+
+        _ = RunExclusiveAsync(async () =>
         {
+            // A session was opened after this deactivation was queued, so this event is
+            // about the previous one. Matching on DeviceId alone would close the new
+            // session for the same board - a rapid unplug/replug, or a delayed Windows
+            // cascade, leaves the board selected with no live session or report pump.
+            if (SessionGeneration != seenSessions) return;
+
             if (_session?.Id == e.Device.Id)
                 await CloseSessionAsync().ConfigureAwait(false);
         }, _cts.Token);
+    }
 
     // Presence out.
     private void OnDisappeared(object? sender, DeviceChangeEventArgs e)
@@ -471,6 +507,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
                 : await Devices.Enumerate().WithId(e.Device.Id).AnyAsync(_cts.Token).ConfigureAwait(false);
             if (present) return;
 
+            BumpRemovalGeneration(e.Device.Id);
             Apply(new AppEvent.BoardRemoved(e.Device.Id));
             await ReconcileSessionAsync(_cts.Token).ConfigureAwait(false);
         }, _cts.Token);
@@ -529,6 +566,22 @@ public sealed class TreehopperControlService : IAsyncDisposable
         try { await action().ConfigureAwait(false); }
         catch (OperationCanceledException) { /* shutting down */ }
         finally { _gate.Release(); }
+    }
+
+    private int RemovalGenerationOf(DeviceId id)
+    {
+        lock (_stateLock) return _removalGeneration.TryGetValue(id, out int g) ? g : 0;
+    }
+
+    private void BumpRemovalGeneration(DeviceId id)
+    {
+        lock (_stateLock)
+            _removalGeneration[id] = (_removalGeneration.TryGetValue(id, out int g) ? g : 0) + 1;
+    }
+
+    private int SessionGeneration
+    {
+        get { lock (_stateLock) return _sessionGeneration; }
     }
 
     private static BoardIdentity ToIdentity(DeviceInfo d) =>
