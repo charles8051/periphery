@@ -691,6 +691,17 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// (installed, paired, plugged in). Fires for every known device
     /// during the initial snapshot.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Do not open a device from this handler.</b> Presence means the OS has an
+    /// entry for it; it does not mean the driver has started, so an open here can fail.
+    /// Use <see cref="Activated"/> for anything that acquires a handle, opens a port or
+    /// starts a session, and prefer <see cref="DeviceProxy"/> /
+    /// <see cref="DeviceSessionHost{TSession}"/> over subscribing here at all — they implement the
+    /// activity binding and its Windows caveat for you (ADR-0088).</para>
+    /// <para>This event is for inventory: does the device exist, do I care about it,
+    /// should I list or track it. A handler that needs both does the presence work here
+    /// and the I/O on <see cref="Activated"/>.</para>
+    /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Appeared;
 
     /// <summary>
@@ -701,10 +712,28 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     /// <summary>
     /// Raised when a matching device becomes physically active
-    /// (driver started, hardware present and working). For USB devices
-    /// this fires simultaneously with <see cref="Appeared"/>; for
-    /// Bluetooth devices it fires when the device comes into range.
+    /// (driver started, hardware present and working). For a USB device this
+    /// normally follows <see cref="Appeared"/> closely enough to look like one
+    /// event; for a Bluetooth device it fires when the device comes into range,
+    /// which can be long afterwards.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Not simultaneous with <see cref="Appeared"/>, and not ordered
+    /// against it.</b> The startup snapshot raises them in sequence, presence
+    /// first. The live paths come from separate provider callbacks, and on
+    /// Windows a devnode is enumerated and started as two notifications with
+    /// nothing serialising the two raises. Treat them as independent edges on
+    /// independent axes (ADR-0004), not one arrival split in two.</para>
+    /// <para>This is the edge to open a device on (ADR-0088). Its pair is
+    /// <see cref="Deactivated"/> — but that pairing does not hold on Windows, which
+    /// pushes no soft driver-stop signal (ADR-0054), so a handle opened here is torn
+    /// down only by <see cref="Disappeared"/>. A device that stops without leaving the
+    /// tree, such as a Bluetooth peripheral going out of range, produces no close edge
+    /// there at all.</para>
+    /// <para><see cref="DeviceProxy"/> and <see cref="DeviceSessionHost{TSession}"/> absorb that
+    /// with their reopen and readiness loops. A hand-rolled subscription will not, and
+    /// will hold a handle across a stop it never hears about.</para>
+    /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Activated;
 
     /// <summary>
