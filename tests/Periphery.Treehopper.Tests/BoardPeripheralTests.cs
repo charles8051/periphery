@@ -127,7 +127,7 @@ public class BoardPeripheralTests
 
     // The board's own guard, ahead of the wire codec's: the limit is UTF-8 bytes, because
     // that is what the firmware writes into a single 64-byte flash page. It used to be a
-    // character count, which let 31 two-byte characters (62 bytes) through. Issue #170.
+    // character count, which let 31 two-byte characters (62 bytes) through. Issue #191.
     [Fact]
     public async Task UpdateNameAsync_ShortInCharsButTooLongInBytes_Throws()
     {

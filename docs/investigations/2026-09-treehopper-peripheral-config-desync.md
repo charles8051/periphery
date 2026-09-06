@@ -1,10 +1,10 @@
 # Reproducing the EP_PeripheralConfig desync on a bench board
 
-Bench procedure for [#170](https://github.com/charles8051/periphery/issues/170) test 2, the
+Bench procedure for [#191](https://github.com/charles8051/periphery/issues/170) test 2, the
 one ADR-0086 D5 blocks the firmware release on. The harness is
 [`scratch/Apa102Desync`](../../scratch/Apa102Desync/Program.cs).
 
-The claim under test: **on firmware without the #170 fix, a host stall during an APA102
+The claim under test: **on firmware without the #191 fix, a host stall during an APA102
 flush makes the board execute a pixel byte as a command.** Everything else in the issue
 follows from that one fact, and none of it has been seen happen — it was reconstructed from
 two damaged boards after the fact.
@@ -177,11 +177,11 @@ Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match 'VID_10C4&PID_8
 
 ```
 IMNUZ6YW  USB\VID_10C4&PID_8A7E&REV_0113     <- v2.75, pre-watchdog release
-CDYHINBH  USB\VID_10C4&PID_8A7E&REV_0115     <- v2.77, the #170 fix
+CDYHINBH  USB\VID_10C4&PID_8A7E&REV_0115     <- v2.77, the #191 fix
 ```
 
 `REV_0114` is v2.76, i.e. `dist/Treehopper.hex`: the watchdog work, and **still vulnerable to
-#170**. Anything at or below `0114` desyncs.
+#191**. Anything at or below `0114` desyncs.
 
 ### Three things worth knowing for the next run
 
@@ -196,11 +196,11 @@ it cannot tell rather than guessing.
 every application-mode flash in this session while a `verify` immediately afterwards returned
 MATCH against the image just written. That looked like a false negative on the confirmation
 step. It is not — the confirmation is telling the truth, about a board nobody asked it to
-touch. See "The wrong-board flash defect" below. Not a #170 problem, and worse than it first
+touch. See "The wrong-board flash defect" below. Not a #191 problem, and worse than it first
 looked.
 
 **The version word was nearly missed again.** The whole reason this session had to reboot a
-board into its bootloader to find out what it was running is that the #170 fix originally
+board into its bootloader to find out what it was running is that the #191 fix originally
 landed without bumping `bcdDevice` — the same omission the 275 -> 276 comment in
 `descriptors.c` was written to warn about. Bump it in the same commit as any firmware
 behaviour change, whether or not `dist/` is being regenerated. An unreleased image on a
@@ -209,7 +209,7 @@ bench board is precisely the case that needs it.
 ## The wrong-board flash defect
 
 Found while explaining the `FAILED` above, with `treehopper-flash flash --verbose`. **This is
-a defect in shipped code, not in the bench setup, and it is not a #170 problem.**
+a defect in shipped code, not in the bench setup, and it is not a #191 problem.**
 
 `FlashAnythingService.RebootAndFlashApplicationAsync` flashes, then confirms the write in a
 separate, later bootloader session (`BootloaderEntryOrchestrator.RunWithVerificationAsync`).
@@ -289,7 +289,7 @@ Tracked as [#173](https://github.com/charles8051/periphery/issues/173), which ca
 once the right board is checked. Fixed by
 [#175](https://github.com/charles8051/periphery/pull/175), which pins the post-flash
 application wait to an identity rather than a model - a separate PR against `main`, because it
-is in `Periphery.Bootloader` and touches nothing #170 owns.
+is in `Periphery.Bootloader` and touches nothing #191 owns.
 
 ## Test 1: the page size at `0xF800` — 64 bytes, closed
 

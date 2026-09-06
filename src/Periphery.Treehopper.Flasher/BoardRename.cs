@@ -161,7 +161,7 @@ public static class BoardRename
                      + "stores the name one byte per character and the EFM8 USB stack widens each of "
                      + "those bytes back to a UTF-16 code unit on read, so a character that takes more "
                      + "than one UTF-8 byte reads back mangled. The codec's length byte is a UTF-8 "
-                     + "byte count as of issue #170, but that fixes truncation, not the widening. "
+                     + "byte count as of issue #191, but that fixes truncation, not the widening. "
                      + "Lifting this needs a firmware change, not a longer name.";
         }
 

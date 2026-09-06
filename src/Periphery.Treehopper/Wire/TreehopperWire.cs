@@ -661,7 +661,7 @@ internal static class TreehopperWire
     /// number of bytes to burn into a 64-byte flash page starting three bytes in, so any
     /// non-ASCII name under-reported its payload and truncated the write, while a long one
     /// ran the write off the end of the page into the reserved region that holds bootloader
-    /// data and the lock byte. See <see cref="IdentityMaxBytes"/> and issue #170.
+    /// data and the lock byte. See <see cref="IdentityMaxBytes"/> and issue #191.
     /// </remarks>
     private static byte[] IdentityBytes(byte command, string text)
     {

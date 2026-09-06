@@ -76,7 +76,7 @@ void generateRandomString()
 // makes that test meaningful for an interruption during PROGRAMMING, and does nothing for one
 // during the ERASE: a brownout mid-erase can leave [0] reading something other than 0xFF over a
 // payload that is already gone, and the record then looks valid forever. Peanut Gallery raised
-// exactly that on #170; D4's supply monitor narrows the window but does not close it, because
+// exactly that on #191; D4's supply monitor narrows the window but does not close it, because
 // no erase is atomic.
 //
 // So check the whole header instead of one byte. All three fields are fixed or tightly bounded
@@ -131,7 +131,7 @@ void writeUsbString(uint8_t* string, uint8_t len, uint16_t addr) {
 	// and ran a serial write into the name page without erasing it, AND-corrupting it.
 	//
 	// Reject rather than truncate: a silently shortened name or serial is still corruption,
-	// and the host bounds this too (TreehopperBoard.UpdateNameAsync). See issue #170, where a
+	// and the host bounds this too (TreehopperBoard.UpdateNameAsync). See issue #191, where a
 	// desynchronised EP_PeripheralConfig stream regularly put an APA102 header byte (0xFF) in
 	// [1], asking for a 255-byte write.
 	if (len > USB_STRING_MAX_PACKED_LEN)
@@ -151,7 +151,7 @@ void writeUsbString(uint8_t* string, uint8_t len, uint16_t addr) {
 	// flag. Writing it first meant any interruption after byte 0 and before the payload left
 	// a record that looked valid forever: self-repair was dead and the damage survived every
 	// reboot. Written last, an interrupted write leaves [0] == 0xFF (erased) and the next
-	// boot regenerates the string. See issue #170.
+	// boot regenerates the string. See issue #191.
 	flash_writeByte(addr, USB_STRING_DESCRIPTOR_UTF16LE_PACKED);
 	IE_EA = 1;
 }

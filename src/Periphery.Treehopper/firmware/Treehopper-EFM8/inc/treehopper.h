@@ -129,7 +129,7 @@ extern SI_SEGMENT_VARIABLE(Treehopper_PinConfig, pinConfigPacket_t, SI_SEG_XDATA
 extern SI_SEGMENT_VARIABLE(Treehopper_PeripheralConfig[262], uint8_t, SI_SEG_XDATA);
 
 // EP_PeripheralConfig stream framing; see the note above ProcessPeripheralConfigPacket
-// and issue #170. ShortPacket is set from the USB ISR on every packet on that endpoint;
+// and issue #191. ShortPacket is set from the USB ISR on every packet on that endpoint;
 // Desync is set by either side and consumed by the drain; MultiRead is the foreground
 // telling the ISR that it currently owns a continuation read.
 extern volatile bit Treehopper_PeripheralConfigShortPacket;

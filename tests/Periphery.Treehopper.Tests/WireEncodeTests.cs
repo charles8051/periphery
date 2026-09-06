@@ -399,7 +399,7 @@ public class WireEncodeTests
 
     // The length byte is what the firmware burns into a 64-byte flash page, so it has to be
     // the UTF-8 byte count. It used to be text.Length - a UTF-16 char count - which
-    // under-reported every non-ASCII name and truncated the write. Issue #170.
+    // under-reported every non-ASCII name and truncated the write. Issue #191.
     [Fact]
     public void UpdateName_LengthIsUtf8ByteCount_NotCharCount()
         => AssertPacket(PerifEp,
@@ -416,7 +416,7 @@ public class WireEncodeTests
     }
 
     // Past the bound the firmware's write runs off the config page into the reserved region
-    // that holds bootloader data and the lock byte. Both ends reject it. Issue #170.
+    // that holds bootloader data and the lock byte. Both ends reject it. Issue #191.
     [Fact]
     public void UpdateName_OneByteTooLong_Throws()
     {

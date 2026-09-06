@@ -1,5 +1,5 @@
 // Reads a Treehopper board's identity records straight out of its USB string descriptors and
-// reconstructs the bytes sitting in the config page behind them. For issue #170 / ADR-0086 D5
+// reconstructs the bytes sitting in the config page behind them. For issue #191 / ADR-0086 D5
 // test 4: capturing what the desync actually wrote, on the damaged boards, before anything
 // reflashes them and destroys the evidence.
 //
@@ -35,7 +35,7 @@
 //
 // Because the OS lies about its case. On Windows the same board appears as `cDYhINBh` through
 // the device-notification path and `CDYHINBH` through SetupAPI, simultaneously - which is the
-// entire "case flips" symptom in #170, and it is host-side normalisation, not flash. The
+// entire "case flips" symptom in #191, and it is host-side normalisation, not flash. The
 // string descriptor is the device's own bytes. See ADR-0086 D5 test 3.
 
 using System.Globalization;
@@ -187,10 +187,10 @@ static void Report(string which, byte index, byte[] raw)
 
     if (Period4(packed) is { } group)
         Console.WriteLine($"    *** PERIOD-4 REPEAT of {Hex(group)} - this is APA102 pixel data "
-                          + $"executed as a command (#170). Opcode byte would be 0x{group[0]:X2}.");
+                          + $"executed as a command (#191). Opcode byte would be 0x{group[0]:X2}.");
 }
 
-// The signature of the #170 damage: the payload is a repeating 4-byte group, because it is a run
+// The signature of the #191 damage: the payload is a repeating 4-byte group, because it is a run
 // of APA102 pixels [header, B, G, R] entered at some phase. Reported, never assumed - a short
 // payload can repeat by chance, so this needs at least two full groups to say anything.
 static byte[]? Period4(byte[] b)
