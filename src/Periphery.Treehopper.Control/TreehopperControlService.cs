@@ -47,14 +47,67 @@ public sealed class TreehopperControlService : IAsyncDisposable
     private readonly object _stateLock = new();                // guards _state + StateChanged
     private readonly CancellationTokenSource _cts = new();
 
+    // Lifecycle generations, guarded by _stateLock.
+    //
+    // Hotplug handlers enqueue their work behind _gate and return, and
+    // SemaphoreSlim.WaitAsync is not FIFO - so "delivered earlier" does not mean "runs
+    // earlier". Two orderings go wrong without a check, and both survive the gate because
+    // the gate only guarantees one at a time, not the right one first:
+    //
+    //   Activated(X) queued, X removed, activation runs -> repopulates a board that is gone
+    //   Deactivated(X) queued, X replugged and reopened, deactivation runs -> closes the new session
+    //
+    // Each handler captures the relevant generation when the event arrives and re-reads it
+    // once it holds the gate. A change means the world moved underneath it, so it drops the
+    // work rather than applying it to a state it was not written for.
+    private int _sessionGeneration;
+    private readonly Dictionary<DeviceId, int> _removalGeneration = new();
+
     private AppState _state = AppState.Empty;
     private DeviceWatcher? _watcher;
     private Session? _session;                                  // the one open board handle (or null)
     private bool _streamSelected;                               // auto-stream the selected board's reports
     private bool _disposed;
 
+    // Test seam. Production leaves all four null and the service takes the real OS paths
+    // below; a test supplies them to drive the lifecycle without hardware. Four are needed
+    // rather than one, because the service touches the OS in four distinct ways: startup
+    // enumerates boards, the watcher delivers the edges, the version read opens a board, and
+    // the removal path re-verifies absence with a live query.
+    //
+    // Injecting only the watcher would let a test assert the presence half and prove nothing
+    // about the I/O half, since a failed open is swallowed and emits no event. Leaving the
+    // startup enumeration real would make the harness depend on what is plugged into the
+    // machine running it - which passes locally with a board attached and means something
+    // different in CI without one.
+    private readonly Func<CancellationToken, Task<IReadOnlyList<DeviceInfo>>>? _enumerateBoards;
+    private readonly Func<DeviceWatcher>? _watcherFactory;
+    private readonly Func<DeviceId, CancellationToken, Task<int?>>? _readVersion;
+    private readonly Func<DeviceId, CancellationToken, Task<bool>>? _isStillPresent;
+
     public TreehopperControlService(TreehopperControlOptions? options = null)
         => _options = options ?? new TreehopperControlOptions();
+
+    /// <summary>
+    /// Test constructor. Substitutes the three OS touchpoints the hotplug handlers use so
+    /// the lifecycle can be driven without a board attached.
+    /// </summary>
+    internal TreehopperControlService(
+        TreehopperControlOptions? options,
+        Func<DeviceWatcher>? watcherFactory,
+        Func<DeviceId, CancellationToken, Task<int?>>? readVersion = null,
+        Func<DeviceId, CancellationToken, Task<bool>>? isStillPresent = null,
+        Func<CancellationToken, Task<IReadOnlyList<DeviceInfo>>>? enumerateBoards = null)
+    {
+        _options = options ?? new TreehopperControlOptions();
+        _watcherFactory = watcherFactory;
+        _readVersion = readVersion;
+        _isStillPresent = isStillPresent;
+        _enumerateBoards = enumerateBoards;
+    }
+
+    private Task<IReadOnlyList<DeviceInfo>> EnumerateBoardsAsync(CancellationToken ct)
+        => _enumerateBoards?.Invoke(ct) ?? TreehopperBoard.EnumerateAsync(ct);
 
     /// <summary>The current application state. Thread-safe snapshot.</summary>
     public AppState State { get { lock (_stateLock) return _state; } }
@@ -77,7 +130,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
 
         await RunExclusiveAsync(async () =>
         {
-            var boards = await TreehopperBoard.EnumerateAsync(ct).ConfigureAwait(false);
+            var boards = await EnumerateBoardsAsync(ct).ConfigureAwait(false);
             foreach (var info in boards)
                 Apply(new AppEvent.BoardDiscovered(ToIdentity(info)));
             foreach (var info in boards)
@@ -85,9 +138,11 @@ public sealed class TreehopperControlService : IAsyncDisposable
             await ReconcileSessionAsync(ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
 
-        _watcher = Devices.Watch().WithUsbId(TreehopperBoard.Vid, TreehopperBoard.Pid);
+        _watcher = _watcherFactory?.Invoke()
+            ?? Devices.Watch().WithUsbId(TreehopperBoard.Vid, TreehopperBoard.Pid);
         _watcher.Appeared += OnAppeared;
         _watcher.Activated += OnActivated;
+        _watcher.Deactivated += OnDeactivated;
         _watcher.Disappeared += OnDisappeared;
         await _watcher.StartAsync(ct).ConfigureAwait(false);
     }
@@ -124,7 +179,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
         switch (intent)
         {
             case AppIntent.RefreshBoards:
-                var boards = await TreehopperBoard.EnumerateAsync(ct).ConfigureAwait(false);
+                var boards = await EnumerateBoardsAsync(ct).ConfigureAwait(false);
                 foreach (var info in boards) Apply(new AppEvent.BoardDiscovered(ToIdentity(info)));
                 foreach (var info in boards) await ReadVersionAsync(info.Id, ct).ConfigureAwait(false);
                 await ReconcileSessionAsync(ct).ConfigureAwait(false);
@@ -331,6 +386,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
         var session = new Session(id, board, sessionCts);
         session.Pump = Task.Run(() => PumpReportsAsync(id, board, sessionCts.Token));
         _session = session;
+        lock (_stateLock) _sessionGeneration++;
 
         // Version straight from the open session (no separate device open).
         Apply(new AppEvent.BoardVersionRead(id, board.Version));
@@ -364,21 +420,17 @@ public sealed class TreehopperControlService : IAsyncDisposable
 
     // ── Hotplug ──────────────────────────────────────────────────────────
 
-    // Presence only. A board in the device tree can be listed, but its driver may not be
-    // started yet, so nothing here may open it (ADR-0088). This mirrors StartAsync, which
-    // already announces every board before reading any version.
+    // Four edges, split by axis (ADR-0088). Presence in and out carry the inventory;
+    // activity in and out carry the board handle.
     //
-    // Teardown is on OnDisappeared rather than a Deactivated handler, and NOT because
-    // Windows cannot deliver Deactivated: the watcher cascades it from Disappeared for any
-    // device it had activated, so a physical unplug raises it on every platform. The gap
-    // there is only the soft stop - a driver stopping while the devnode stays in the tree -
-    // which no edge signals on Windows, so Disappeared does not cover it either.
+    //   Appeared     -> BoardDiscovered                 inventory in
+    //   Activated    -> version read, session reconcile  I/O in
+    //   Deactivated  -> close the session                I/O out
+    //   Disappeared  -> BoardRemoved, session reconcile  inventory out
     //
-    // The actual reason is this service's own state machine. OnDisappeared re-verifies
-    // absence with a live query to survive the transient drop while a board re-enumerates
-    // through the bootloader during a flash. A Deactivated handler would fire on that same
-    // transient drop with no equivalent guard, so moving teardown needs that guard
-    // reproduced and a test seam this service does not yet have.
+    // Presence only here. A board in the device tree can be listed, but its driver may not
+    // be started, so nothing in this handler may open it. Mirrors StartAsync, which already
+    // announces every board before reading any version.
     private void OnAppeared(object? sender, DeviceChangeEventArgs e)
         => _ = RunExclusiveAsync(() =>
         {
@@ -399,21 +451,63 @@ public sealed class TreehopperControlService : IAsyncDisposable
     // and a version read for a board the UI never heard of would be dropped by the
     // reducer. Idempotent, because BoardDiscovered is keyed by identity.
     private void OnActivated(object? sender, DeviceChangeEventArgs e)
-        => _ = RunExclusiveAsync(async () =>
+    {
+        int seenRemovals = RemovalGenerationOf(e.Device.Id);
+
+        _ = RunExclusiveAsync(async () =>
         {
+            // A removal for this board was processed after this activation was queued, so
+            // the activation describes a device that is gone. Applying it would put the
+            // board back in the inventory and open a handle on nothing.
+            if (RemovalGenerationOf(e.Device.Id) != seenRemovals) return;
+
             Apply(new AppEvent.BoardDiscovered(ToIdentity(e.Device)));
             await ReadVersionAsync(e.Device.Id, _cts.Token).ConfigureAwait(false);
             await ReconcileSessionAsync(_cts.Token).ConfigureAwait(false);
         }, _cts.Token);
+    }
 
+    // Activity out. The device stopped, so any handle on it is already dead - close it
+    // rather than waiting for Disappeared, which a soft stop never produces.
+    //
+    // This needs no absence re-verification, unlike OnDisappeared. That guard exists to stop
+    // a transient drop during a bootloader re-enumeration removing the board from inventory,
+    // which would be wrong because the board is coming back. Closing a dead handle during
+    // that same drop is right either way: the handle did not survive the re-enumeration, and
+    // the reopen goes through EnsureSessionAsync when the board activates again.
+    //
+    // On Windows this fires only via the watcher cascading it from Disappeared, since
+    // cfgmgr32 pushes no soft driver-stop signal (ADR-0054). Linux and macOS deliver it for
+    // a genuine stop as well, which is the case that previously left a dead handle open.
+    private void OnDeactivated(object? sender, DeviceChangeEventArgs e)
+    {
+        int seenSessions = SessionGeneration;
+
+        _ = RunExclusiveAsync(async () =>
+        {
+            // A session was opened after this deactivation was queued, so this event is
+            // about the previous one. Matching on DeviceId alone would close the new
+            // session for the same board - a rapid unplug/replug, or a delayed Windows
+            // cascade, leaves the board selected with no live session or report pump.
+            if (SessionGeneration != seenSessions) return;
+
+            if (_session?.Id == e.Device.Id)
+                await CloseSessionAsync().ConfigureAwait(false);
+        }, _cts.Token);
+    }
+
+    // Presence out.
     private void OnDisappeared(object? sender, DeviceChangeEventArgs e)
         => _ = RunExclusiveAsync(async () =>
         {
             // Re-verify absence: guards against stale events, including the transient drop
             // while a board re-enumerates through the bootloader during a flash.
-            bool present = await Devices.Enumerate().WithId(e.Device.Id).AnyAsync(_cts.Token).ConfigureAwait(false);
+            bool present = _isStillPresent is not null
+                ? await _isStillPresent(e.Device.Id, _cts.Token).ConfigureAwait(false)
+                : await Devices.Enumerate().WithId(e.Device.Id).AnyAsync(_cts.Token).ConfigureAwait(false);
             if (present) return;
 
+            BumpRemovalGeneration(e.Device.Id);
             Apply(new AppEvent.BoardRemoved(e.Device.Id));
             await ReconcileSessionAsync(_cts.Token).ConfigureAwait(false);
         }, _cts.Token);
@@ -442,6 +536,8 @@ public sealed class TreehopperControlService : IAsyncDisposable
 
     private async Task<int?> TryReadVersionAsync(DeviceId id, CancellationToken ct)
     {
+        if (_readVersion is not null) return await _readVersion(id, ct).ConfigureAwait(false);
+
         var info = await Devices.Enumerate().WithId(id).FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (info is null) return null;
         try
@@ -472,6 +568,22 @@ public sealed class TreehopperControlService : IAsyncDisposable
         finally { _gate.Release(); }
     }
 
+    private int RemovalGenerationOf(DeviceId id)
+    {
+        lock (_stateLock) return _removalGeneration.TryGetValue(id, out int g) ? g : 0;
+    }
+
+    private void BumpRemovalGeneration(DeviceId id)
+    {
+        lock (_stateLock)
+            _removalGeneration[id] = (_removalGeneration.TryGetValue(id, out int g) ? g : 0) + 1;
+    }
+
+    private int SessionGeneration
+    {
+        get { lock (_stateLock) return _sessionGeneration; }
+    }
+
     private static BoardIdentity ToIdentity(DeviceInfo d) =>
         new(d.Id, d.SerialNumber, d.Name, Version: null, BoardConnection.Application);
 
@@ -489,6 +601,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
         {
             _watcher.Appeared -= OnAppeared;
             _watcher.Activated -= OnActivated;
+            _watcher.Deactivated -= OnDeactivated;
             _watcher.Disappeared -= OnDisappeared;
             try { await _watcher.DisposeAsync().ConfigureAwait(false); } catch { /* best-effort */ }
         }
