@@ -18,18 +18,34 @@ namespace Periphery.Windows;
 /// provider does no whole-tree polling (ADR-0054); its lifecycle transitions are
 /// event-driven from cfgmgr32, plus one targeted OS push for monitor DisplayConfig
 /// freshness (ADR-0066, see below).
-/// <para>Two notification registrations are active after <see cref="StartAsync"/>:</para>
+/// <para>One notification registration is active after <see cref="StartAsync"/> — the
+/// instance filter (<c>CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE</c> with
+/// <c>CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES</c>), which covers every devnode:</para>
 /// <list type="bullet">
-/// <item>Interface filter (<c>CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE</c>):
-///   arrival → <see cref="DeviceAppeared"/> (+ <see cref="DeviceActivated"/> if active);
-///   removal → <see cref="DeviceDisappeared"/>.</item>
-/// <item>Instance filter (<c>CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE</c>,
-///   <c>CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES</c>):
-///   <c>DEVICEINSTANCESTARTED</c> → <see cref="DeviceActivated"/>;
-///   <c>DEVICEINSTANCEREMOVED</c> → <see cref="DeviceDisappeared"/>.</item>
+/// <item><c>DEVICEINSTANCEENUMERATED</c> → <see cref="DeviceAppeared"/>.</item>
+/// <item><c>DEVICEINSTANCESTARTED</c> → <see cref="DeviceActivated"/>
+///   (preceded by <see cref="DeviceAppeared"/> if the devnode was not already known).</item>
+/// <item><c>DEVICEINSTANCEREMOVED</c> → <see cref="DeviceDisappeared"/>.</item>
 /// </list>
-/// <para><b>Monitor DisplayConfig freshness (ADR-0066).</b> Beyond the two
-/// registrations, a <see cref="WindowsDisplayChangeSink"/> runs a hidden-window
+/// <para><b>Why presence comes from the instance filter (issue #177).</b> There was
+/// previously a second registration on <c>CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE</c>
+/// that sourced <see cref="DeviceAppeared"/> from interface arrival. It was registered
+/// with <c>ClassGuid = Guid.Empty</c> and no <c>ALL_INTERFACE_CLASSES</c> flag, i.e. for
+/// <c>GUID_NULL</c>, which no interface belongs to — so it succeeded and then delivered
+/// nothing, and <see cref="DeviceAppeared"/> only ever fired from the
+/// <see cref="DeviceWatcher"/> startup snapshot. Setting the flag was measured and is
+/// not the fix: a devnode publishes zero or many interfaces, so interface arrival is
+/// not a faithful proxy for "a devnode entered the tree" (a USB drive's
+/// <c>STORAGE\Volume</c> and <c>SWD\WPDBUSENUM</c> nodes publish none at arrival and
+/// still got nothing). Presence is a devnode fact, so it is sourced from the devnode
+/// stream, which also gives single-source removal, and makes
+/// enumerated-before-started the order cfgmgr32 actually delivered in every plug
+/// observed. That ordering is not enforced here: events are raised outside
+/// <c>_cacheLock</c>, so concurrent delivery of actions 7 and 8 for one devnode could
+/// still surface <see cref="DeviceActivated"/> first. What the cache does guarantee is
+/// that exactly one of the two raises <see cref="DeviceAppeared"/>.</para>
+/// <para><b>Monitor DisplayConfig freshness (ADR-0066).</b> Beyond that
+/// registration, a <see cref="WindowsDisplayChangeSink"/> runs a hidden-window
 /// message pump on a dedicated background thread (not polling) that observes
 /// <c>WM_DISPLAYCHANGE</c>. On a display change — and on a monitor devnode arrival
 /// (which coalesces into the same refresh) — the provider re-runs the DisplayConfig
@@ -54,19 +70,22 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         PeripheryLoggerFactory.CreateLogger<WindowsDeviceMonitorProvider>();
 
     private GCHandle _selfHandle;
-    private DevNodeHelper.CmNotifyHandle? _interfaceNotifyHandle;
     private DevNodeHelper.CmNotifyHandle? _instanceNotifyHandle;
     private int _started; // 0 = unstarted, 1 = started (Interlocked)
 
-    // Last-known DeviceInfo per instance id. Populated by the arrival/start
+    // Last-known DeviceInfo per instance id. Populated by the enumerated/start
     // notification callbacks and the StartAsync seed; consumed by the removal
-    // callbacks. Post ADR-0054 (the whole-tree property scan is gone) this cache
-    // is removal-only, with two jobs shared with the Linux/macOS providers:
-    //   1. Deduplicate the interface- and instance-removal notifications that
-    //      both fire for one hard unplug, so DeviceDisappeared fires once.
+    // callback. Post ADR-0054 (the whole-tree property scan is gone) it has three
+    // jobs, the last two shared with the Linux/macOS providers:
+    //   1. Answer "have we announced this devnode yet?". DEVICEINSTANCEENUMERATED
+    //      also fires on re-enumeration (driver reload, sleep-resume) for a devnode
+    //      already known, so membership here is what distinguishes a genuine arrival
+    //      from a re-enumeration and keeps DeviceAppeared single-fire (issue #177).
     //   2. Supply the last-known DeviceInfo (VID/PID/category/name) on removal —
     //      the devnode is gone by then, so TryBuildDeviceInfo would only yield an
     //      id-only stub that the watcher/tracker filters reject.
+    //   3. Hold the DisplayConfig-enriched monitor snapshot the WM_DISPLAYCHANGE
+    //      refresh diffs against (ADR-0066).
     private readonly object _cacheLock = new();
     // Keyed case-insensitively: the snapshot/query path and the change-notification
     // path can report the same instance id in different case (see DeviceId), and
@@ -152,56 +171,29 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
             _displayChangeSink = new WindowsDisplayChangeSink(OnDisplayConfigChanged);
             _displayChangeSink.Start();
 
-            // Registration 1 — device interface arrivals / removals
-            var interfaceFilter = new DevNodeHelper.CM_NOTIFY_FILTER
-            {
-                cbSize     = Marshal.SizeOf<DevNodeHelper.CM_NOTIFY_FILTER>(),
-                FilterType = DevNodeHelper.CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE,
-                ClassGuid  = Guid.Empty,
-            };
-
-            int r1 = DevNodeHelper.CM_Register_Notification(
-                ref interfaceFilter,
-                GCHandle.ToIntPtr(_selfHandle),
-                &NotificationShim,
-                out nint rawInterfaceHandle);
-
-            if (r1 != 0)
-                throw new DeviceProviderException(
-                    $"CM_Register_Notification (interface) failed with error code {r1}.");
-
-            _interfaceNotifyHandle = new DevNodeHelper.CmNotifyHandle(rawInterfaceHandle);
-
-            // Registration 2 — device instance start / stop for all instances
-            var instanceFilter = new DevNodeHelper.CM_NOTIFY_FILTER
-            {
-                cbSize     = Marshal.SizeOf<DevNodeHelper.CM_NOTIFY_FILTER>(),
-                Flags      = DevNodeHelper.CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES,
-                FilterType = DevNodeHelper.CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE,
-            };
-
-            int r2 = DevNodeHelper.CM_Register_Notification(
-                ref instanceFilter,
-                GCHandle.ToIntPtr(_selfHandle),
-                &NotificationShim,
-                out nint rawInstanceHandle);
-
-            if (r2 != 0)
-                throw new DeviceProviderException(
-                    $"CM_Register_Notification (instance) failed with error code {r2}.");
-
-            _instanceNotifyHandle = new DevNodeHelper.CmNotifyHandle(rawInstanceHandle);
-
-            // Seed the last-known-device cache with the current device snapshot so
-            // that removals of devices already present at start dedupe and carry
-            // their last-known DeviceInfo (see the field comment above). This is the
-            // Windows analogue of the Linux/macOS SeedCache.
+            // Seed the last-known-device cache with the current device snapshot BEFORE
+            // registering, so the cache is complete the moment notifications can arrive.
+            // This is the Windows analogue of the Linux/macOS SeedCache.
+            //
+            // Ordering matters since the cache became the "have we announced this
+            // devnode?" answer (issue #177). Registering first leaves it empty for the
+            // whole tree walk, and DEVICEINSTANCEENUMERATED also fires on re-enumeration
+            // — a driver reload or a sleep-resume tail — so any devnode that re-enumerates
+            // during the walk would find TryAdd succeeding and be announced as an arrival
+            // it never made.
+            //
+            // Seeding first inverts the exposure: a device that genuinely arrives between
+            // the walk finishing and the registration returning is seen by neither. That
+            // window is one API call rather than a whole tree walk, and DeviceWatcher runs
+            // its own enumeration after this returns, which is what tells consumers about
+            // pre-existing devices in the first place. A brief miss the watcher's snapshot
+            // covers beats a spurious arrival nothing corrects.
             //
             // The seed uses the plain ToDeviceInfo build — category, VID/PID, name,
             // everything the watcher/tracker filters match on — and deliberately
             // skips the enrichment pipeline that the removed scan loop ran for diff
-            // stability, keeping startup cheap. TryAdd (not assignment) so that an
-            // arrival callback firing between registration and here is not clobbered.
+            // stability, keeping startup cheap. TryAdd (not assignment) is kept: it is
+            // now the belt to the braces, since nothing should be in the cache yet.
             lock (_cacheLock)
             {
                 foreach (var (devInst, id) in DevNodeHelper.EnumerateDeviceInstances())
@@ -219,6 +211,29 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
                     catch { /* skip unreadable devices */ }
                 }
             }
+
+            // Sole registration — every device instance. Carries arrival
+            // (ENUMERATED), activation (STARTED) and removal (REMOVED); see the
+            // class remarks for why presence is not sourced from an interface
+            // filter (issue #177).
+            var instanceFilter = new DevNodeHelper.CM_NOTIFY_FILTER
+            {
+                cbSize     = Marshal.SizeOf<DevNodeHelper.CM_NOTIFY_FILTER>(),
+                Flags      = DevNodeHelper.CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES,
+                FilterType = DevNodeHelper.CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE,
+            };
+
+            int r = DevNodeHelper.CM_Register_Notification(
+                ref instanceFilter,
+                GCHandle.ToIntPtr(_selfHandle),
+                &NotificationShim,
+                out nint rawInstanceHandle);
+
+            if (r != 0)
+                throw new DeviceProviderException(
+                    $"CM_Register_Notification (instance) failed with error code {r}.");
+
+            _instanceNotifyHandle = new DevNodeHelper.CmNotifyHandle(rawInstanceHandle);
 
             _logger.LogInformation("Device notifications registered (events + WM_DISPLAYCHANGE display refresh).");
             return Task.CompletedTask;
@@ -242,8 +257,6 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         _displayChangeSink = null;
         _instanceNotifyHandle?.Dispose();
         _instanceNotifyHandle = null;
-        _interfaceNotifyHandle?.Dispose();
-        _interfaceNotifyHandle = null;
         if (_selfHandle.IsAllocated)
             _selfHandle.Free();
     }
@@ -326,12 +339,67 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
     // duration so a concurrent display-change refresh skips this monitor rather
     // than emitting a DevicePropertyChanged the tracker would drop (issue #149) —
     // and the events themselves are raised with no lock held (issue #153).
-    private void PublishMonitorEvents(DeviceInfo device, bool raiseAppeared, bool raiseActivated)
+    // Runs the DisplayConfig enricher over a monitor payload. The notification path
+    // builds via TryBuildDeviceInfo, which does NOT run this enricher (only
+    // WindowsDeviceProvider.EnumerateAsync does), so MonitorName, DisplayResolution,
+    // DisplayBounds, orientation, connector and the luminance fields are all null on
+    // anything built here.
+    //
+    // MergeArrival backfills those from a prior cache entry, which covers a
+    // re-appearance. It cannot cover a FIRST appearance, because there is no prior by
+    // definition — and that is precisely when Appeared is raised, so without this the
+    // one Appeared a consumer gets for a newly plugged monitor carries none of the
+    // fields a monitor consumer filters on (issue #177).
+    //
+    // Build() calls QueryDisplayConfig and can read the EDID registry, so this is real
+    // IO on the cfgmgr32 callback thread. It is not new expense: the trailing
+    // RequestRefresh in PublishMonitorEvents already pays for the same query on every
+    // monitor appearance. This moves it before the event instead of after, which is
+    // what makes the payload correct at the point a filter sees it.
+    private DeviceInfo TryEnrichDisplayConfig(DeviceInfo monitor)
     {
+        try
+        {
+            return WindowsDisplayConfigEnricher.Build().Enrich(monitor);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "DisplayConfig enrichment failed for an appearing monitor; announcing it unenriched: {DeviceId}",
+                monitor.Id);
+            return monitor;
+        }
+    }
+
+    // Appeared is raised iff the cache did not already hold this id, decided inside
+    // the same lock as the write that claims it. Both call sites want that rule, and
+    // deciding it here rather than in the caller closes the check-then-act window
+    // between "is it new?" and the claim.
+    private void PublishMonitorEvents(DeviceInfo device, bool raiseActivated)
+    {
+        // Enrich unconditionally rather than only on a guessed first sighting.
+        //
+        // The obvious optimisation - peek at the cache, enrich only if absent - is wrong,
+        // because the peek and the authoritative newness decision are separated by an
+        // unlocked gap. A monitor cached at the peek and removed before the lock below
+        // makes raiseAppeared true while the payload is still the unenriched notification
+        // build, which is exactly the empty first Appeared this is here to prevent. The
+        // enrichment has to be part of the same decision, and it cannot be: Build() does
+        // IO, and holding _cacheLock across it would stall the cfgmgr32 callbacks that
+        // contend on it (issue #153).
+        //
+        // So pay for it every time. The cost is one QueryDisplayConfig per monitor
+        // publish, on a path that already runs one per monitor appearance through the
+        // trailing RequestRefresh, for a device class with few instances and rare
+        // arrivals. MergeArrival still fills anything the enricher could not.
+        device = TryEnrichDisplayConfig(device);
+
+        bool raiseAppeared;
         lock (_cacheLock)
         {
-            if (_lastKnownDevices.TryGetValue(device.Id, out var prior))
-                device = WindowsMonitorEnrichment.MergeArrival(device, prior);
+            raiseAppeared = !_lastKnownDevices.TryGetValue(device.Id, out var prior);
+            if (!raiseAppeared)
+                device = WindowsMonitorEnrichment.MergeArrival(device, prior!);
             _lastKnownDevices[device.Id] = device;
             _monitorAnnouncements.BeginPublish(device.Id);
         }
@@ -381,14 +449,6 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         {
             switch (action)
             {
-                case DevNodeHelper.CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL:
-                    HandleDeviceArrival(eventData, eventDataSize);
-                    break;
-
-                case DevNodeHelper.CM_NOTIFY_ACTION_DEVICEINTERFACEREMOVAL:
-                    HandleDeviceRemoval(eventData, eventDataSize);
-                    break;
-
                 case DevNodeHelper.CM_NOTIFY_ACTION_DEVICEINSTANCESTARTED:
                     HandleInstanceStarted(eventData, eventDataSize);
                     break;
@@ -411,75 +471,6 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         return 0; // ERROR_SUCCESS — continue receiving notifications
     }
 
-    private void HandleDeviceArrival(nint eventData, int eventDataSize)
-    {
-        string? symbolicLink = DevNodeHelper.ReadSymbolicLinkFromEventData(eventData, eventDataSize);
-        if (symbolicLink is null) return;
-
-        string? instanceId = DevNodeHelper.ParseInstanceIdFromSymbolicLink(symbolicLink);
-        if (instanceId is null) return;
-
-        DeviceInfo? device = WindowsDeviceProvider.TryBuildDeviceInfo(instanceId);
-        if (device is null)
-        {
-            _logger.LogDebug(
-                "Device arrived ({SymbolicLink}) but info could not be read for {InstanceId}; driver may not be loaded yet",
-                symbolicLink, instanceId);
-            return;
-        }
-
-        // Monitors go through the ordered publish path (merge enrichment forward +
-        // raise under the gate + request a refresh); everything else keeps the
-        // plain cache-then-raise path so non-monitor arrivals aren't serialized
-        // against the display refresh.
-        if (device.Category == DeviceCategory.Monitor)
-        {
-            PublishMonitorEvents(device, raiseAppeared: true, raiseActivated: device.IsActive);
-            return;
-        }
-
-        lock (_cacheLock)
-            _lastKnownDevices[device.Id] = device;
-
-        _logger.LogDebug("Device appeared: {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-        DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
-
-        if (device.IsActive)
-        {
-            _logger.LogDebug("Device activated: {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-            DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
-        }
-    }
-
-    private void HandleDeviceRemoval(nint eventData, int eventDataSize)
-    {
-        string? symbolicLink = DevNodeHelper.ReadSymbolicLinkFromEventData(eventData, eventDataSize);
-        if (symbolicLink is null) return;
-
-        string? instanceId = DevNodeHelper.ParseInstanceIdFromSymbolicLink(symbolicLink);
-        if (instanceId is null) return;
-
-        // First-wins: whichever of HandleDeviceRemoval / HandleInstanceRemoved runs first
-        // claims the cache entry. The second finds nothing and returns, preventing the
-        // double-DeviceDisappeared that would otherwise fire on hard removal.
-        DeviceInfo? cached;
-        lock (_cacheLock)
-        {
-            _lastKnownDevices.Remove(instanceId, out cached);
-            _monitorAnnouncements.Forget(instanceId);
-        }
-
-        // Interface removal is authoritative: fire even if the device was never in the
-        // cache (e.g. arrived while TryBuildDeviceInfo was failing). In that case
-        // TryBuildDeviceInfo may also return null, so fall back to an ID-only stub.
-        DeviceInfo device = cached
-            ?? WindowsDeviceProvider.TryBuildDeviceInfo(instanceId)
-            ?? new DeviceInfo { Id = instanceId };
-
-        _logger.LogDebug("Device disappeared: {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-        DeviceDisappeared?.Invoke(this, new DeviceChangeEventArgs(device));
-    }
-
     private void HandleInstanceStarted(nint eventData, int eventDataSize)
     {
         string? instanceId = DevNodeHelper.ReadInstanceIdFromEventData(eventData, eventDataSize);
@@ -488,26 +479,64 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         DeviceInfo? device = WindowsDeviceProvider.TryBuildDeviceInfo(instanceId);
         if (device is null) return;
 
-        // Monitors take the ordered publish path (see HandleDeviceArrival) so the
-        // Activated payload carries merged enrichment and cannot be overtaken by a
-        // concurrent refresh delta.
+        // Monitors take the ordered publish path so the payload carries merged
+        // enrichment and cannot be overtaken by a concurrent refresh delta. It
+        // decides Appeared by cache membership, same rule as below.
         if (device.Category == DeviceCategory.Monitor)
         {
-            PublishMonitorEvents(device, raiseAppeared: false, raiseActivated: true);
+            PublishMonitorEvents(device, raiseActivated: true);
             return;
         }
 
+        // A devnode is normally announced by DEVICEINSTANCEENUMERATED before it is
+        // started, so by here it is already in the cache and only Activated is due.
+        // Raise Appeared ourselves if it is not: the ADR-0004 invariant is that
+        // active implies present, and it should hold on the event stream without
+        // depending on cfgmgr32 always delivering action 7 first (issue #177).
+        // Decided in the same lock as the write, so a concurrent callback for the
+        // same devnode cannot make both sightings look like the first.
+        bool firstSighting;
         lock (_cacheLock)
-            _lastKnownDevices[instanceId] = device;
+        {
+            firstSighting = !_lastKnownDevices.ContainsKey(device.Id);
+            _lastKnownDevices[device.Id] = device;
+        }
+
+        if (firstSighting)
+        {
+            _logger.LogDebug("Device appeared (started without a prior enumerate): {DeviceId} ({DeviceName})",
+                device.Id, device.Name ?? "(unnamed)");
+            DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
+        }
 
         _logger.LogDebug("Device activated (instance started): {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
         DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
     }
 
-    // Handles CM_NOTIFY_ACTION_DEVICEINSTANCEENUMERATED (action=7): the OS has
-    // re-enumerated the instance (e.g. after a driver reload or sleep-resume)
-    // but has not yet started it. Record it in the cache so a later removal of
-    // this instance dedupes and carries its last-known DeviceInfo.
+    // Handles CM_NOTIFY_ACTION_DEVICEINSTANCEENUMERATED (action=7): the devnode has
+    // entered the device tree but has not been started yet. This is Periphery's
+    // presence edge — it is raised here rather than from an interface arrival because
+    // presence is a devnode fact and a devnode publishes zero or many interfaces
+    // (issue #177; see the class remarks).
+    //
+    // Measured on a USB mass-storage plug: action 7 arrives for every devnode of the
+    // device (USB, USBSTOR, STORAGE\Volume, SWD\WPDBUSENUM), immediately before action
+    // 8 for the same devnode, carrying a DeviceInfo identical to action 8's across the
+    // 14 fields compared — Name, Category, ClassName/ClassGuid, VID/PID, SerialNumber,
+    // BusType, Status, Driver, ParentId, ContainerId, and the Properties and Tags counts
+    // — apart from IsActive.
+    //
+    // NOT compared, so not claimed: DriveType, PortName, MacAddress, UsbSpeed,
+    // BatteryStatus, the display fields, and the CONTENTS of Properties/Tags. Filters
+    // matching on those may still see a thinner payload here than at action 8. The
+    // measurement also used devnodes this machine had already installed; a first-ever
+    // plug, where driver install has not yet written the registry, was not covered.
+    //
+    // The action also fires on re-enumeration of a devnode already known (driver
+    // reload, sleep-resume), which is not an arrival. TryAdd is what tells the two
+    // apart: it succeeds only for a devnode the cache has never held, which keeps
+    // Appeared single-fire and preserves the old "don't overwrite a richer snapshot"
+    // behaviour for the re-enumeration case.
     private void HandleInstanceEnumerated(nint eventData, int eventDataSize)
     {
         string? instanceId = DevNodeHelper.ReadInstanceIdFromEventData(eventData, eventDataSize);
@@ -516,13 +545,57 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         DeviceInfo? device = WindowsDeviceProvider.TryBuildDeviceInfo(instanceId);
         if (device is null) return;
 
-        lock (_cacheLock)
+        // A devnode with no ClassGuid has entered the tree but has not finished
+        // installing, and announcing it would finalise an unusable payload.
+        //
+        // Measured on a first install of a USB serial device, by removing its devnode and
+        // rescanning. Action 7 fires TWICE, two seconds apart:
+        //
+        //   ENUM   cat=All    classGuid=(null)    portName=(NULL)  status=Error
+        //   ENUM   cat=Ports  classGuid=4d36e978  portName=COM18   status=OK
+        //   START  cat=Ports  classGuid=4d36e978  portName=COM18   status=OK
+        //
+        // The first carries no class, so WindowsCategoryMap.ResolveCategory(null) yields
+        // DeviceCategory.All, which fails ANY OfCategory(X) filter, and PortName is null so
+        // WithPortName misses it too. Worse, the TryAdd below means that bare payload would
+        // win the cache and raise Appeared, and the complete one two seconds later would be
+        // suppressed as a re-enumeration - so the only Appeared a consumer ever sees would
+        // be the unusable one, with nothing to correct it.
+        //
+        // Skipping rather than announcing-then-repairing is what keeps Appeared single-fire:
+        // PnP re-fires action 7 once the class is written, and that becomes the genuine
+        // first sighting. If it never does, HandleInstanceStarted's first-sighting fallback
+        // still announces the devnode, with a started payload.
+        if (device.ClassGuid is null)
         {
-            // Only seed — don't overwrite a richer snapshot already in cache.
-            _lastKnownDevices.TryAdd(instanceId, device);
+            _logger.LogDebug(
+                "Device enumerated without a class, install unfinished; not announcing yet: {DeviceId} ({DeviceName})",
+                device.Id, device.Name ?? "(unnamed)");
+            return;
         }
 
-        _logger.LogDebug("Device enumerated (not yet started): {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
+        // Monitors take the ordered publish path so the Appeared payload carries
+        // merged DisplayConfig enrichment rather than a bare clobber (issue #149).
+        // It applies the same "Appeared iff not already cached" rule internally.
+        if (device.Category == DeviceCategory.Monitor)
+        {
+            PublishMonitorEvents(device, raiseActivated: false);
+            return;
+        }
+
+        bool isNew;
+        lock (_cacheLock)
+            isNew = _lastKnownDevices.TryAdd(device.Id, device);
+
+        if (!isNew)
+        {
+            _logger.LogDebug("Device re-enumerated (already known, no Appeared): {DeviceId} ({DeviceName})",
+                device.Id, device.Name ?? "(unnamed)");
+            return;
+        }
+
+        _logger.LogDebug("Device appeared (instance enumerated): {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
+        DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
     }
 
     private void HandleInstanceRemoved(nint eventData, int eventDataSize)
@@ -536,8 +609,7 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         // DeviceDisappeared then would tear down a device that is actually present. Re-check the
         // live devnode: if the instance is started right now, this removal is stale, so drop it
         // and keep tracking. Applied only to instance-removal (a real removal reads "not
-        // connected" here); NOT to interface removal, where the instance can remain present while
-        // only an interface goes away.
+        // connected" here).
         if (DevNodeHelper.IsDeviceConnected(instanceId))
         {
             _logger.LogDebug(
@@ -546,9 +618,11 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
             return;
         }
 
-        // Only fire if the device is still in the cache. If HandleDeviceRemoval already
-        // ran for the same device (hard removal with an interface notification), the entry
-        // is already gone and we return without re-firing DeviceDisappeared.
+        // Only fire if the device is still in the cache. This is now the sole removal
+        // source (issue #177 removed the interface registration, so there is no second
+        // handler to race), but the guard still earns its place: a devnode the cache
+        // never held was never announced, and raising Disappeared for it would be a
+        // removal with no matching Appeared.
         DeviceInfo? device;
         lock (_cacheLock)
         {
@@ -570,8 +644,6 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
 
         _instanceNotifyHandle?.Dispose();
         _instanceNotifyHandle = null;
-        _interfaceNotifyHandle?.Dispose();
-        _interfaceNotifyHandle = null;
 
         if (_selfHandle.IsAllocated)
             _selfHandle.Free();

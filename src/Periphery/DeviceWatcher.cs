@@ -1287,10 +1287,12 @@ public sealed class DeviceWatcher : IAsyncDisposable
         // dedup returns, so a re-raise for an already-known device still refreshes it.
         lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
 
-        // _knownConnectedIds.Add returns false when the ID is already present, which
-        // happens when both a DEVICEINTERFACEARRIVAL (HandleDeviceArrival) and a
-        // DEVICEINSTANCESTARTED (HandleInstanceStarted) fire for the same hard plug-in.
-        // Returning early deduplicates Activated and FanOutActivated for that case.
+        // _knownConnectedIds.Add returns false when the ID is already present, so a
+        // device that is already known-active does not re-raise Activated. The Windows
+        // case this was written for (a DEVICEINTERFACEARRIVAL and a
+        // DEVICEINSTANCESTARTED both firing for one hard plug-in) no longer exists —
+        // issue #177 removed the interface registration — but the guard still holds
+        // for providers that can report activation more than once.
         bool isNew;
         lock (_knownConnectedIds)
             isNew = _knownConnectedIds.Add(e.Device.Id);
