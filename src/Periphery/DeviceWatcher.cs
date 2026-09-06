@@ -1064,6 +1064,20 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 continue;
             }
 
+            // Seed the replay cache BEFORE anything is raised, and for every snapshot
+            // device rather than only those the watcher-level filter admits.
+            //
+            // Unfiltered because the tracker fan-out below is: a tracker can match a device
+            // this watcher's filter rejects, and Reconfigure replays from this cache, so
+            // caching only the filtered subset silently drops devices the tracker holds.
+            // Mirrors OnProviderPropertyChanged, which already caches unconditionally.
+            //
+            // Before, because a consumer can call Reconfigure from inside its Appeared
+            // handler. The raise is synchronous, so a cache write afterwards is too late -
+            // the replay would run against a cache that does not yet contain the device the
+            // handler was just told about.
+            lock (_deviceCache) _deviceCache[device.Id] = device;
+
             // Global events: apply watcher-level filter
             if (_filter.Matches(device))
             {
@@ -1091,14 +1105,6 @@ public sealed class DeviceWatcher : IAsyncDisposable
                         }
                     }
             }
-
-            // Seed the replay cache for EVERY snapshot device, not only those the
-            // watcher-level filter admits. The tracker fan-out below is unfiltered - a
-            // tracker can match a device this watcher's filter rejects - and Reconfigure
-            // replays from this cache, so caching only the filtered subset means a
-            // reconfigure silently drops devices the tracker was already holding.
-            // Mirrors OnProviderPropertyChanged, which already caches unconditionally.
-            lock (_deviceCache) _deviceCache[device.Id] = device;
 
             // Per-tracker fan-out: always notify appeared
             FanOutAppeared(device);
