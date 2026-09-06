@@ -111,10 +111,55 @@ public sealed class DeviceWatcher : IAsyncDisposable
     // case-insensitively without an explicit comparer.
     private readonly HashSet<DeviceId> _knownConnectedIds = new();
 
-    // Caches the most recent DeviceInfo snapshot per device ID, seeded during
-    // StartAsync and updated on each PropertyChanged event from the provider.
-    // Used as the "previous" snapshot for diff computation.
+    // Caches the most recent DeviceInfo snapshot per device ID. Seeded during
+    // StartAsync, maintained by every lifecycle edge (ADR-0087 D3), and updated on
+    // each PropertyChanged event from the provider. Used as the "previous" snapshot
+    // for diff computation, and replayed into a tracker on Reconfigure.
     private readonly Dictionary<DeviceId, DeviceInfo> _deviceCache = new();
+
+    // Ids the live provider stream handled while the startup walk was in flight
+    // (ADR-0087 D2). The monitor provider goes live before SnapshotCurrentDevicesAsync
+    // begins, so for any id in here the live stream verdict is strictly fresher than
+    // the payload the walk is holding - the walk enumerated it at an earlier instant
+    // and has been carrying it ever since.
+    //
+    // Republishing that payload as an edge is what produces #177 demotion (a stale
+    // inactive payload for a device the live stream already started) and its mirror (a
+    // stale active payload for a device the live stream already removed, which latches
+    // permanently because Disappeared has been consumed). It is also the duplicate
+    // startup Appeared: the walk already guards Activated against _knownConnectedIds
+    // and has never guarded Appeared.
+    //
+    // Scoped to the start window and cleared on both edges of it, so this is bounded by
+    // the devices that happen to change during one enumeration rather than by the tree.
+    // _snapshotInFlight is guarded by the set own lock: the flag and the membership
+    // it authorises have to move together.
+    private readonly HashSet<DeviceId> _liveStreamHandledIds = new();
+    private bool _snapshotInFlight;
+
+    private void NoteLiveStreamHandled(DeviceId id)
+    {
+        lock (_liveStreamHandledIds)
+            if (_snapshotInFlight) _liveStreamHandledIds.Add(id);
+    }
+
+    private void OpenSnapshotWindow()
+    {
+        lock (_liveStreamHandledIds)
+        {
+            _liveStreamHandledIds.Clear();
+            _snapshotInFlight = true;
+        }
+    }
+
+    private void CloseSnapshotWindow()
+    {
+        lock (_liveStreamHandledIds)
+        {
+            _snapshotInFlight = false;
+            _liveStreamHandledIds.Clear();
+        }
+    }
 
     internal DeviceWatcher() { }
 
@@ -821,6 +866,12 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
                 try
                 {
+                    // Open before the provider goes live, so every live edge that races
+                    // the walk below is recorded (ADR-0087 D2). Closed in the finally so
+                    // a failed start does not leave the window latched open for the
+                    // retry, which would make the retry walk skip real devices.
+                    OpenSnapshotWindow();
+
                     // 1. Start event watchers FIRST so no events are lost
                     provider =
                         _monitorOverride
@@ -856,6 +907,10 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 {
                     await RollBackAttemptAsync(provider, ownsProvider).ConfigureAwait(false);
                     throw;
+                }
+                finally
+                {
+                    CloseSnapshotWindow();
                 }
 
                 // Commit. _provider before _started: DisposeAsync releases on the
@@ -976,6 +1031,28 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
         await foreach (var device in queryProvider.EnumerateAsync(queryFilter, ct).ConfigureAwait(false))
         {
+            // The live stream has already spoken for this id, and its verdict is newer
+            // than the payload this walk has been carrying since it enumerated (ADR-0087
+            // D2). Republishing ours would overwrite fresher truth with older truth.
+            // Skipping it also drops the duplicate Appeared the Activated guard below
+            // has always avoided on its own axis.
+            //
+            // The cache is deliberately not written here: the live handler already wrote
+            // a fresher payload for this id, and the walk one is the stale one. That does
+            // mean the cache keeps the notification-path payload rather than the richer
+            // enumeration one for these devices - a known and separate gap (#177).
+            bool supersededByLiveStream;
+            lock (_liveStreamHandledIds)
+                supersededByLiveStream = _liveStreamHandledIds.Contains(device.Id);
+
+            if (supersededByLiveStream)
+            {
+                _logger.LogDebug(
+                    "Snapshot skipped, the live stream already reported it: {DeviceId} ({DeviceName})",
+                    device.Id, device.Name ?? "(unnamed)");
+                continue;
+            }
+
             // Global events: apply watcher-level filter
             if (_filter.Matches(device))
             {
@@ -1107,8 +1184,49 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     // ── Internal — provider event handlers ───────────────────────────────
 
+    // The watcher, not the provider, is the authority on activity (ADR-0087 D1). It
+    // owns _knownConnectedIds and already cascades Deactivated from Disappeared, so it
+    // is the one place that knows whether an Activated has been retracted.
+    //
+    // A presence edge can carry a payload built before the device started - the OS
+    // reports "in the device tree, not yet started" as a real state, and the startup
+    // walk can capture a device mid-transition. Left alone, that stale IsActive=false
+    // reaches DeviceTrackerResolution, whose Resolve() reads IsActive off the shared
+    // snapshot, and demotes a running device to Present with no way back (#177).
+    //
+    // Reconciling here rather than in the tracker covers trackers, group trackers and
+    // the public Appeared event in one place. Consumers that read IsActive straight off
+    // the event - readiness gates especially - are exactly the ones a tracker-layer fix
+    // would have missed.
+    //
+    // Only ever upgrades, and only against an Activated that has not been retracted:
+    // both Deactivated and Disappeared remove the id from _knownConnectedIds first.
+    private DeviceInfo ReconcileActivity(DeviceInfo device)
+    {
+        if (device.IsActive) return device;
+
+        bool knownActive;
+        lock (_knownConnectedIds) knownActive = _knownConnectedIds.Contains(device.Id);
+        if (!knownActive) return device;
+
+        _logger.LogDebug(
+            "Reconciled a stale inactive presence payload for a device held as active: {DeviceId}",
+            device.Id);
+        return device with { IsActive = true };
+    }
+
     private void OnProviderAppeared(object? sender, DeviceChangeEventArgs e)
     {
+        NoteLiveStreamHandled(e.Device.Id);
+
+        var reconciled = ReconcileActivity(e.Device);
+        if (!ReferenceEquals(reconciled, e.Device))
+            e = new DeviceChangeEventArgs(reconciled);
+
+        // Arrival maintains the replay cache (ADR-0087 D3). Without this a device that
+        // arrived live is invisible to ReplayKnownDevicesTo, so a Reconfigure erases it.
+        lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
+
         if (_filter.Matches(e.Device))
         {
             Interlocked.Increment(ref _appearedEventCount);
@@ -1128,6 +1246,12 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void OnProviderActivated(object? sender, DeviceChangeEventArgs e)
     {
+        NoteLiveStreamHandled(e.Device.Id);
+
+        // Activation maintains the replay cache (ADR-0087 D3). Written before the
+        // dedup returns, so a re-raise for an already-known device still refreshes it.
+        lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
+
         // _knownConnectedIds.Add returns false when the ID is already present, which
         // happens when both a DEVICEINTERFACEARRIVAL (HandleDeviceArrival) and a
         // DEVICEINSTANCESTARTED (HandleInstanceStarted) fire for the same hard plug-in.
@@ -1157,7 +1281,13 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void OnProviderDeactivated(object? sender, DeviceChangeEventArgs e)
     {
+        NoteLiveStreamHandled(e.Device.Id);
+
+        // Retracts the activity assertion ReconcileActivity reads, so a presence edge
+        // arriving after this one is no longer upgraded.
         lock (_knownConnectedIds) _knownConnectedIds.Remove(e.Device.Id);
+
+        lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
 
         if (_filter.Matches(e.Device))
         {
@@ -1178,6 +1308,12 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void OnProviderDisappeared(object? sender, DeviceChangeEventArgs e)
     {
+        NoteLiveStreamHandled(e.Device.Id);
+
+        // Removal prunes the replay cache (ADR-0087 D3). Without this a Reconfigure
+        // replays a device the tracker had already correctly dropped, resurrecting it.
+        lock (_deviceCache) _deviceCache.Remove(e.Device.Id);
+
         // If this device was active, cascade a Deactivated event first.
         // The Remove must be atomic with the check to avoid double-cascades
         // when a Deactivated + Disappeared arrive on concurrent threads.
