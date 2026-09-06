@@ -15,7 +15,7 @@
 // Neither was ever done here: VDM0CN was never written, and RSTSRC appeared only at the
 // three deliberate-reset sites. Without the monitor a supply dip during a write leaves
 // cells partially programmed instead of resetting the part, and a weakly-erased cell
-// reads back differently from one enumeration to the next. See issue #170, where the
+// reads back differently from one enumeration to the next. See issue #191, where the
 // same serial number read back with its letter case drifting toward the erased state
 // (every flip set bit 5) on a station whose hub loses power on any mains dip.
 //

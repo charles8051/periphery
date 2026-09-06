@@ -95,7 +95,7 @@ Measured with the same toolchain, same flags, base commit vs. this change:
 | with the watchdog | 14862 | 14734 | `0x398E` | **114** |
 | | **-86** | **-86** | | **+86** |
 
-### The `#170` stream-framing change
+### The `#191` stream-framing change
 
 Measured the same way, from the actual HEX records rather than from `code=`. The
 baseline row matches the committed `dist/Treehopper.hex` byte for byte.

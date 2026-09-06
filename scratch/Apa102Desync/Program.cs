@@ -1,4 +1,4 @@
-// Bench harness for issue #170 / ADR-0086 D5: reproduce the EP_PeripheralConfig desync
+// Bench harness for issue #191 / ADR-0086 D5: reproduce the EP_PeripheralConfig desync
 // directly, on a real board, and tell the operator whether a pixel byte was executed as a
 // command.
 //
@@ -11,7 +11,7 @@
 // chunked at 252 bytes the way Apa102Strip.FlushAsync chunks it, giving a 259-byte
 // SPITransaction command - USB packets of 64/64/64/64/3. It then STALLS THE HOST after the
 // first packet, which is what pushes the firmware's continuation read past its spin budget
-// and onto the USBD_AbortTransfer path. On firmware without the #170 fix that abort discards
+// and onto the USBD_AbortTransfer path. On firmware without the #191 fix that abort discards
 // in-flight packets, the endpoint is re-armed at offset 0, and the next surviving packet -
 // pure pixel data - lands where an opcode is expected.
 //
@@ -67,7 +67,7 @@ using Periphery.Usb;
 // ── Wire protocol (firmware: inc/treehopper.h, treehopper.c) ──────────────────
 
 const byte EpPinConfig        = 0x01;   // OUT
-const byte EpPeripheralConfig = 0x02;   // OUT - the endpoint #170 is about
+const byte EpPeripheralConfig = 0x02;   // OUT - the endpoint #191 is about
 const byte EpPinReport        = 0x81;   // IN
 const int  MaxPacket          = 64;
 
@@ -346,7 +346,7 @@ Console.WriteLine($"Desyncs    : {desyncs}");
 Console.WriteLine($"Reports    : {Interlocked.Read(ref reports)}");
 
 // Re-enumerate rather than trusting the DeviceInfo we opened with: the descriptors are the
-// thing #170 destroyed, and a fresh read is the only honest check.
+// thing #191 destroyed, and a fresh read is the only honest check.
 //
 // Identifying the board again is the hard part, and getting it wrong is worse than not
 // checking. The serial is the identity, but it is also one of the two things this run might
@@ -387,7 +387,7 @@ else
     Console.Error.WriteLine(
         $"Descriptors: CHANGED (matched by {how}). name '{nameBefore}' -> '{after.Name}', serial "
         + $"'{serialBefore}' -> '{after.SerialNumber}'. Capture the config page over C2 before "
-        + "reflashing (#170 bench test 4).");
+        + "reflashing (#191 bench test 4).");
 }
 
 Console.WriteLine();
@@ -405,7 +405,7 @@ Console.WriteLine(
               + "in those. This is not a clean result and must not be recorded as one; find out "
               + "why the run stopped and repeat it."
             : $"RESULT: no desync in {done} iterations. That is the expected result on firmware "
-              + "with the #170 fix. On UNFIXED firmware it means the stall did not run the spin "
+              + "with the #191 fix. On UNFIXED firmware it means the stall did not run the spin "
               + "out - raise --stall-ms and re-run before concluding anything.");
 
 if (desyncs > 0) return 1;

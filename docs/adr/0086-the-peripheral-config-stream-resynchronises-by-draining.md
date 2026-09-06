@@ -23,7 +23,7 @@ and `dist/treehopper.tfi` are regenerated at **v2.77** (14827 bytes, top
 
 ## Context
 
-Issue #170. On one production station, two of three Treehopper
+Issue #191. On one production station, two of three Treehopper
 boards on one hub permanently lost both their `iProduct` and `iSerialNumber`
 descriptors on 2026-09-01, and all three entered their bootloaders within eleven
 seconds of each other. The corruption re-reads from EEPROM on every enumeration.
@@ -105,7 +105,7 @@ recover *from*:
 multiple of 64 bytes, no short packet ends it and the drain eats the first packet
 of the *next* command, resynchronising on that command's short tail. One dropped
 command is a far better failure than executing pixel data as `EnterBootloader`.
-The 259-byte APA102 case that caused #170 is not a multiple of 64.
+The 259-byte APA102 case that caused #191 is not a multiple of 64.
 
 ### D2. The identity length is a UTF-8 byte count, bounded at 61 on both ends
 

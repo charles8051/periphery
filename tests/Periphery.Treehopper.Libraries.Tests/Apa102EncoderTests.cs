@@ -118,7 +118,7 @@ public class Apa102EncoderTests
         Assert.Equal(0x00, bytes[7]);
     }
 
-    // ── The #170 bench harness's assumptions ───────────────────────────
+    // ── The #191 bench harness's assumptions ───────────────────────────
 
     // scratch/Apa102Desync builds this byte layout itself rather than reaching past
     // Apa102Encoder's `internal`, because the claim it tests is about what the FIRMWARE does
@@ -135,7 +135,7 @@ public class Apa102EncoderTests
 
         // 4 start + 63*4 + ceil(63/16)=4 end. 260 is the number that makes Apa102Strip's
         // 252-byte chunk a 259-byte command, i.e. USB packets of 64/64/64/64/3 - the
-        // multi-packet path #170 lives on.
+        // multi-packet path #191 lives on.
         Assert.Equal(260, bytes.Length);
 
         // Pixels start at offset 4 in groups of four: header, Blue, Green, Red. At

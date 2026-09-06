@@ -102,7 +102,7 @@ void USBD_DeviceStateChangeCb(USBD_State_TypeDef oldState,
 		// Three on/off blinks to say "enumerated" - the same six LED_SetVal/delay pairs this
 		// used to spell out one at a time, rolled into a loop. Identical sequence and timing,
 		// ~70 bytes smaller, and the app region ends at 0x3A00 (BUILD.md) so the framing fix
-		// below needed the room. See issue #170.
+		// below needed the room. See issue #191.
 		//
 		// The counter lives in XDATA because this runs off the USB ISR: LX51 cannot overlay
 		// this function's locals, and DATA is full to the byte - a plain `uint8_t n` here
@@ -114,7 +114,7 @@ void USBD_DeviceStateChangeCb(USBD_State_TypeDef oldState,
 		}
 		// Arm these endpoints once we're configured
 		USBD_Read(EP_PinConfig, (uint8_t *)&Treehopper_PinConfig, sizeof(pinConfigPacket_t), false);
-		// Second desync path from issue #170, the one with no timeout involved. This runs in
+		// Second desync path from issue #191, the one with no timeout involved. This runs in
 		// USB ISR context and re-points EP_PeripheralConfig at offset 0 - including while the
 		// foreground has the multi-packet continuation read armed at
 		// &Treehopper_PeripheralConfig[64] and is spinning on it. A bus reset or

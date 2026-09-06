@@ -34,7 +34,7 @@ void SendPinStatus();
 
 uint16_t timeout = 0;
 
-// ── EP_PeripheralConfig stream framing (issue #170) ──────────────────────────
+// ── EP_PeripheralConfig stream framing (issue #191) ──────────────────────────
 // Set from the USB ISR (USBD_XferCompleteCb, callback.c) on every EP_PeripheralConfig
 // packet: true when that packet was short, which is how the host marks the end of its
 // transfer. A single bit is deliberate - SETB / CLR on a bdata bit is one instruction, so
@@ -190,7 +190,7 @@ void ProcessPinConfigPacket() {
 // between a desynchronised stream and a destroyed board is never re-arming this endpoint at
 // offset 0 while the host is still sending the middle of a command.
 //
-// That is not hypothetical. Issue #170: an APA102 pixel flush chunks at 252 bytes, so every
+// That is not hypothetical. Issue #191: an APA102 pixel flush chunks at 252 bytes, so every
 // animation tick takes the multi-packet path below. When the remainder missed the spin
 // budget, the abort discarded in-flight packets, the re-arm at the bottom of this function
 // went back to offset 0, and the next surviving packet - pure pixel data - landed where an
