@@ -544,6 +544,30 @@ would sharpen D3's field evidence and change no decision, so it was skipped rath
 scheduled. `scratch/TreehopperIdentityProbe` is built and validated against C2 if it is ever
 wanted; run it against both boards and record what `bLength` comes back for string index 3.
 
+## Post-update observation, 2026-09-06 - the damaged records did not self-heal
+
+All three boards on the affected hub now report firmware **2.77**. The two damaged boards
+**still report no serial**.
+
+That settles a claim ADR-0086 D3 made and this document repeated: that the stricter header
+validity check would let those two regenerate on the first boot after the update. It does not,
+and the reason is the same fact that makes the descriptor probe work in the first place.
+
+The desync called `writeUsbString`, which wrote a **well-formed** record - correct marker,
+correct length byte, correct descriptor type, garbage payload. Every field the header check
+looks at is exactly what the firmware would have written, so the check passes and
+`SerialNumber_Init` does not regenerate. Only the payload is damaged, and no test over the
+header can see payload damage.
+
+**What the header check is still for:** the erase-interruption case it was added for, where the
+header itself is left inconsistent. That is real. It is not a repair path, and the two are easy
+to conflate because both end in "a record that looks valid but is not".
+
+**Repairing these two needs a deliberate rewrite of the serial page**, which no tool offers -
+`rename` writes the name page only. Worth noting that a regenerated serial is a *new* random
+string, so a repair is an identity change, not a restoration: whatever referenced the old serial
+will not find it either way.
+
 ## Recording the next result
 
 Add it here: firmware image and how it was verified, the `--stall-ms` sweep, iterations,

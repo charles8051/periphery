@@ -166,12 +166,25 @@ by construction, so nothing this firmware could have written can fail the test.
 Confirmed on hardware - a bench board flashed with this change kept its serial
 `cDYhINBh` across the update.
 
-**And it is not hypothetical.** D5 test 4 found two boards at
-those two boards in precisely the falsely-valid state right now: marker present,
-record unserveable, no self-repair across four days and many reboots. Under the
-old one-byte test they stay broken forever. Under this one they regenerate on the
-first boot after the update - which means the fix reaches boards already damaged,
-not only boards not yet damaged.
+**Corrected 2026-09-06 - this does NOT repair boards already damaged, and an
+earlier revision of this decision said it did.**
+
+The claim was that the two field boards found in the falsely-valid state would
+regenerate on the first boot after the update. They have since been updated to
+v2.77, and both still report no serial. The claim was wrong.
+
+The reason is the same fact that makes the descriptor probe work: the desync
+called `writeUsbString`, which wrote a **well-formed** record - correct marker,
+correct length, correct descriptor type, garbage payload. The header check passes
+it, so `SerialNumber_Init` does not regenerate. Only the payload is damaged, and
+no test over the header can see that.
+
+What the header check *does* buy is the erase-interruption case it was added for,
+where the header itself is left inconsistent. That is real and worth having. It is
+not a repair path for payload damage, and nothing here should be read as one.
+
+Repairing such a record needs a deliberate rewrite of the serial page. No tool
+offers that today - `rename` writes the name page only.
 
 ### D4. The supply monitor is enabled and selected before any flash write
 
