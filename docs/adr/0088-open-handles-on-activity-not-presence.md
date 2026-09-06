@@ -139,7 +139,9 @@ it is why D3 is a decision rather than a style preference.
 |---|---|
 | `DeviceProxy` / `DeviceProxyBase` / `DeviceSessionHost` | Compliant. Nine activity gates, no presence gate. |
 | `TrackerDeviceWaitSource` | Fixed — gates on `Active`. |
-| `TreehopperControlService` | **Non-compliant.** Opens on `Appeared`; needs the D2 split. |
+| `TreehopperControlService` | Fixed in #196 — presence work stays on `Appeared`, the board open moved to `Activated`, per D2. |
 
 A consumer that opens a device from an `Appeared` handler is a defect under this ADR, whether or
-not the platform it runs on currently delivers that event.
+not the platform it runs on currently delivers that event. Both known instances were fixed as this
+ADR was written, which is what it is for: the rule existed in `DeviceProxy` all along, and the two
+consumers that bypassed it did so independently.
