@@ -87,6 +87,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
 
         _watcher = Devices.Watch().WithUsbId(TreehopperBoard.Vid, TreehopperBoard.Pid);
         _watcher.Appeared += OnAppeared;
+        _watcher.Activated += OnActivated;
         _watcher.Disappeared += OnDisappeared;
         await _watcher.StartAsync(ct).ConfigureAwait(false);
     }
@@ -363,7 +364,41 @@ public sealed class TreehopperControlService : IAsyncDisposable
 
     // ── Hotplug ──────────────────────────────────────────────────────────
 
+    // Presence only. A board in the device tree can be listed, but its driver may not be
+    // started yet, so nothing here may open it (ADR-0088). This mirrors StartAsync, which
+    // already announces every board before reading any version.
+    //
+    // Teardown is on OnDisappeared rather than a Deactivated handler, and NOT because
+    // Windows cannot deliver Deactivated: the watcher cascades it from Disappeared for any
+    // device it had activated, so a physical unplug raises it on every platform. The gap
+    // there is only the soft stop - a driver stopping while the devnode stays in the tree -
+    // which no edge signals on Windows, so Disappeared does not cover it either.
+    //
+    // The actual reason is this service's own state machine. OnDisappeared re-verifies
+    // absence with a live query to survive the transient drop while a board re-enumerates
+    // through the bootloader during a flash. A Deactivated handler would fire on that same
+    // transient drop with no equivalent guard, so moving teardown needs that guard
+    // reproduced and a test seam this service does not yet have.
     private void OnAppeared(object? sender, DeviceChangeEventArgs e)
+        => _ = RunExclusiveAsync(() =>
+        {
+            Apply(new AppEvent.BoardDiscovered(ToIdentity(e.Device)));
+            return Task.CompletedTask;
+        }, _cts.Token);
+
+    // The I/O half. ReadVersionAsync opens the board, so it binds to activity.
+    //
+    // This also repairs a live defect rather than only future-proofing one: both of these
+    // used to hang off Appeared, which on Windows never fires for a hot-plugged device
+    // (issue #177). So a board plugged in while the app was running was never version-read
+    // and never reconciled into a session — the open threw into the swallow below and
+    // there was no second chance. Activated does fire on Windows, so moving them here is
+    // what makes hot-plug work at all.
+    //
+    // Announces first if the presence edge did not arrive: on Windows today it does not,
+    // and a version read for a board the UI never heard of would be dropped by the
+    // reducer. Idempotent, because BoardDiscovered is keyed by identity.
+    private void OnActivated(object? sender, DeviceChangeEventArgs e)
         => _ = RunExclusiveAsync(async () =>
         {
             Apply(new AppEvent.BoardDiscovered(ToIdentity(e.Device)));
@@ -453,6 +488,7 @@ public sealed class TreehopperControlService : IAsyncDisposable
         if (_watcher is not null)
         {
             _watcher.Appeared -= OnAppeared;
+            _watcher.Activated -= OnActivated;
             _watcher.Disappeared -= OnDisappeared;
             try { await _watcher.DisposeAsync().ConfigureAwait(false); } catch { /* best-effort */ }
         }
