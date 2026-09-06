@@ -141,10 +141,18 @@ walk already guards `Activated` against `_knownConnectedIds` at `DeviceWatcher.c
 not guard `Appeared` five lines above. The earlier draft of this ADR put that out of scope; it is
 the same defect and comes free here.
 
-### D3 — Arrival and removal edges maintain `_deviceCache`
+### D3 — Every lifecycle edge maintains `_deviceCache`
 
-`OnProviderAppeared` and `OnProviderActivated` write it; `OnProviderDisappeared` removes from it.
-Three lines. Makes `Reconfigure` / `ReplaceProfiles` replay reflect reality.
+`OnProviderAppeared`, `OnProviderActivated` and `OnProviderDeactivated` write it;
+`OnProviderDisappeared` removes from it. Makes `Reconfigure` / `ReplaceProfiles` replay reflect
+reality.
+
+The deactivation write matters as much as the others, and an earlier draft of this ADR omitted it
+by describing only "arrival and removal". Without it the cache keeps the last *active* snapshot
+after a device goes inactive, and a later replay reasserts activity the watcher has already seen
+retracted. On the cascade path - Windows raises `Deactivated` only as a cascade from
+`Disappeared` - the entry is removed a moment later anyway, but on Linux and macOS a genuine soft
+deactivation leaves the device present, and the cache must carry the inactive snapshot.
 
 ---
 
@@ -223,11 +231,27 @@ being purity and starts being capability.
   `Disappeared` retract — but not zero.
 - **D2 needs scoping.** The prototype never clears its skip set; a shippable version must scope it
   to the start window per attempt.
-- **D2 can silently drop a device** whose live edge was filtered out but whose walk payload would
-  have matched. This interacts with the unenriched-notification-payload problem in #177 and needs a
-  decision rather than a patch.
+- **D2 can silently drop a device**, over a wider window than "filtered out". The skip set is
+  populated at the top of each provider handler, before the watcher filter runs, so an id whose
+  live edge the filter rejected is still skipped when the walk reaches it. If the walk's payload
+  would have matched - reachable, because the walk runs the full enrichment pipeline and the
+  notification path does not - the device is never announced at all.
+
+  The same asymmetry costs enrichment even when both payloads match: for a Windows monitor the
+  walk's is the only payload carrying DisplayConfig fields, so skipping it in favour of a live edge
+  trades completeness for freshness. Both follow from treating "the live stream spoke" as
+  sufficient without comparing what it said. Narrowing the skip to ids whose live edge was actually
+  published, or comparing payloads rather than ids, would close it. Neither is done here.
 - The two ungated provider raise sites (`HandleInstanceStarted`, `HandleBind`) remain ungated. This
   ADR does not depend on them being fixed, unlike Option 1, but they should be.
+
+### Examined, and not a problem
+
+**A device deactivated or removed mid-walk.** The skip set suppresses only the *walk's*
+republication, never the live handler, which runs in full - so the removal is announced and the
+cache pruned. A consumer can see a `Disappeared` for a device it never saw `Appeared`, because the
+walk was suppressed before reaching it. That is the correct trade: the alternative is the walk
+announcing the arrival of a device the live stream has already reported gone.
 
 ### Neutral
 
@@ -250,6 +274,27 @@ and `MultiDeviceTrackerTests` must stay green — including
 `ApplyConnected_InactiveSnapshot_DoesNotResolveActive`, which Option 1 broke.
 
 ---
+
+## Open: `ApplyPropertyChanged` is a third path, and this boundary cannot close it
+
+D1 reconciles the presence edge because a presence payload carries no activity information the
+watcher does not already hold, so overriding its `IsActive` from `_knownConnectedIds` loses
+nothing. That reasoning does not extend to `DevicePropertyChanged`.
+
+`ApplyPropertyChanged` also writes the shared snapshot `Resolve()` reads `IsActive` from, so a
+delayed property payload carrying `false` demotes a tracker whose connected latch is still held -
+the #177 defect on a third path.
+
+Reconciling it the same way was tried, and is wrong. A `PropertyChanged` carrying an `IsActive`
+transition is a documented way to report an activity change - `DeviceWatcher` raises it that way,
+and `PropertyChanged_IsActiveTransition_IncludedInChangedProperties` pins it - so upgrading the
+payload against `_knownConnectedIds` masks a legitimate deactivation. The attempt failed that test,
+which is the correct outcome.
+
+Nothing distinguishes a stale property payload from a truthful one at this boundary: both arrive as
+`IsActive` going true to false for a device the watcher believes active. Telling them apart needs
+the evidence-recency notion named below, which is precisely what none of the options considered
+here provide. Left open rather than closed badly.
 
 ## Follow-on work, not decided here
 
