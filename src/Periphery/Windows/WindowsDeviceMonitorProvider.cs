@@ -545,6 +545,35 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         DeviceInfo? device = WindowsDeviceProvider.TryBuildDeviceInfo(instanceId);
         if (device is null) return;
 
+        // A devnode with no ClassGuid has entered the tree but has not finished
+        // installing, and announcing it would finalise an unusable payload.
+        //
+        // Measured on a first install of a USB serial device, by removing its devnode and
+        // rescanning. Action 7 fires TWICE, two seconds apart:
+        //
+        //   ENUM   cat=All    classGuid=(null)    portName=(NULL)  status=Error
+        //   ENUM   cat=Ports  classGuid=4d36e978  portName=COM18   status=OK
+        //   START  cat=Ports  classGuid=4d36e978  portName=COM18   status=OK
+        //
+        // The first carries no class, so WindowsCategoryMap.ResolveCategory(null) yields
+        // DeviceCategory.All, which fails ANY OfCategory(X) filter, and PortName is null so
+        // WithPortName misses it too. Worse, the TryAdd below means that bare payload would
+        // win the cache and raise Appeared, and the complete one two seconds later would be
+        // suppressed as a re-enumeration - so the only Appeared a consumer ever sees would
+        // be the unusable one, with nothing to correct it.
+        //
+        // Skipping rather than announcing-then-repairing is what keeps Appeared single-fire:
+        // PnP re-fires action 7 once the class is written, and that becomes the genuine
+        // first sighting. If it never does, HandleInstanceStarted's first-sighting fallback
+        // still announces the devnode, with a started payload.
+        if (device.ClassGuid is null)
+        {
+            _logger.LogDebug(
+                "Device enumerated without a class, install unfinished; not announcing yet: {DeviceId} ({DeviceName})",
+                device.Id, device.Name ?? "(unnamed)");
+            return;
+        }
+
         // Monitors take the ordered publish path so the Appeared payload carries
         // merged DisplayConfig enrichment rather than a bare clobber (issue #149).
         // It applies the same "Appeared iff not already cached" rule internally.
