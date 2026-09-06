@@ -100,12 +100,34 @@ gone. Network adapters behave the same way when disabled. See
 > goes `false`, and comes back `true` on reconnect. The *events* are not delivered.
 > cfgmgr32 pushes no notification when a link goes up or down on a device that is
 > already paired and installed, so `Activated` and `Deactivated` do not fire for a
-> Bluetooth link transition — re-read `IsActive` on an interval instead. Measured
-> against a paired HID keyboard: the devnode stayed enumerable across a power cycle and
-> `IsActive` tracked the link in both directions, while the watcher raised no edge
-> either way. This is specific to the link going up and down, and to Windows; Linux
-> (udev `bind`/`unbind`) and macOS (IOKit) deliver both events from OS push. See
+> Bluetooth link transition. Measured against a paired HID keyboard: the devnode stayed
+> enumerable across a power cycle and `IsActive` tracked the link in both directions,
+> while the watcher raised no edge either way. This is specific to the link going up and
+> down, and to Windows; Linux (udev `bind`/`unbind`) and macOS (IOKit) deliver both
+> events from OS push. See
 > [ADR-0054](https://github.com/charles8051/periphery/blob/main/docs/adr/0054-windows-property-freshness-events-over-polling.md).
+>
+> `DeviceInfo` is an immutable snapshot, so a device you already hold never changes.
+> Enumerate again on each poll and compare by `Id`:
+>
+> ```csharp
+> var wasActive = new Dictionary<DeviceId, bool>();
+>
+> while (!ct.IsCancellationRequested)
+> {
+>     foreach (var device in await Devices.Enumerate()
+>                  .OfCategory(DeviceCategory.Bluetooth)
+>                  .ToListAsync(ct))
+>     {
+>         if (wasActive.TryGetValue(device.Id, out var before) && before != device.IsActive)
+>             Console.WriteLine($"{device.Name}: {(device.IsActive ? "connected" : "disconnected")}");
+>
+>         wasActive[device.Id] = device.IsActive;
+>     }
+>
+>     await Task.Delay(TimeSpan.FromSeconds(2), ct);
+> }
+> ```
 >
 > Note also that a Bluetooth peripheral enumerates as several devnodes, and only the
 > `BTHENUM\DEV_…` one carries link state. Its profile-service siblings — including the
