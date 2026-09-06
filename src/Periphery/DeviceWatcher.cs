@@ -1040,8 +1040,22 @@ public sealed class DeviceWatcher : IAsyncDisposable
             ? new DeviceFilter() : _filter;
         int snapshotCount = 0;
 
-        await foreach (var device in queryProvider.EnumerateAsync(queryFilter, ct).ConfigureAwait(false))
+        await foreach (var enumerated in queryProvider.EnumerateAsync(queryFilter, ct).ConfigureAwait(false))
         {
+            // Reconcile the walk's payload too (ADR-0087 D1), not just the live path.
+            //
+            // The walk raises Appeared directly rather than through OnProviderAppeared, so
+            // it bypassed the reconciliation. That was hidden while activity edges also
+            // populated the supersession set - the walk simply skipped an activated device.
+            // Once that was narrowed to presence edges only, and rightly so, nothing was
+            // left covering a walk payload captured before the live stream activated the
+            // device: it would publish IsActive == false for a device already running and
+            // demote it.
+            //
+            // Presence supersession and activity reconciliation each cover one axis, and
+            // both have to apply here for the pair to be complete.
+            var device = ReconcileActivity(enumerated);
+
             // The live stream has already spoken for this id, and its verdict is newer
             // than the payload this walk has been carrying since it enumerated (ADR-0087
             // D2). Republishing ours would overwrite fresher truth with older truth.

@@ -115,6 +115,37 @@ public class WatcherBoundaryReconciliationTests
         Assert.Equal(DeviceActivityStatus.Active, tracker.ActivityStatus);
     }
 
+    /// <summary>
+    /// The walk raises <c>Appeared</c> directly rather than through
+    /// <c>OnProviderAppeared</c>, so its payload has to be reconciled on that path too. A
+    /// walk snapshot captured before the live stream activated the device carries
+    /// <c>IsActive == false</c>, and publishing it unreconciled demotes a running device -
+    /// the #177 defect, reached through the startup walk instead of a live edge.
+    /// </summary>
+    [Fact]
+    public async Task StaleInactiveWalkPayload_IsReconciledBeforePublication()
+    {
+        var monitor = new FakeDeviceMonitorProvider();
+        var stale = Device(isActive: false);   // captured before the device started
+        var fired = false;
+        var query = new HookedProvider(() =>
+        {
+            if (fired) return;
+            fired = true;
+            monitor.SimulateStatusChange(Device(isActive: true));   // live activation first
+        }, stale);
+
+        await using var watcher = new DeviceWatcher(query, monitor);
+        DeviceInfo? announced = null;
+        watcher.Appeared += (_, e) => announced = e.Device;
+        var tracker = watcher.AddTracker(f => f.OfCategory(DeviceCategory.Usb), name: "Device");
+        await watcher.StartAsync();
+
+        Assert.NotNull(announced);
+        Assert.True(announced!.IsActive);
+        Assert.Equal(DeviceActivityStatus.Active, tracker.ActivityStatus);
+    }
+
     // ── Reconfigure must not lose a device that arrived live ───────────
 
     /// <summary>
