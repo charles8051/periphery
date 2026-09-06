@@ -367,6 +367,18 @@ public sealed class TreehopperControlService : IAsyncDisposable
     // Presence only. A board in the device tree can be listed, but its driver may not be
     // started yet, so nothing here may open it (ADR-0088). This mirrors StartAsync, which
     // already announces every board before reading any version.
+    //
+    // Teardown is on OnDisappeared rather than a Deactivated handler, and NOT because
+    // Windows cannot deliver Deactivated: the watcher cascades it from Disappeared for any
+    // device it had activated, so a physical unplug raises it on every platform. The gap
+    // there is only the soft stop - a driver stopping while the devnode stays in the tree -
+    // which no edge signals on Windows, so Disappeared does not cover it either.
+    //
+    // The actual reason is this service's own state machine. OnDisappeared re-verifies
+    // absence with a live query to survive the transient drop while a board re-enumerates
+    // through the bootloader during a flash. A Deactivated handler would fire on that same
+    // transient drop with no equivalent guard, so moving teardown needs that guard
+    // reproduced and a test seam this service does not yet have.
     private void OnAppeared(object? sender, DeviceChangeEventArgs e)
         => _ = RunExclusiveAsync(() =>
         {
