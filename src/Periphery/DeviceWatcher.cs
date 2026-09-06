@@ -665,8 +665,10 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// <para><b>Filter state:</b> the returned set honours this watcher's
     /// filters (<see cref="OfCategory"/>, <see cref="Where"/>,
     /// <see cref="WithName"/>, <see cref="WithUsbId(HardwareId, HardwareId?)"/>,
-    /// …). The cache is only seeded for devices that pass the watcher-level
-    /// filter, so this is the watcher's <i>filtered</i> known set, not the raw
+    /// …). The underlying cache holds every device the provider reported,
+    /// because it is also the replay source for trackers, which may hold devices
+    /// the watcher-level filter rejects; this property applies the filter on
+    /// read, so it is the watcher's <i>filtered</i> known set, not the raw
     /// whole-tree snapshot.</para>
     /// <para><b>When valid:</b> empty before <see cref="StartAsync"/> and until
     /// the initial snapshot settles. After <see cref="StartAsync"/> returns the
@@ -684,12 +686,21 @@ public sealed class DeviceWatcher : IAsyncDisposable
     {
         get
         {
+            DeviceInfo[] cached;
             lock (_deviceCache)
             {
-                var snapshot = new DeviceInfo[_deviceCache.Count];
-                _deviceCache.Values.CopyTo(snapshot, 0);
-                return snapshot;
+                cached = new DeviceInfo[_deviceCache.Count];
+                _deviceCache.Values.CopyTo(cached, 0);
             }
+
+            // The cache is the replay source for trackers (ADR-0087 D3), so it holds every
+            // device the provider reported, including ones this watcher's own filter
+            // rejects. The public view applies the filter here, outside the lock, because
+            // Where() predicates are caller code.
+            var known = new List<DeviceInfo>(cached.Length);
+            foreach (var device in cached)
+                if (_filter.Matches(device)) known.Add(device);
+            return known;
         }
     }
 

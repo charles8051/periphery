@@ -430,6 +430,33 @@ public class DeviceWatcherEventTests
     }
 
     [Fact]
+    public async Task KnownDevices_RespectsWatcherFilter_WhenATrackerWidensTheWalk()
+    {
+        // A registered tracker makes the startup walk enumerate unfiltered, and the
+        // replay cache keeps every device it sees so Reconfigure can feed the tracker
+        // (ADR-0087 D3). The public property must still be the watcher's filtered set.
+        var devices = new[]
+        {
+            MakeDevice(id: "USB\\1", category: DeviceCategory.Usb),
+            MakeDevice(id: "NET\\1", category: DeviceCategory.Network),
+        };
+        var (watcher, _, _) = CreateWatcher(devices);
+        watcher.OfCategory(DeviceCategory.Usb);
+        var tracker = watcher.AddTracker(f => f.OfCategory(DeviceCategory.Network), "net");
+
+        await watcher.StartAsync();
+
+        var known = watcher.KnownDevices.Select(d => d.Id).ToList();
+        Assert.Single(known);
+        Assert.Equal("USB\\1", known[0]);
+
+        // The tracker still resolved to the device the watcher filter hides.
+        Assert.Equal("NET\\1", tracker.Device?.Id);
+
+        await watcher.DisposeAsync();
+    }
+
+    [Fact]
     public async Task KnownDevices_ReturnsIndependentSnapshotCopy()
     {
         var (watcher, _, monitor) = CreateWatcher(MakeDevice(id: "USB\\1"));

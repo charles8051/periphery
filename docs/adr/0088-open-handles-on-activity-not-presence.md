@@ -1,7 +1,7 @@
 ---
 title: "ADR-0088: Open handles on activity, never on presence"
-status: "Proposed"
-status_note: "Rule already implemented by DeviceProxy / DeviceSessionHost; written down because two consumers bypassed them and got it wrong independently."
+status: "Accepted"
+status_note: "Rule already implemented by DeviceProxy / DeviceSessionHost; written down because two consumers bypassed them and got it wrong independently. Both fixed on main (#194, #196, #197). The XML remarks on DeviceWatcher.Appeared / Activated that state the rule landed with this ADR (#195)."
 date: "2026-09-06"
 authors: "@charles8051"
 tags: ["architecture", "decision", "device-proxy", "device-watcher", "state-model", "adr-0004"]
@@ -61,8 +61,8 @@ moment the wait returns, so it could be handed a devnode whose driver had not st
 recovery budget on healthy hardware. Its post-flash return wait had the same shape, so a board that
 enumerated but never started would be reported as having returned to application mode.
 
-**`TreehopperControlService`** subscribes to `Appeared` only and calls `UsbDevice.OpenAsync` from
-the handler. The open throws and is swallowed, so a live-plugged board silently shows no firmware
+**`TreehopperControlService`** subscribed to `Appeared` only and called `UsbDevice.OpenAsync` from
+the handler. The open threw and was swallowed, so a live-plugged board silently showed no firmware
 version, with no second chance.
 
 Both were invisible on Windows for the library's whole history, because Windows `DeviceAppeared`
@@ -138,8 +138,8 @@ it is why D3 is a decision rather than a style preference.
 | Consumer | State |
 |---|---|
 | `DeviceProxy` / `DeviceProxyBase` / `DeviceSessionHost` | Compliant. Nine activity gates, no presence gate. |
-| `TrackerDeviceWaitSource` | Fixed — gates on `Active`. |
-| `TreehopperControlService` | Fixed in #196 — presence work stays on `Appeared`, the board open moved to `Activated`, per D2. |
+| `TrackerDeviceWaitSource` | Fixed in #194 — gates on `Active`. |
+| `TreehopperControlService` | Fixed in #196 and #197 — presence work stays on `Appeared`, the board open moved to `Activated` (#196), and the session is closed on `Deactivated` (#197), per D1 and D2. |
 
 A consumer that opens a device from an `Appeared` handler is a defect under this ADR, whether or
 not the platform it runs on currently delivers that event. Both known instances were fixed as this

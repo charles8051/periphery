@@ -1,6 +1,6 @@
 # Reproducing the EP_PeripheralConfig desync on a bench board
 
-Bench procedure for [#191](https://github.com/charles8051/periphery/issues/170) test 2, the
+Bench procedure for [#191](https://github.com/charles8051/periphery/issues/191) test 2, the
 one ADR-0086 D5 blocks the firmware release on. The harness is
 [`scratch/Apa102Desync`](../../scratch/Apa102Desync/Program.cs).
 

@@ -1,7 +1,7 @@
 ---
 title: "ADR-0087: Reconcile device activity at the watcher boundary"
-status: "Proposed"
-status_note: "Reproduction and four prototypes measured. Not implemented. Earlier draft of this ADR located the fix in DeviceTrackerResolution and is superseded within this file."
+status: "Accepted"
+status_note: "Implemented on main in #193 (D1, D2 scoped to the start window, D3). The evidence-recency gap left open here is tracked in #201. Earlier draft of this ADR located the fix in DeviceTrackerResolution and is superseded within this file."
 date: "2026-09-06"
 authors: "@charles8051 (reproduction, four parallel prototypes, adversarial review)"
 tags: ["architecture", "decision", "device-watcher", "device-tracker", "state-model", "cross-platform", "adr-0004"]
@@ -20,8 +20,10 @@ depends_on: ["0004-two-level-device-state-model.md", "0006-device-profile-single
 
 ## Status
 
-**Proposed.** Reproduced on `main`; four options implemented and measured in parallel worktrees.
-Not implemented on a shipping branch.
+**Accepted.** Reproduced on `main`; four options implemented and measured in parallel worktrees.
+Implemented on `main` in #193: D1 on both the live path and the walk, D2 scoped to the start
+window, D3 on every lifecycle edge. The evidence-recency gap in **Rejected options** is open as
+#201.
 
 An earlier draft of this ADR decided a change to `DeviceTrackerResolution` on a justification that
 measurement falsified. That draft is replaced here rather than kept, because it was never merged.
@@ -108,8 +110,9 @@ tracker-layer option reaches it.
 
 **Reconcile at the `DeviceWatcher` fan-out boundary. Leave `DeviceTrackerResolution` alone.**
 
-Three parts, all in `DeviceWatcher`, measured together at **1250/1250 green, +49 lines, zero lines
-changed in the pure core**:
+Three parts, all in `DeviceWatcher`. The prototype measured **1250/1250 green, +49 lines, zero
+lines changed in the pure core**; the shipped change (#193) is larger because D2 is scoped to the
+start window and the reasoning is recorded inline:
 
 ### D1 — The watcher is the authority on activity
 
@@ -133,8 +136,10 @@ every downstream consumer in one place.
 ### D2 — The startup walk reconciles rather than replays
 
 Any id the live stream has already handled carries a strictly fresher verdict than the payload the
-walk is holding. The walk skips those ids. One `HashSet<DeviceId>`, populated by the four provider
-handlers, consulted in `SnapshotCurrentDevicesAsync`.
+walk is holding. The walk skips those ids. One `HashSet<DeviceId>`, populated by the two presence
+handlers (`Appeared` and `Disappeared`) and consulted in `SnapshotCurrentDevicesAsync`. Activity
+edges do not populate it: they say nothing about whether the devnode is in the tree, and D1 already
+reconciles the walk's activity payload.
 
 This closes the walk-versus-live race, its mirror, **and** the duplicate startup `Appeared` — the
 walk already guards `Activated` against `_knownConnectedIds` at `DeviceWatcher.cs:963-971` and does
@@ -229,8 +234,10 @@ being purity and starts being capability.
   after a failed start, and a stale id there would assert `IsActive = true` falsely. Narrower than
   Option 1's exposure — D1 only upgrades on an unretracted `Activated`, and both `Deactivated` and
   `Disappeared` retract — but not zero.
-- **D2 needs scoping.** The prototype never clears its skip set; a shippable version must scope it
-  to the start window per attempt.
+- **D2 needs scoping.** The prototype never cleared its skip set. The shipped version opens the
+  window before the monitor provider goes live and closes it in the start attempt's `finally`, so
+  the set is bounded by the devices that change during one enumeration and a failed start does not
+  leave it latched for the retry.
 - **D2 can silently drop a device**, over a wider window than "filtered out". The skip set is
   populated at the top of each provider handler, before the watcher filter runs, so an id whose
   live edge the filter rejected is still skipped when the walk reaches it. If the walk's payload
@@ -293,8 +300,8 @@ which is the correct outcome.
 
 Nothing distinguishes a stale property payload from a truthful one at this boundary: both arrive as
 `IsActive` going true to false for a device the watcher believes active. Telling them apart needs
-the evidence-recency notion named below, which is precisely what none of the options considered
-here provide. Left open rather than closed badly.
+an evidence-recency notion, which is precisely what none of the options considered here provide.
+Left open rather than closed badly; tracked as #201.
 
 ## Follow-on work, not decided here
 
