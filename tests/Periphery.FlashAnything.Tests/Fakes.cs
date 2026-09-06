@@ -147,11 +147,22 @@ internal sealed class FakeMonitor : IDeviceMonitorProvider
     public event EventHandler<DeviceModificationEventArgs>? DevicePropertyChanged;
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    /// <summary>Simulate a device plugging in (arrival + activation).</summary>
+    /// <summary>
+    /// Simulate a device plugging in (arrival + activation).
+    /// <para>The activation payload is stamped <see cref="DeviceInfo.IsActive"/> because that is
+    /// what every real provider does and what the flag means: Windows builds it from a fresh
+    /// <c>DN_STARTED</c> read, Linux from <c>authorized</c>, macOS from the session property. A
+    /// fake that raised <c>DeviceActivated</c> carrying <c>IsActive == false</c> put the tracker in
+    /// a state hardware cannot produce — the connected latch claimed while
+    /// <c>DeviceTrackerResolution.Resolve</c> reads the snapshot flag and reports only Present. The
+    /// fixtures here do not set the flag, so every activation was landing that way, and consumers
+    /// asserting on readiness were being handed a device that on real hardware could not be
+    /// opened.</para>
+    /// </summary>
     public void Plug(DeviceInfo device)
     {
         DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
-        DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
+        DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device with { IsActive = true }));
     }
 
     /// <summary>

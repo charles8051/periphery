@@ -65,8 +65,18 @@ internal sealed class TrackerDeviceWaitSource : IDeviceWaitSource
     {
         public void OnNext(DeviceTrackerState state)
         {
+            // Active, not merely non-Absent. This is a readiness gate: the caller opens a
+            // USB or serial handle the moment it completes, and a devnode that is in the
+            // OS device tree but whose driver has not started cannot be opened. Present
+            // is exactly that state (ADR-0004), so admitting it hands the orchestrator a
+            // device it cannot use — the #251 failure, a wasted attempt that eats the
+            // recovery budget on healthy hardware.
+            //
+            // Gating on Present was invisible on Windows only because DeviceAppeared
+            // never fired there for a live arrival (#177). Linux and macOS raise it on
+            // arrival before activation, so they could open this gate early today.
             if (state.Device is { } device
-                && state.ActivityStatus != DeviceActivityStatus.Absent
+                && state.ActivityStatus == DeviceActivityStatus.Active
                 && owner._filter.Matches(device))
                 owner.Appeared?.Invoke(device);
         }
