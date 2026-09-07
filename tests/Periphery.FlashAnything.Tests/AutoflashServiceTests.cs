@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -50,7 +51,7 @@ public class AutoflashServiceTests
     public async Task Arms_and_flashes_a_target_present_at_arm_time()
     {
         var monitor = new FakeMonitor();
-        await using var svc = new FlashAnythingService(Registry(), FakeDevices.Watcher(monitor, FakeDevices.Usb("dfu")));
+        await using var svc = new FlashAnythingService(Registry(), FakeDevices.Watcher(monitor, FakeDevices.ActiveUsb("dfu")));
         await svc.RefreshAsync();
         var fw = await TempBinAsync();
         try
@@ -63,6 +64,119 @@ public class AutoflashServiceTests
             Assert.Equal(FlashStage.Flashed, svc.State.Find("dfu")!.Stage);
         }
         finally { File.Delete(fw); }
+    }
+
+    /// <summary>
+    /// ADR-0088 D1: the open happens on activity, never on presence. A hot-plugged bootloader
+    /// raises Appeared when its devnode enters the tree and Activated when its driver starts; on
+    /// Windows those are two notifications with nothing serialising them. Opening on the first
+    /// hands the provider a devnode with no driver, and the wasted attempt eats the recovery
+    /// budget on healthy hardware. The target is still surfaced on presence (D2, inventory).
+    /// </summary>
+    [Fact]
+    public async Task Does_not_flash_a_hotplugged_target_until_it_is_active()
+    {
+        var monitor = new FakeMonitor();
+        var opens = new ConcurrentQueue<string>();
+        await using var svc = new FlashAnythingService(Registry(onOpen: opens.Enqueue), FakeDevices.Watcher(monitor));
+        await svc.RefreshAsync();
+        var fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
+
+            monitor.Appear(FakeDevices.Usb("dfu"));
+            await WaitUntil(svc, s => s.Find("dfu") is not null);
+            await Task.Delay(200);
+            Assert.Empty(opens);
+            Assert.Equal(0, svc.State.AutoflashTally.Total);
+
+            monitor.Activate(FakeDevices.Usb("dfu"));
+            await WaitUntil(svc, s => s.AutoflashTally.Total >= 1);
+
+            Assert.Equal(new[] { "dfu" }, opens.ToArray());
+            Assert.Equal(FlashStage.Flashed, svc.State.Find("dfu")!.Stage);
+        }
+        finally { File.Delete(fw); }
+    }
+
+    /// <summary>
+    /// The arm-time sweep has the same rule: a target that is present but not started when the
+    /// bench is armed is not opened then; it is flashed on its first Active tick.
+    /// </summary>
+    [Fact]
+    public async Task Does_not_flash_a_target_present_but_not_started_at_arm_time_until_it_starts()
+    {
+        var monitor = new FakeMonitor();
+        var opens = new ConcurrentQueue<string>();
+        await using var svc = new FlashAnythingService(Registry(onOpen: opens.Enqueue), FakeDevices.Watcher(monitor, FakeDevices.Usb("dfu")));
+        await svc.RefreshAsync();
+        var fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
+            await Task.Delay(200);
+            Assert.Empty(opens);
+
+            monitor.Activate(FakeDevices.Usb("dfu"));
+            await WaitUntil(svc, s => s.AutoflashTally.Total >= 1);
+
+            Assert.Equal(new[] { "dfu" }, opens.ToArray());
+        }
+        finally { File.Delete(fw); }
+    }
+
+    /// <summary>
+    /// ADR-0088 D1, at the open rather than only at the enqueue. Autoflash is queued on the Active
+    /// tick, but the open happens later on a worker; a `Deactivated` in that gap leaves the target
+    /// present with a stale-active cached payload. The worker re-checks activity before the flash,
+    /// so a target that is inactive at pickup is skipped rather than opened. (It is not un-marked,
+    /// so like any skipped target it flashes on a later arm, not automatically — that keeps the
+    /// skip free of a lost-update race with a concurrent reactivation.)
+    /// </summary>
+    [Fact]
+    public async Task Skips_a_queued_target_that_goes_inactive_before_the_flash()
+    {
+        var monitor = new FakeMonitor();
+        var opens = new ConcurrentQueue<string>();
+        var releaseA = new TaskCompletionSource();
+        var aOpening = new TaskCompletionSource();
+        // maxFlashConcurrency 1: A holds the single worker while B waits in the queue, so the test
+        // controls the gap between B's enqueue and B's flash deterministically.
+        var reg = new BootloaderRegistry();
+        reg.Register(new FakeBootloaderProvider(Family, _ => true,
+            d =>
+            {
+                opens.Enqueue(d.Id);
+                if (d.Id == "a") { aOpening.TrySetResult(); releaseA.Task.GetAwaiter().GetResult(); }
+                return new FakeFirmwareProgrammer(d, FlashResult.Ok(64, verified: true));
+            },
+            IdentificationMode.Passive));
+        await using var svc = new FlashAnythingService(reg, FakeDevices.Watcher(monitor), maxFlashConcurrency: 1);
+        await svc.RefreshAsync();
+        var fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
+
+            monitor.Plug(FakeDevices.Usb("a"));
+            await aOpening.Task.WaitAsync(TimeSpan.FromSeconds(5)); // worker is inside A's open
+
+            monitor.Plug(FakeDevices.Usb("b"));                    // B enqueues behind A
+            await WaitUntil(svc, s => s.Find("b") is not null);
+            monitor.Deactivate(FakeDevices.Usb("b"));              // B's driver stops, B stays present
+
+            releaseA.TrySetResult();                               // A finishes; worker turns to B and skips it
+            await WaitUntil(svc, s => s.Find("a")!.Stage == FlashStage.Flashed);
+            await Task.Delay(200);
+
+            Assert.Equal(new[] { "a" }, opens.ToArray());          // B was never opened
+            Assert.NotEqual(FlashStage.Flashed, svc.State.Find("b")!.Stage);
+        }
+        finally { releaseA.TrySetResult(); File.Delete(fw); }
     }
 
     [Fact]

@@ -357,7 +357,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
                 isNew ? "new" : "existing", mode, device.Id, DisplayName(device), family, state.ActivityStatus);
             Emit(new AppEvent.TargetDetected(
                 device.Id, DisplayName(device), family, identification, mode, bridge, device.PortName));
-            if (isNew) MaybeAutoflash(device.Id); // autoflash on first detection; re-arrival after a reset re-evaluates (and dedupes)
+            // Autoflash fires on activity, never on presence (ADR-0088 D1): a devnode in the tree
+            // whose driver has not started cannot be opened, and a wasted open eats the recovery
+            // budget on healthy hardware. The presence tick still surfaces the target above (D2,
+            // inventory). MaybeAutoflash dedupes within the armed session (_flashedThisSession), so
+            // firing it on each Active tick still flashes at most once, and a device that
+            // deactivates and reactivates while present re-evaluates against that one gate.
+            if (state.IsActive) MaybeAutoflash(device.Id);
         }
         else
         {
@@ -777,6 +783,10 @@ public sealed class FlashAnythingService : IAsyncDisposable
                      .Where(t => t.Identification == IdentificationMode.Passive)
                      .Select(t => t.Id).ToList())
         {
+            // Only targets that are active now (ADR-0088). One that is present but not started is
+            // flashed later, by OnTrackerState on its first Active tick.
+            if (!_tracker.Trackers.TryGetValue(id, out var child) || !child.IsActive)
+                continue;
             MaybeAutoflash(id);
         }
     }
@@ -1138,6 +1148,23 @@ public sealed class FlashAnythingService : IAsyncDisposable
                 if (armed is null)
                 {
                     Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "disarmed before flash", label));
+                    continue;
+                }
+
+                // Re-check activity before the flash opens the device (ADR-0088 D1). The enqueue
+                // happened on an Active tick, but a Deactivated can land before the worker reaches
+                // the target — it stays present, so the removal path does not fire and the cached
+                // DeviceInfo is stale-active. Skipping here turns a target that is already inactive
+                // at pickup into a clean skip rather than a failed open. The residual window between
+                // this check and the native open cannot be closed against a device that may
+                // deactivate at any instant, including during the open itself; there the open fails
+                // and is caught as one attempt. The mark is left in place — a target skipped here is
+                // not retried until the next arm, matching the disarm skip above and the pre-#204
+                // behaviour where a presence open failed and stayed marked. Deliberately not
+                // un-marked: doing so races a reactivation's own enqueue and can lose the edge.
+                if (!_tracker.Trackers.TryGetValue(id, out var child) || !child.IsActive)
+                {
+                    Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "target went inactive before flash", label));
                     continue;
                 }
 
