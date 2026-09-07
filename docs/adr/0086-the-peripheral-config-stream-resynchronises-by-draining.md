@@ -165,12 +165,19 @@ by construction, so nothing this firmware could have written can fail the test.
 Confirmed on hardware - a bench board flashed with this change kept its serial
 `cDYhINBh` across the update.
 
-**And it is not hypothetical.** D5 test 4 found two boards at
-those two boards in precisely the falsely-valid state right now: marker present,
-record unserveable, no self-repair across four days and many reboots. Under the
-old one-byte test they stay broken forever. Under this one they regenerate on the
-first boot after the update - which means the fix reaches boards already damaged,
-not only boards not yet damaged.
+**What this does not do: repair a record whose payload is damaged.** A record
+written with a well-formed header over a corrupt payload passes every field the
+check inspects, so `SerialNumber_Init` accepts it and never regenerates - on this
+firmware and on its predecessor alike. The check covers an interrupted erase that
+leaves the *header* inconsistent. Payload damage is invisible to it. Tracked as
+#185.
+
+**Corrected 2026-09-07.** An earlier revision of this decision claimed the
+opposite: that the check would let an already-damaged board regenerate on its
+next boot, so the fix "reaches boards already damaged, not only boards not yet
+damaged". It does not. The two failure modes are easy to conflate, because both
+end in a record that looks valid and is not - which is presumably how they came
+to be conflated here.
 
 ### D4. The supply monitor is enabled and selected before any flash write
 
