@@ -444,6 +444,31 @@ the failure the current buffer already has. `GetAsyncEnumerator` is an iterator,
 so `await foreach`'s own disposal covers the caller-breaks-early case; the
 `Take` path needs the same discipline on its own exit.
 
+**Implemented.** `GetAsyncEnumerator` splits into two private iterators —
+`StreamAsync` when there is no `OrderBy`, `SortedAsync` when there is — rather
+than branching inside one method, so neither path can accidentally acquire the
+other's cost. `yield break` inside the `await foreach` runs its `finally`, which
+disposes the provider's enumerator, so the limit stops the walk rather than
+merely truncating its output.
+
+Two details worth recording, because both were assumptions until they were
+checked:
+
+- **The limit is checked *after* yielding**, which is only safe because
+  `Take` already rejects zero and negative (`ThrowIfNegativeOrZero`). A
+  pre-yield check would have to observe an *n+1*th match to know it was done,
+  producing one device more than necessary. A test pins the validation that
+  makes the post-check sound, since removing it would silently make `Take(0)`
+  return one item.
+- **The completion log moved into a `finally`**, so a caller that breaks early
+  still reports what was actually touched rather than nothing at all.
+
+The tests assert on how many devices the *provider* was asked to produce, not on
+the query's results. Results alone would pass just as happily against the old
+unconditional buffer, which walked everything and then discarded all but the
+first — so a results-only test would not have caught the regression it exists to
+prevent.
+
 Ordering of streamed results is provider order, which is what the current
 unordered path already yields. This changes only when items are produced and how
 many devices are touched, both of which the `IAsyncEnumerable` contract already
@@ -756,8 +781,12 @@ resolution latches).
   data-expressible `IDeviceCriteria` member has a corresponding spec property.
 - D3 changes timing a caller may have come to depend on. A `FirstOrDefaultAsync`
   that previously observed a device appearing late in the walk may now return
-  earlier. This is a behaviour change within a documented streaming contract, and
-  lands on a major.
+  earlier, and an `await foreach` consumer can have received items before a
+  mid-walk provider fault surfaces, where the buffer surfaced it with nothing
+  yielded. Both are behaviour changes within a documented streaming contract:
+  the type calls itself lazy, no terminal returns a different value, and
+  nothing documented the buffer's failure atomicity. So D3 shipped as a fix on
+  the same minor as the D6 rollback (#150), not on a major as first planned.
 - D6's transactional attempt makes the failure path do real work — detach,
   dispose, clear — where today it does none. A bug in that rollback is a leaked
   provider registration, which is harder to spot than the unstartable watcher it
@@ -781,8 +810,10 @@ resolution latches).
 ### Neutral
 
 - No device model, provider, enricher, or platform contract changes.
-- D1, D2, D4, D5, and the policy overload in D6 are additive. D3 and the
-  `_started` rollback in D6 are behavioural and land together on a major.
+- D1, D2, D4 and D5 are additive; the D6 policy overload was cut. D3 and the
+  `_started` rollback in D6 are behavioural but within the documented contract,
+  and both shipped as fixes on a minor (#149, #150) rather than together on a
+  major as first planned.
 
 ---
 
@@ -822,12 +853,13 @@ where the two differ.
 
 1. **D1** — the interface, and the five gap closures it implies. Additive.
 2. **D2** — `DeviceFilterSpec` on top of D1's settled vocabulary. Additive.
-3. **D6 policy overload** — additive. The `_started` rollback ships with D3.
+3. **D6** — the transactional start attempt. Shipped as a fix (#149); the
+   policy overload was cut.
 4. **D4** — facets. Additive, and independent of D1–D3 and D5–D6, but
    **blocked on `#93`**: `DisplayFacet` cannot be specified until the six
    display fields with no producer either get one or are deleted.
-5. **D3** — streaming terminals. Behavioural; lands on a major with the
-   `_started` rollback.
+5. **D3** — streaming terminals. Behavioural, within the documented contract;
+   shipped as a fix (#150).
 6. **D5** — `CameraDeviceProxy` and `StallTimeout`. Largest single piece,
    independent of D1–D4, and **blocked on `#123`**: a stall the proxy cannot
    reopen from deterministically is not worth automating.
