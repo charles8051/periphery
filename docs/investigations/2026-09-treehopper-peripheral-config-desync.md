@@ -516,7 +516,7 @@ only worth recording alongside the stall values you swept.
 ## Carrying forward
 
 The v2.77 image verifies MATCH against `dist/Treehopper.hex` on every board it has been flashed
-to. Three things are worth carrying forward.
+to. Two things are worth carrying forward.
 
 ### A flash does not repair a damaged descriptor
 
@@ -539,11 +539,3 @@ Validated against a board running v2.77 - `0x0000=0x02`, `0x0001=0x1D`, `0x0002=
 all matching the shipped image. Use it to settle "did the write land" byte-for-byte instead of
 inferring it from the USB revision, and to read the lock byte at `0x3DFF`. Its own defects are
 tracked as #182.
-
-### A caution learned the hard way
-
-An earlier revision of this document concluded that the write "does not land at all" on a
-multi-board hub, and an issue was filed on that basis. It was wrong. The writes landed and
-something else on the host rewrote the boards seconds later. A board read back at the old revision
-is not by itself evidence that a flash failed - check what else on the host can write to the same
-boards before drawing a conclusion. #179 is closed as incorrect.
