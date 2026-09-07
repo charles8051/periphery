@@ -19,7 +19,7 @@ depends_on: ["0004-two-level-device-state-model.md", "0054-windows-property-fres
 
 ## Status
 
-**Proposed.** The rule is already what `DeviceProxy`, `DeviceProxyBase` and `DeviceSessionHost`
+**Accepted.** The rule is already what `DeviceProxy`, `DeviceProxyBase` and `DeviceSessionHost`
 implement. This ADR writes it down because two consumers hand-rolled their own subscriptions and
 got it wrong independently, and one of them was wrong in shipped code.
 
