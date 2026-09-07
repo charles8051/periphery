@@ -128,7 +128,24 @@ internal sealed class DeviceTrackerResolution
             var presentLatch = _presentLatch[profile] is null
                 ? _presentLatch.SetItem(profile, device.Id)
                 : _presentLatch;
-            var devicesByProfile = SetDevice(profile, device);
+
+            // A presence edge is not an activity observation (ADR-0004). If the connected
+            // latch holds this id, the new payload keeps the held snapshot's activity, in
+            // both directions: a payload captured before the device started must not
+            // demote it, and a payload captured before a property transition demoted it
+            // must not promote it again. Only an activity edge (ApplyConnected,
+            // ApplyDisconnected) or a property transition (ApplyPropertyChanged) moves
+            // that flag. The payload itself is still stored, so enrichment carried by a
+            // presence edge is not lost. ADR-0087, Option 2.
+            var snapshot = device;
+            if (_connectedLatch[profile] == device.Id &&
+                _devicesByProfile[profile].TryGetValue(device.Id, out var held) &&
+                held.IsActive != device.IsActive)
+            {
+                snapshot = device with { IsActive = held.IsActive };
+            }
+
+            var devicesByProfile = SetDevice(profile, snapshot);
 
             return With(devicesByProfile: devicesByProfile, presentLatch: presentLatch);
         }

@@ -1,7 +1,7 @@
 ---
 title: "ADR-0087: Reconcile device activity at the watcher boundary"
 status: "Accepted"
-status_note: "Implemented on main in #193 (D1, D2 scoped to the start window, D3). The evidence-recency gap left open here is tracked in #201. Earlier draft of this ADR located the fix in DeviceTrackerResolution and is superseded within this file."
+status_note: "Implemented on main in #193 (D1, D2 scoped to the start window, D3). Amended 2026-09-07: Option 2 adopted in the pure core alongside D1, plus a re-check of both axes before tracker fan-out and a gate on inactive Activated payloads in the watcher (#201, #202). The evidence-recency gap left open here is still tracked in #201. Earlier draft of this ADR located the fix in DeviceTrackerResolution and is superseded within this file."
 date: "2026-09-06"
 authors: "@charles8051 (reproduction, four parallel prototypes, adversarial review)"
 tags: ["architecture", "decision", "device-watcher", "device-tracker", "state-model", "cross-platform", "adr-0004"]
@@ -24,6 +24,33 @@ depends_on: ["0004-two-level-device-state-model.md", "0006-device-profile-single
 Implemented on `main` in #193: D1 on both the live path and the walk, D2 scoped to the start
 window, D3 on every lifecycle edge. The evidence-recency gap in **Rejected options** is open as
 #201.
+
+**Amended 2026-09-07.** An independent review of #193 measured a window this decision left open:
+the public `Appeared` raise runs consumer code between the reconciliation at the top of the handler
+and the tracker fan-out, and an edge for the same id that lands in that window makes the fan-out
+payload stale. On Windows the two halves of one hot-plug arrive on separate threads, so the window
+is a race per arrival; during startup the walk and the live stream overlap on every platform. Its
+consequences were permanent: a demoted tracker stays demoted because `OnProviderActivated`'s dedup
+guard blocks the recovery, and a removed device stays latched. Three changes close the permanent
+outcomes without an ordering guarantee, each pinned by a probe that fails without it:
+
+1. **Option 2 is adopted in the pure core alongside D1.** `ApplyAppeared` keeps the activity the
+   connected latch holds, in both directions: a payload captured before the device started cannot
+   demote it, and a payload captured before a property transition demoted it cannot promote it
+   again. See the Option 2 entry below for what changed since it was set aside.
+2. **The watcher re-checks both axes immediately before tracker fan-out**, on the live path and in
+   the walk: a device whose `Disappeared` landed during the raise is not announced, and its id does
+   not enter `_knownConnectedIds`; everything else is re-reconciled against the activity set as it
+   stands at fan-out time.
+3. **An `Activated` edge whose payload says `IsActive == false` is not recorded as an activation,
+   and is treated as no edge at all.** The core's fail-safe (Option 1's conjunct) stays; the
+   watcher no longer puts the id in `_knownConnectedIds`, so the genuine activation is not
+   deduplicated away (#202), and does not write the replay cache, so a later `Reconfigure` does
+   not replay an active device as `Present`. If the payload was wrong because a status read
+   failed rather than because the device is stopped, the device stays `Present` until a later
+   edge; telling those two apart is the provider's job, at the raise site.
+
+The recency gap itself remains open as #201. These narrow its consequences; they do not close it.
 
 An earlier draft of this ADR decided a change to `DeviceTrackerResolution` on a justification that
 measurement falsified. That draft is replaced here rather than kept, because it was never merged.
@@ -184,15 +211,27 @@ those edges gate on `IsActive`. Option 1 converts a fail-safe to fail-open, on t
 nothing clears the latch short of unplugging, and it leaves `state.Device.IsActive` contradicting
 `state.ActivityStatus`.
 
-### Option 2 — `ApplyAppeared` must not lower a latched activity. **Viable fallback, not chosen.**
+### Option 2 — `ApplyAppeared` must not lower a latched activity. **Set aside at first; adopted 2026-09-07 alongside D1–D3.**
 
 4 lines, all four acceptance tests pass, **zero regressions** across 1234 tests. It is the minimal
-correct tracker-layer fix and is the fallback if D1–D3 prove too broad.
+correct tracker-layer fix and was kept as the fallback if D1–D3 proved too broad.
 
-Not chosen because it fixes trackers only, closes one of the two races, does nothing about the
-mirror or `_deviceCache`, and drops first-arrival monitor enrichment — `TryBuildDeviceInfo` runs
-the same enrichers as `EnumerateAsync` minus `WindowsDisplayConfigEnricher`, so the walk's payload
-is the only enriched copy for a monitor with no prior cache entry.
+Not chosen on its own because it fixes trackers only, closes one of the two races, does nothing
+about the mirror or `_deviceCache`, and, as prototyped, dropped first-arrival monitor enrichment —
+`TryBuildDeviceInfo` runs the same enrichers as `EnumerateAsync` minus
+`WindowsDisplayConfigEnricher`, so the walk's payload is the only enriched copy for a monitor with
+no prior cache entry.
+
+Adopted in addition to D1–D3 once the fan-out window (see **Status**) showed that a boundary filter
+alone leaves the core exposed to any payload that reaches it late. Each objection is answered by
+the combination rather than by Option 2 alone: D1 fixes the public payload and every consumer, D2
+and the fan-out re-check cover the mirror, D3 covers `_deviceCache`, and the adopted form stores
+the new payload and replaces only its `IsActive` flag with the held snapshot's, in both directions,
+so enrichment is kept and a stale active payload cannot undo a property transition either. The latch algebra of
+ADR-0006 is unchanged: which id holds which slot is decided exactly as before; only the snapshot
+stored for a held id is reconciled. Option 2 also reaches a case D1 does not: a device the
+watcher-level filter rejects but a tracker holds, whose id the walk never adds to
+`_knownConnectedIds`.
 
 ### Option 3 — split `_devicesByProfile` into per-axis snapshot maps. **Deferred, with a named blocker.**
 
