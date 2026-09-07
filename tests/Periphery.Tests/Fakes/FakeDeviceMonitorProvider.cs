@@ -84,6 +84,20 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
     }
 
     /// <summary>
+    /// Raises <see cref="DeviceActivated"/> with the payload exactly as given, even when
+    /// it says <c>IsActive == false</c>. Models the provider raise sites that do not gate
+    /// on the flag (ADR-0087, rejected Option 1 names two), and a status read that failed
+    /// at the moment the OS reported the device started.
+    /// </summary>
+    public void SimulateActivatedEdge(DeviceInfo device)
+    {
+        if (!_started)
+            throw new InvalidOperationException("Not started");
+
+        DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
+    }
+
+    /// <summary>
     /// Simulates a property change on an existing device (e.g. battery level
     /// dropping, network link speed changing). Fires <see cref="DevicePropertyChanged"/>
     /// with <paramref name="previous"/> and <paramref name="current"/> snapshots.

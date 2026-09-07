@@ -140,6 +140,52 @@ public class DeviceTrackerResolutionTests
         Assert.Null(resolved.Device);
     }
 
+    // ── Appeared under a held connected latch (ADR-0087, Option 2) ─────
+
+    [Fact]
+    public void ApplyAppeared_InactivePayload_DoesNotLowerAHeldActiveLatch()
+    {
+        // ADR-0004: presence and activity are orthogonal. A presence edge carrying a
+        // payload captured before the device started must not demote a device the
+        // connected latch holds as active.
+        var resolved = SingleUsb()
+            .ApplyConnected(MakeDevice(isActive: true))
+            .ApplyAppeared(MakeDevice(isActive: false, name: "Enriched Mouse"))
+            .Resolve();
+
+        Assert.Equal(DeviceActivityStatus.Active, resolved.ActivityStatus);
+        Assert.True(resolved.Device!.IsActive);
+        // The newer payload is still stored; only its activity flag is reconciled.
+        Assert.Equal("Enriched Mouse", resolved.Device.Name);
+    }
+
+    [Fact]
+    public void ApplyAppeared_InactivePayload_KeepsAnInactiveHeldSnapshotInactive()
+    {
+        // The fail-safe stays: a connected latch held on an inactive snapshot does not
+        // become Active because a presence edge arrived.
+        var resolved = SingleUsb()
+            .ApplyConnected(MakeDevice(isActive: false))
+            .ApplyAppeared(MakeDevice(isActive: false))
+            .Resolve();
+
+        Assert.Equal(DeviceActivityStatus.Present, resolved.ActivityStatus);
+    }
+
+    [Fact]
+    public void ApplyPropertyChanged_IsActiveFalse_StillDemotesAHeldLatch()
+    {
+        // A property transition is an activity observation and must still demote
+        // (the "no deafness" driver in ADR-0087).
+        var resolved = SingleUsb()
+            .ApplyAppeared(MakeDevice(isActive: true))
+            .ApplyConnected(MakeDevice(isActive: true))
+            .ApplyPropertyChanged(MakeDevice(isActive: false))
+            .Resolve();
+
+        Assert.Equal(DeviceActivityStatus.Present, resolved.ActivityStatus);
+    }
+
     // ── Disconnected (soft-latch release) ──────────────────────────────
 
     [Fact]
