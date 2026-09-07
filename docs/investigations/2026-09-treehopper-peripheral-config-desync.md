@@ -37,7 +37,7 @@ failed and nothing was run.
 
 A 63-pixel frame, which encodes to 260 bytes, which `Apa102Strip.FlushAsync`'s 252-byte
 chunking splits into a **259-byte SPITransaction command** — USB packets of 64/64/64/64/3.
-That is the shape every animation tick has, all day, on a kiosk.
+That is the shape every animation tick has in a host that animates a strip continuously.
 
 The harness writes packet 0, **waits `--stall-ms`**, then writes the rest. That stall is the
 whole experiment: it runs out the firmware's fixed spin budget on the continuation read
@@ -59,7 +59,7 @@ every iteration.
 Every pixel is `Rgb(R:0x00, G:0x00, B:0x01)`, so the repeating wire group is
 `FF 01 00 00`. A packet boundary at command offset `64k` is stream offset `64k - 7`, and
 `(64k - 7 - 4) mod 4 == 1` for every `k` — **the Blue channel, every time**. That is the
-phase the field evidence showed, and it is arithmetic, not luck: `64 mod 4 == 0`.
+phase the issue's evidence showed, and it is arithmetic, not luck: `64 mod 4 == 0`.
 
 So the byte that lands at `Treehopper_PeripheralConfig[0]` is `0x01 ConfigureDevice`, which
 calls `Treehopper_Init()` and touches no flash. Every other phase of that group is inert:
@@ -112,9 +112,10 @@ Not covered by this harness; ADR-0086 D5 lists them and they gate the release ju
   difference is a host-side presentation artefact, not marginal cells. See "Test 3: the case
   flips" below. D4 stays in on the reference manual's authority, but it no longer explains a
   symptom.
-- **Test 4 — read `0xF800`–`0xFBBF` over C2 on the two damaged boards before reflashing**,
-  the lock byte in particular. Do this before anything else touches them: reflashing destroys
-  the evidence, and the unbounded write means a locked part is a real possibility.
+- **Test 4 — read `0xF800`–`0xFBBF` over C2 on a damaged board before reflashing**, the lock
+  byte in particular. Do this before anything else touches it: reflashing destroys the
+  evidence. Mostly answered without C2, from host logs; see "Test 4" below. (The lock byte
+  turned out to be out of the unbounded write's reach; see "A correction this turned up".)
 
 ## Result, 2026-09-04
 
@@ -235,7 +236,7 @@ Two consequences, and the second is much the worse:
 1. The `FAILED` is not a false negative. The verify genuinely failed, on a board that was
    never going to match.
 2. **Flashing one board takes an uninvolved board of the same model off the bus**, repeatedly.
-   On a kiosk hub that is every other Treehopper on it.
+   On a hub carrying several Treehoppers that is every other board on it.
 
 **Why.** Two things combine.
 
@@ -395,15 +396,7 @@ passes the device's own string through, the SetupAPI/PnP enumeration path upperc
 
 ### Which accounts for every example in the issue
 
-| reported as "before" | reported as "after" | uppercase of "after"? |
-|---|---|---|
-| `XXXXXXXX` | `xXXxxxxx` | yes |
-| `0XX1XXXX` | `0XX1XXxX` | yes |
-| `XXXXXXXX` | `xXxxXXXX` | yes |
-
-Serials are masked: `X`/`x` stands for a letter, digits are shown as themselves, and the case of
-every position is preserved exactly as reported. Raw serials are held out of this public document.
-
+In every "before" / "after" pair the issue gives, the "before" is the uppercase of the "after".
 Every character that differs is a lowercase letter in the mixed-case reading; every digit is
 untouched. That is what case normalisation does, and it is not what a drifting flash cell does
 - a cell has no notion of "letter".
@@ -450,98 +443,69 @@ Two further things fall out of the same reads:
 - **The C2 read is live, not cached.** It changed exactly where a rename should change it and
   nowhere else, which is the positive control for every other read in this section.
 
-## Test 4, mostly answered from artifacts already off the station
+## Test 4, mostly answered from host logs
 
-**No deployment, no C2, no site visit.** The station (control-plane id
-withheld) uploads gzipped-NDJSON diagnostic snapshot artifacts, and two of
-them bracket the incident. The control-plane artifact fetch is read-only.
+No C2 read was taken from a damaged board. Host logs from the hub that carried the two damaged
+boards, bracketing the incident, answered most of what the read was for.
 
-The incident is 2026-09-01 22:02 local = **2026-09-02 03:02 UTC**.
+### The garbage name
 
-### The garbage name, from the station's own logs
+Both damaged boards reported the name `06 FF 0B 09 06 FF 0B 09 06` - the nine bytes the issue
+derived, byte-identical, on both boards. Confirmed rather than reconstructed.
 
-```
-03:02:21.928  USB\VID_10C4&PID_8A7E&HUBPATH&0&1   name='ÿ	ÿ	'
-03:02:21.932  USB\VID_10C4&PID_8A7E&HUBPATH&0&2   name='ÿ	ÿ	'
-```
+### The bootloader entries
 
-`06 FF 0B 09 06 FF 0B 09 06` - the nine bytes the issue derived, byte-identical, on both
-boards. Confirmed rather than reconstructed.
+All three boards entered their bootloaders, in two waves eleven seconds apart, exactly as the
+issue reports. Nothing in the log requests a bootloader entry.
 
-### The bootloader entries, confirmed
+### What the logs change
 
-```
-03:02:25.072  board-A  disappears            -> PID_EAC9&hubpath&0&3 at 03:02:25.303
-03:02:35.856  6&HUBPATH&0&1 disappears        -> PID_EAC9&hubpath&0&1 at 03:02:36.076
-03:02:35.916  6&HUBPATH&0&2 disappears        -> PID_EAC9&hubpath&0&2 at 03:02:36.190
-03:02:37.5-6  all three bootloaders vanish; the boards come back
-```
-
-All three boards, two waves 11 s apart, exactly as the issue reports. Nothing in the log
-requests a bootloader entry.
-
-### What the artifacts change
-
-**The identity loss PREDATES the bootloader event.** At `03:02:21` - four seconds before the
-first board enters its bootloader, during the app's own startup device snapshot - both damaged
-boards are *already* carrying the garbage name and are *already* enumerating by port path
-(`6&HUBPATH&0&1`) rather than by serial. So these are two separate events and the descriptor
-damage came first. The issue treats the 22:02 bootloader arrivals as the visible edge of the
-same incident; they are the second act, and the snapshot does not reach back to the first.
+**The identity loss PREDATES the bootloader event.** Four seconds before the first board enters
+its bootloader, during the host's own startup device snapshot, both damaged boards are *already*
+carrying the garbage name and are *already* enumerating by port path rather than by serial. So
+these are two separate events and the descriptor damage came first. The issue treats the
+bootloader arrivals as the visible edge of the same incident; they are the second act, and the
+log does not reach back to the first.
 
 **The damaged boards serve no serial at all - not a garbage one.** A port-path instance id is
 what Windows falls back to when a device has no `iSerialNumber`. That matters, because a
 *garbage* serial is what the issue's "second such event with a Blue channel of `0x0A`"
 hypothesis predicts, and it is not what is there.
 
-**And that is field evidence for D3.** `SerialNumber_Init` regenerates whenever
+**And that is evidence for D3.** `SerialNumber_Init` regenerates whenever
 `serialNumber_serial[0] == 0xFF`, so a blank page would have self-healed into a fresh random
-serial on the very next boot. It has not, across four days and many reboots. So byte `[0]` is
+serial on the very next boot. It had not, across four days and many reboots. So byte `[0]` is
 present while the record is unserveable - a record that looks valid forever to the firmware and
 invalid to the USB stack, which is exactly the marker-written-first failure D3 fixes.
 
-**The rename workaround took, and did not restore the serial.** The 2026-09-05 snapshot shows
-`name='DepositChamber'` and `name='Vending'` on the same two port paths - still no serial.
-
 ### The case flip, caught in the act
 
-```
-03:02:25.072  USB\VID_10C4&PID_8A7E\XXXXXXXX     <- before the reboot
-03:02:37.793  USB\VID_10C4&PID_8A7E\xXXxxxxx     <- 12 s later, same board
-```
+The same log shows one board's instance id all-uppercase before a reboot and in mixed case
+twelve seconds later, across one re-enumeration. That is the issue's own first example, with
+timestamps. Twelve seconds is not cell drift, and the later reading is the mixed-case form that
+C2 shows is what is actually stored. Independent confirmation of test 3.
 
-The issue's own first example, with timestamps, in the instance id itself, across one
-re-enumeration. Twelve seconds is not cell drift, and the later reading is the mixed-case form
-that C2 shows is what is actually stored. Independent confirmation of test 3 on the affected
-station.
+### What is left
 
-### What is genuinely left
+One reading: **the raw `iSerialNumber` descriptor bytes from a damaged board** - what `bLength`
+comes back, and whether the request fails outright. That is the difference between "the length
+byte is garbage" and "the payload is garbage", and it is the one thing a log cannot say.
+`scratch/TreehopperIdentityProbe` is built and validated against C2 for exactly this. It needs a
+damaged board on a bench.
 
-One reading: **the raw `iSerialNumber` descriptor bytes from the two damaged boards** - what
-`bLength` comes back, and whether the request fails outright. That is the difference between
-"the length byte is garbage" and "the payload is garbage", and it is the last thing the logs
-cannot say. `scratch/TreehopperIdentityProbe` is built and validated against C2 for exactly
-this, and it needs to run on the station.
-
-It sharpens D3's field evidence. It does not change any decision already made.
+It would sharpen D3's evidence. It does not change any decision already made.
 
 ## What is still open
-
-> **Note (2026-09-06).** The image is sound and verifies MATCH on hardware. An attempt to roll
-> it out initially appeared to fail; that turned out to be a deployment-side agent reverting
-> the flash, not a fault in the image or the flasher. See "Deploying it" at the end.
-
 
 **Nothing gated the image itself.** All four ADR-0086 D5 tests are closed and `dist/` is
 regenerated at v2.77 (14827 HEX bytes, top `0x39EB`; `.tfi` 15433 bytes, 120 records). The
 bench board that reproduced the desync verifies MATCH against the shipped `dist/Treehopper.hex`.
 
-One reading was deliberately not taken: the raw `iSerialNumber` descriptor bytes from the two
-damaged boards. It needs code running on a production station, and the control plane has no
-run-a-binary path - deployment there means publishing an OTA workload to a live shredder. It
-would sharpen D3's field evidence and change no decision, so it was skipped rather than
-scheduled. `scratch/TreehopperIdentityProbe` is built and validated against C2 if it is ever
-wanted; run it against both boards and record what `bLength` comes back for string index 3.
+One reading was deliberately not taken: the raw `iSerialNumber` descriptor bytes from a damaged
+board, because no damaged board was on a bench. It would sharpen D3's evidence and change no
+decision, so it was skipped rather than scheduled. If one is ever available, run
+`scratch/TreehopperIdentityProbe` against it and record what `bLength` comes back for string
+index 3.
 
 ## Recording the next result
 
@@ -549,11 +513,10 @@ Add it here: firmware image and how it was verified, the `--stall-ms` sweep, ite
 desyncs, and the analyser trace if you took one. A "no desync" result on unfixed firmware is
 only worth recording alongside the stall values you swept.
 
-## Deploying it
+## Carrying forward
 
-The v2.77 image verifies MATCH against `dist/Treehopper.hex` on every board it has been flashed to,
-on the bench and in the field. Two firmware-side facts are worth carrying forward; the deployment
-mechanics are operational and are recorded in the private operations tracker rather than here.
+The v2.77 image verifies MATCH against `dist/Treehopper.hex` on every board it has been flashed
+to. Three things are worth carrying forward.
 
 ### A flash does not repair a damaged descriptor
 
@@ -580,7 +543,7 @@ tracked as #182.
 ### A caution learned the hard way
 
 An earlier revision of this document concluded that the write "does not land at all" on a
-multi-board hub, and an issue was filed on that basis. It was wrong. The writes landed and were
-overwritten seconds later by a deployment-side agent. A board read back at the old revision is not
-by itself evidence that a flash failed - check what else on the host may be writing to the same
+multi-board hub, and an issue was filed on that basis. It was wrong. The writes landed and
+something else on the host rewrote the boards seconds later. A board read back at the old revision
+is not by itself evidence that a flash failed - check what else on the host can write to the same
 boards before drawing a conclusion. #179 is closed as incorrect.
