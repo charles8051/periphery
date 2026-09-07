@@ -1350,6 +1350,22 @@ public sealed class DeviceWatcher : IAsyncDisposable
         // dedup returns, so a re-raise for an already-known device still refreshes it.
         lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
 
+        // An Activated edge whose own payload says the device is not active is not
+        // evidence of activity (#202). Two provider raise sites do not gate on the flag,
+        // and on Windows the flag comes from a status read that reports false when the
+        // read fails. The pure core already refuses to resolve such a payload as Active
+        // (ADR-0087, rejected Option 1, says why that fail-safe stays). What must not
+        // happen here is the id entering _knownConnectedIds: the dedup guard below would
+        // then swallow the genuine activation when it arrives, and on Windows nothing
+        // else ever repairs it (ADR-0054).
+        if (!e.Device.IsActive)
+        {
+            _logger.LogDebug(
+                "Activated edge carried an inactive payload, not recorded as an activation: {DeviceId} ({DeviceName})",
+                e.Device.Id, e.Device.Name ?? "(unnamed)");
+            return;
+        }
+
         // _knownConnectedIds.Add returns false when the ID is already present, so a
         // device that is already known-active does not re-raise Activated. The Windows
         // case this was written for (a DEVICEINTERFACEARRIVAL and a
