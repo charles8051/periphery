@@ -34,15 +34,21 @@ consequences were permanent: a demoted tracker stays demoted because `OnProvider
 guard blocks the recovery, and a removed device stays latched. Three changes close the permanent
 outcomes without an ordering guarantee, each pinned by a probe that fails without it:
 
-1. **Option 2 is adopted in the pure core alongside D1.** `ApplyAppeared` keeps an activity the
-   connected latch holds. See the Option 2 entry below for what changed since it was set aside.
+1. **Option 2 is adopted in the pure core alongside D1.** `ApplyAppeared` keeps the activity the
+   connected latch holds, in both directions: a payload captured before the device started cannot
+   demote it, and a payload captured before a property transition demoted it cannot promote it
+   again. See the Option 2 entry below for what changed since it was set aside.
 2. **The watcher re-checks both axes immediately before tracker fan-out**, on the live path and in
    the walk: a device whose `Disappeared` landed during the raise is not announced, and its id does
    not enter `_knownConnectedIds`; everything else is re-reconciled against the activity set as it
    stands at fan-out time.
-3. **An `Activated` edge whose payload says `IsActive == false` is not recorded as an activation.**
-   The core's fail-safe (Option 1's conjunct) stays; the watcher no longer puts the id in
-   `_knownConnectedIds`, so the genuine activation is not deduplicated away (#202).
+3. **An `Activated` edge whose payload says `IsActive == false` is not recorded as an activation,
+   and is treated as no edge at all.** The core's fail-safe (Option 1's conjunct) stays; the
+   watcher no longer puts the id in `_knownConnectedIds`, so the genuine activation is not
+   deduplicated away (#202), and does not write the replay cache, so a later `Reconfigure` does
+   not replay an active device as `Present`. If the payload was wrong because a status read
+   failed rather than because the device is stopped, the device stays `Present` until a later
+   edge; telling those two apart is the provider's job, at the raise site.
 
 The recency gap itself remains open as #201. These narrow its consequences; they do not close it.
 
@@ -220,7 +226,8 @@ Adopted in addition to D1–D3 once the fan-out window (see **Status**) showed t
 alone leaves the core exposed to any payload that reaches it late. Each objection is answered by
 the combination rather than by Option 2 alone: D1 fixes the public payload and every consumer, D2
 and the fan-out re-check cover the mirror, D3 covers `_deviceCache`, and the adopted form stores
-the new payload and preserves only its `IsActive` flag, so enrichment is kept. The latch algebra of
+the new payload and replaces only its `IsActive` flag with the held snapshot's, in both directions,
+so enrichment is kept and a stale active payload cannot undo a property transition either. The latch algebra of
 ADR-0006 is unchanged: which id holds which slot is decided exactly as before; only the snapshot
 stored for a held id is reconciled. Option 2 also reaches a case D1 does not: a device the
 watcher-level filter rejects but a tracker holds, whose id the walk never adds to

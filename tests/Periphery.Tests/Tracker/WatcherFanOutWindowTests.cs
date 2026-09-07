@@ -181,4 +181,23 @@ public class WatcherFanOutWindowTests
         Assert.Equal(DeviceActivityStatus.Active, tracker.ActivityStatus);
         Assert.Equal(new[] { true }, activated);
     }
+
+    [Fact]
+    public async Task ActivatedWithAnInactivePayload_LeavesAnActiveDeviceAndItsCacheEntryAlone()
+    {
+        // The edge is treated as no edge: it must not write the replay cache either, or a
+        // later Reconfigure would replay the device as Present.
+        var (watcher, monitor) = Build();
+        await using var _ = watcher;
+        var tracker = watcher.AddTracker(f => f.OfCategory(DeviceCategory.Usb), name: "Device");
+        await watcher.StartAsync();
+
+        monitor.SimulateConnect(Device(isActive: true)); // Appeared + Activated
+        Assert.Equal(DeviceActivityStatus.Active, tracker.ActivityStatus);
+
+        monitor.SimulateActivatedEdge(Device(isActive: false));
+
+        Assert.Equal(DeviceActivityStatus.Active, tracker.ActivityStatus);
+        Assert.True(Assert.Single(watcher.KnownDevices).IsActive);
+    }
 }

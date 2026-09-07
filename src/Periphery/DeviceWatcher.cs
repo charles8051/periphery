@@ -1345,15 +1345,13 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void OnProviderActivated(object? sender, DeviceChangeEventArgs e)
     {
-
-        // Activation maintains the replay cache (ADR-0087 D3). Written before the
-        // dedup returns, so a re-raise for an already-known device still refreshes it.
-        lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
-
         // An Activated edge whose own payload says the device is not active is not
-        // evidence of activity (#202). Two provider raise sites do not gate on the flag,
-        // and on Windows the flag comes from a status read that reports false when the
-        // read fails. The pure core already refuses to resolve such a payload as Active
+        // evidence of activity (#202), and is treated as no edge at all: nothing below
+        // runs, including the replay-cache write, which would otherwise hand a later
+        // Reconfigure an inactive snapshot for a device this handler has just declined
+        // to call inactive. Two provider raise sites do not gate on the flag, and on
+        // Windows the flag comes from a status read that reports false when the read
+        // fails. The pure core already refuses to resolve such a payload as Active
         // (ADR-0087, rejected Option 1, says why that fail-safe stays). What must not
         // happen here is the id entering _knownConnectedIds: the dedup guard below would
         // then swallow the genuine activation when it arrives, and on Windows nothing
@@ -1365,6 +1363,10 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 e.Device.Id, e.Device.Name ?? "(unnamed)");
             return;
         }
+
+        // Activation maintains the replay cache (ADR-0087 D3). Written before the
+        // dedup returns, so a re-raise for an already-known device still refreshes it.
+        lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
 
         // _knownConnectedIds.Add returns false when the ID is already present, so a
         // device that is already known-active does not re-raise Activated. The Windows

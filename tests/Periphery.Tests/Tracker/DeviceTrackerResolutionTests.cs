@@ -173,6 +173,32 @@ public class DeviceTrackerResolutionTests
     }
 
     [Fact]
+    public void ApplyAppeared_ActivePayload_DoesNotRaiseAHeldInactiveSnapshot()
+    {
+        // The other direction. A property transition demoted the device; a presence
+        // payload captured before that transition must not promote it again. Only an
+        // activity edge or a newer property transition may.
+        var resolved = SingleUsb()
+            .ApplyAppeared(MakeDevice(isActive: true))
+            .ApplyConnected(MakeDevice(isActive: true))
+            .ApplyPropertyChanged(MakeDevice(isActive: false))
+            .ApplyAppeared(MakeDevice(isActive: true, name: "Late Payload"))
+            .Resolve();
+
+        Assert.Equal(DeviceActivityStatus.Present, resolved.ActivityStatus);
+        Assert.Equal("Late Payload", resolved.Device!.Name);
+
+        // And an activity edge still promotes it.
+        Assert.Equal(DeviceActivityStatus.Active,
+            SingleUsb()
+                .ApplyAppeared(MakeDevice(isActive: true))
+                .ApplyConnected(MakeDevice(isActive: true))
+                .ApplyPropertyChanged(MakeDevice(isActive: false))
+                .ApplyConnected(MakeDevice(isActive: true))
+                .Resolve().ActivityStatus);
+    }
+
+    [Fact]
     public void ApplyPropertyChanged_IsActiveFalse_StillDemotesAHeldLatch()
     {
         // A property transition is an activity observation and must still demote
