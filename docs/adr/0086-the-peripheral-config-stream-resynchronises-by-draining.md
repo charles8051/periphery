@@ -239,10 +239,16 @@ without the hardware the test list assumed.
    waves of bootloader entries. They also **move the timeline**: four seconds before
    the first bootloader entry, both boards already carry the garbage name and
    already enumerate by port path. The descriptor damage is a separate, earlier
-   event. And they serve **no** serial rather than a garbage one - which is
-   evidence for D3, since `SerialNumber_Init` regenerates whenever byte `[0]` is
-   `0xFF` and these have not self-healed in four days. `[0]` is present while the
-   record is unserveable: valid forever to the firmware, invalid to the stack.
+   event. And they serve **no** serial rather than a garbage one, which says byte
+   `[0]` is present: under the marker-only test these boards were running, a
+   `0xFF` at `[0]` would have regenerated the record, and it did not.
+
+   **That is all it says.** The logs do not show `[1]` or `[2]`, and the raw
+   descriptor was never read, so "the record is well-formed" is an inference and
+   not an observation. An earlier revision of this bullet went further and called
+   the record "valid forever to the firmware" - which was already only true of the
+   marker-only test, and is not true of the header check D3 now describes, where a
+   bad length or descriptor type does regenerate.
 
 The one reading not taken is the raw `iSerialNumber` descriptor bytes from those
 two boards, which needs a damaged board on a bench. It would sharpen
