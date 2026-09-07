@@ -140,8 +140,11 @@ it is why D3 is a decision rather than a style preference.
 | `DeviceProxy` / `DeviceProxyBase` / `DeviceSessionHost` | Compliant. Nine activity gates, no presence gate. |
 | `TrackerDeviceWaitSource` | Fixed in #194 — gates on `Active`. |
 | `TreehopperControlService` | Fixed in #196 and #197 — presence work stays on `Appeared`, the board open moved to `Activated` (#196), and the session is closed on `Deactivated` (#197), per D1 and D2. |
+| `FlashAnythingService` | Fixed (#204) — `TargetDetected` is still emitted on `Present` (D2, inventory); autoflash is evaluated once per appearance, on the first `Active` tick, and the arm-time sweep skips a target that is present but not started. |
 
 A consumer that opens a device from an `Appeared` handler is a defect under this ADR, whether or
-not the platform it runs on currently delivers that event. Both known instances were fixed as this
-ADR was written, which is what it is for: the rule existed in `DeviceProxy` all along, and the two
-consumers that bypassed it did so independently.
+not the platform it runs on currently delivers that event. Two instances were fixed as this ADR was
+written, which is what it is for: the rule existed in `DeviceProxy` all along, and the consumers
+that bypassed it did so independently. A third, in the same project as the first, was found by
+review afterwards (#204); it had been invisible on Windows for the same reason, and #186 made it
+reachable there.

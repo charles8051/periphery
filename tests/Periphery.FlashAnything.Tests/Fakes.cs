@@ -114,6 +114,13 @@ internal static class FakeDevices
     public static DeviceInfo Usb(string id, string? name = null) => new() { Id = id, Name = name ?? id };
 
     /// <summary>
+    /// A device whose driver has started: what a Start-time snapshot reports for a device that
+    /// can be opened. <see cref="Usb"/> leaves <see cref="DeviceInfo.IsActive"/> false, which is
+    /// a device that is present but not started, and which autoflash must not open (ADR-0088).
+    /// </summary>
+    public static DeviceInfo ActiveUsb(string id, string? name = null) => Usb(id, name) with { IsActive = true };
+
+    /// <summary>
     /// A <see cref="DeviceWatcher"/> over fake providers: <paramref name="snapshot"/> is the
     /// Start-time device set; <paramref name="monitor"/> drives live plug/unplug.
     /// </summary>
@@ -161,9 +168,21 @@ internal sealed class FakeMonitor : IDeviceMonitorProvider
     /// </summary>
     public void Plug(DeviceInfo device)
     {
-        DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
-        DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device with { IsActive = true }));
+        Appear(device);
+        Activate(device);
     }
+
+    /// <summary>
+    /// Simulate arrival only: the devnode is in the tree and its driver has not started. On
+    /// Windows this is <c>DEVICEINSTANCEENUMERATED</c>; the payload says <c>IsActive == false</c>
+    /// because that is what a status read returns before <c>DN_STARTED</c>.
+    /// </summary>
+    public void Appear(DeviceInfo device) =>
+        DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device with { IsActive = false }));
+
+    /// <summary>Simulate the driver starting for a device that has already appeared.</summary>
+    public void Activate(DeviceInfo device) =>
+        DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device with { IsActive = true }));
 
     /// <summary>
     /// Simulate a device unplugging (deactivation + disappearance) - symmetric with
