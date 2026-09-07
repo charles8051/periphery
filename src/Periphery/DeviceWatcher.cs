@@ -1104,7 +1104,8 @@ public sealed class DeviceWatcher : IAsyncDisposable
             lock (_deviceCache) _deviceCache[device.Id] = device;
 
             // Global events: apply watcher-level filter
-            if (_filter.Matches(device))
+            bool announced = _filter.Matches(device);
+            if (announced)
             {
                 snapshotCount++;
                 Interlocked.Increment(ref _appearedEventCount);
@@ -1112,23 +1113,43 @@ public sealed class DeviceWatcher : IAsyncDisposable
                     snapshotCount, device.Id, device.Name ?? "(unnamed)");
 
                 Appeared?.Invoke(this, new DeviceChangeEventArgs(device));
+            }
 
-                    // Guard on the Add, exactly as OnProviderActivated does. The
-                    // provider goes live before the snapshot walk begins, so a device
-                    // that arrived during the walk has already had Activated raised;
-                    // without this the snapshot raises it a second time.
-                    if (device.IsActive)
-                    {
-                        bool isNew;
-                        lock (_knownConnectedIds)
-                            isNew = _knownConnectedIds.Add(device.Id);
+            // The raise above ran consumer code (#201). If the live stream spoke for this
+            // id while it ran, its verdict is newer than this payload, exactly as it would
+            // have been had it spoken before the check at the top of this loop (D2): stop
+            // here rather than announce activity for a device that may just have left,
+            // and leave its id out of _knownConnectedIds. If the live stream activated the
+            // device instead, the payload is reconciled against that before anything else
+            // sees it.
+            lock (_liveStreamHandledIds)
+                supersededByLiveStream = _liveStreamHandledIds.Contains(device.Id);
 
-                        if (isNew)
-                        {
-                            Interlocked.Increment(ref _activatedEventCount);
-                            Activated?.Invoke(this, new DeviceChangeEventArgs(device));
-                        }
-                    }
+            if (supersededByLiveStream)
+            {
+                _logger.LogDebug(
+                    "Snapshot fan-out skipped, the live stream reported it during the raise: {DeviceId} ({DeviceName})",
+                    device.Id, device.Name ?? "(unnamed)");
+                continue;
+            }
+
+            device = ReconcileActivity(device);
+
+            if (announced && device.IsActive)
+            {
+                // Guard on the Add, exactly as OnProviderActivated does. The provider
+                // goes live before the snapshot walk begins, so a device that arrived
+                // during the walk has already had Activated raised; without this the
+                // snapshot raises it a second time.
+                bool isNew;
+                lock (_knownConnectedIds)
+                    isNew = _knownConnectedIds.Add(device.Id);
+
+                if (isNew)
+                {
+                    Interlocked.Increment(ref _activatedEventCount);
+                    Activated?.Invoke(this, new DeviceChangeEventArgs(device));
+                }
             }
 
             // Per-tracker fan-out: always notify appeared
@@ -1287,8 +1308,39 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 e.Device.Id, e.Device.Name ?? "(unnamed)");
         }
 
-        FanOutAppeared(e.Device);
-        FanOutGroupAppeared(e.Device);
+        // The raise above ran consumer code, and a concurrent edge for this id may have
+        // landed while it ran (#201). The trackers get the freshest verdict this watcher
+        // holds, not the one captured at the top of the handler.
+        if (!TryReconcileForFanOut(e.Device, out var forTrackers)) return;
+
+        FanOutAppeared(forTrackers);
+        FanOutGroupAppeared(forTrackers);
+    }
+
+    // Re-checks both axes for a presence payload that is about to be fanned out, after
+    // the public raise has released the thread to consumer code. Presence: a Disappeared
+    // that landed in between pruned the replay cache (ADR-0087 D3), and its own fan-out
+    // found nothing to remove, so announcing the device now would resurrect it in every
+    // tracker. Activity: an Activated that landed in between put the id in
+    // _knownConnectedIds, and fanning out the payload reconciled before it would demote
+    // the tracker it just activated, after which the dedup guard in OnProviderActivated
+    // blocks any recovery. Neither check is an ordering guarantee (#201 is); both remove
+    // a permanent outcome.
+    private bool TryReconcileForFanOut(DeviceInfo device, out DeviceInfo reconciled)
+    {
+        bool stillPresent;
+        lock (_deviceCache) stillPresent = _deviceCache.ContainsKey(device.Id);
+        if (!stillPresent)
+        {
+            _logger.LogDebug(
+                "Fan-out skipped, the device left during its own Appeared raise: {DeviceId} ({DeviceName})",
+                device.Id, device.Name ?? "(unnamed)");
+            reconciled = device;
+            return false;
+        }
+
+        reconciled = ReconcileActivity(device);
+        return true;
     }
 
     private void OnProviderActivated(object? sender, DeviceChangeEventArgs e)
