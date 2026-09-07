@@ -131,12 +131,13 @@ public class AutoflashServiceTests
     /// <summary>
     /// ADR-0088 D1, at the open rather than only at the enqueue. Autoflash is queued on the Active
     /// tick, but the open happens later on a worker; a `Deactivated` in that gap leaves the target
-    /// present with a stale-active cached payload. The worker re-checks activity immediately before
-    /// the flash, so it skips rather than opening a device whose driver has stopped, and un-marks
-    /// it so its next Active tick re-enqueues.
+    /// present with a stale-active cached payload. The worker re-checks activity before the flash,
+    /// so a target that is inactive at pickup is skipped rather than opened. (It is not un-marked,
+    /// so like any skipped target it flashes on a later arm, not automatically — that keeps the
+    /// skip free of a lost-update race with a concurrent reactivation.)
     /// </summary>
     [Fact]
-    public async Task Skips_a_queued_target_that_goes_inactive_before_the_flash_and_retries_on_reactivation()
+    public async Task Skips_a_queued_target_that_goes_inactive_before_the_flash()
     {
         var monitor = new FakeMonitor();
         var opens = new ConcurrentQueue<string>();
@@ -168,17 +169,12 @@ public class AutoflashServiceTests
             await WaitUntil(svc, s => s.Find("b") is not null);
             monitor.Deactivate(FakeDevices.Usb("b"));              // B's driver stops, B stays present
 
-            releaseA.TrySetResult();                               // A finishes; worker turns to B
-            await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 1);
+            releaseA.TrySetResult();                               // A finishes; worker turns to B and skips it
+            await WaitUntil(svc, s => s.Find("a")!.Stage == FlashStage.Flashed);
             await Task.Delay(200);
 
             Assert.Equal(new[] { "a" }, opens.ToArray());          // B was never opened
             Assert.NotEqual(FlashStage.Flashed, svc.State.Find("b")!.Stage);
-
-            // B re-activates: its Active tick re-enqueues it, and it flashes.
-            monitor.Activate(FakeDevices.Usb("b"));
-            await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 2);
-            Assert.Equal(new[] { "a", "b" }, opens.ToArray());
         }
         finally { releaseA.TrySetResult(); File.Delete(fw); }
     }

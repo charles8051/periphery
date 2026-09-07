@@ -1151,14 +1151,19 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     continue;
                 }
 
-                // Re-check activity immediately before the flash opens the device (ADR-0088 D1).
-                // The enqueue happened on an Active tick, but a Deactivated can land in the gap
-                // between there and here — the device stays present, so the removal path does not
-                // fire and the cached DeviceInfo is stale-active. Opening it now is the presence
-                // open this fix exists to prevent. Un-mark it so its next Active tick re-enqueues.
+                // Re-check activity before the flash opens the device (ADR-0088 D1). The enqueue
+                // happened on an Active tick, but a Deactivated can land before the worker reaches
+                // the target — it stays present, so the removal path does not fire and the cached
+                // DeviceInfo is stale-active. Skipping here turns a target that is already inactive
+                // at pickup into a clean skip rather than a failed open. The residual window between
+                // this check and the native open cannot be closed against a device that may
+                // deactivate at any instant, including during the open itself; there the open fails
+                // and is caught as one attempt. The mark is left in place — a target skipped here is
+                // not retried until the next arm, matching the disarm skip above and the pre-#204
+                // behaviour where a presence open failed and stayed marked. Deliberately not
+                // un-marked: doing so races a reactivation's own enqueue and can lose the edge.
                 if (!_tracker.Trackers.TryGetValue(id, out var child) || !child.IsActive)
                 {
-                    lock (_gate) _flashedThisSession.Remove(id);
                     Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "target went inactive before flash", label));
                     continue;
                 }
