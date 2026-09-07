@@ -15,9 +15,10 @@
 // Neither was ever done here: VDM0CN was never written, and RSTSRC appeared only at the
 // three deliberate-reset sites. Without the monitor a supply dip during a write leaves
 // cells partially programmed instead of resetting the part, and a weakly-erased cell
-// reads back differently from one enumeration to the next. See issue #191, where the
-// same serial number read back with its letter case drifting toward the erased state
-// (every flip set bit 5) on a station whose hub loses power on any mains dip.
+// reads back differently from one enumeration to the next. Issue #191 first read a
+// serial's letter case as drifting toward the erased state; that turned out to be a
+// host-side presentation artefact (ADR-0086 D5 test 3), and the requirement stands on
+// the reference manual alone.
 //
 // Called from writeUsbString rather than from the two primitives below, so the cost is
 // paid once per config-page update and not once per byte.

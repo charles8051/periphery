@@ -23,11 +23,10 @@ and `dist/treehopper.tfi` are regenerated at **v2.77** (14827 bytes, top
 
 ## Context
 
-Issue #191. On one production station, two of three Treehopper
-boards on one hub permanently lost both their `iProduct` and `iSerialNumber`
-descriptors on 2026-09-01, and all three entered their bootloaders within eleven
-seconds of each other. The corruption re-reads from EEPROM on every enumeration.
-It survived four host cold reboots and a `0x0C` firmware reboot, returning
+Issue #191. On one hub, two of three Treehopper boards permanently lost both
+their `iProduct` and `iSerialNumber` descriptors, and all three entered their
+bootloaders within eleven seconds of each other. The corruption re-reads from
+EEPROM on every enumeration. It survived four host cold reboots and a `0x0C` firmware reboot, returning
 byte-identical garbage each time. `verify` against `dist/Treehopper.hex` reports
 MATCH on both boards: the application image is intact, only the config page is
 damaged.
@@ -141,7 +140,7 @@ the old bound, over the real one.
 Byte `[0]` is the record's validity flag, and it was written **first**. Any
 interruption after byte 0 and before the payload left a record that looked valid
 forever: self-repair was dead and the damage survived every reboot, which is
-exactly the durability observed in the field. It is now written after the
+exactly the durability #191 observed. It is now written after the
 payload.
 
 **Corrected 2026-09-05.** This decision previously claimed that "an interrupted
@@ -225,24 +224,22 @@ without the hardware the test list assumed.
    210-220 ms, knee sharp between 200 and 235.
 3. **Case flips - a host artefact, not the flash.** Five byte-identical C2 reads
    while one host log reports the same serials in three cases at once. The stored
-   form is the mixed-case one. Caught in the act in the field logs too:
-   the serial read one way at `03:02:25.072` and with four characters case-flipped at
-   `03:02:37.793`, same board, across
-   one re-enumeration. D4 keeps its justification and loses its symptom.
-4. **Read the damaged boards - answered from artifacts already off the station.**
-   the station's uploaded diagnostic snapshots carry the garbage name byte-for-byte
-   (`06 FF 0B 09 06 FF 0B 09 06`, both boards) and both waves of bootloader
-   entries. They also **move the timeline**: at `03:02:21`, four seconds before
+   form is the mixed-case one. Caught in the act in a host log too:
+   the same board's serial read one way and, twelve seconds and one re-enumeration
+   later, with four characters case-flipped. D4 keeps its justification and loses its symptom.
+4. **Read the damaged boards - answered from host logs.** The logs carry the
+   garbage name byte-for-byte (`06 FF 0B 09 06 FF 0B 09 06`, both boards) and both
+   waves of bootloader entries. They also **move the timeline**: four seconds before
    the first bootloader entry, both boards already carry the garbage name and
    already enumerate by port path. The descriptor damage is a separate, earlier
-   event. And they serve **no** serial rather than a garbage one - which is field
+   event. And they serve **no** serial rather than a garbage one - which is
    evidence for D3, since `SerialNumber_Init` regenerates whenever byte `[0]` is
    `0xFF` and these have not self-healed in four days. `[0]` is present while the
    record is unserveable: valid forever to the firmware, invalid to the stack.
 
 The one reading not taken is the raw `iSerialNumber` descriptor bytes from those
-two boards, which needs code running on a production station. It would sharpen
-D3's field evidence and change no decision, so the gate does not wait for it.
+two boards, which needs a damaged board on a bench. It would sharpen
+D3's evidence and change no decision, so the gate does not wait for it.
 `scratch/TreehopperIdentityProbe` is built and validated against C2 if it is ever
 wanted.
 
@@ -331,10 +328,10 @@ board that previously browned out through a mains dip mid-write will now reset
 instead. That is the intended behaviour and the point of D4, but it is a
 behaviour change on hardware that has never had it.
 
-**Field boards are not fixed by this commit.** Until D5's bench tests pass and a
-release regenerates `dist/`, the workaround stands: `treehopper-flash rename`
-rewrites the config page and repairs the descriptor. Confirmed on one of the two
-damaged boards on 2026-09-04 — `BusReportedDeviceDesc` went from garbage to
-`DepositChamber`. It does **not** restore the serial, and on Windows the cached
+**Boards already damaged are not fixed by this commit.** Until D5's bench tests
+pass and a release regenerates `dist/`, the workaround stands: `treehopper-flash
+rename` rewrites the config page and repairs the descriptor. Confirmed on one of
+the two damaged boards — `BusReportedDeviceDesc` went from garbage to the new
+name. It does **not** restore the serial, and on Windows the cached
 `DEVPKEY_Device_FriendlyName` still needs a devnode rebuild before the host
 reports the new name.
