@@ -62,9 +62,6 @@ public sealed class FlashAnythingService : IAsyncDisposable
     // site the way a per-collection StringComparer.OrdinalIgnoreCase argument can — which is exactly
     // how AutoflashPolicy.Decide's already-flashed set came to depend on caller discipline.
     private readonly Dictionary<DeviceId, DeviceInfo> _devices = new();
-    // Ids whose autoflash has been evaluated for the current appearance. Guarded by _gate;
-    // cleared with _devices in ReconcileRemovals, so a re-arrival is evaluated again.
-    private readonly HashSet<DeviceId> _autoflashEvaluated = new();
     private readonly HashSet<DeviceId> _flashingNow = new();    // targets mid-flash: not removed even if their device drops (an app-mode device disappears by design while it reboots)
     private readonly HashSet<DeviceId> _reopenWhenFlashed = new();  // rows that went quiet mid-flash and may repeat once it finishes
     private readonly List<DeviceFilter> _claimedFilters = new(); // bootloaders an in-flight app-mode flash owns: the orchestration drives them, so they are suppressed from separate detection / autoflash
@@ -342,17 +339,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
                     device.Id, state.ActivityStatus);
                 return;
             }
-            bool isNew, becameActive;
-            lock (_gate)
-            {
-                isNew = !_devices.ContainsKey(device.Id);
-                _devices[device.Id] = device;
-                // Autoflash is evaluated once per appearance, on the first Active tick, never on
-                // presence (ADR-0088 D1). A devnode that is in the tree but whose driver has not
-                // started cannot be opened, and a wasted open eats the recovery budget on healthy
-                // hardware. Presence is still surfaced as inventory (D2) below.
-                becameActive = state.IsActive && _autoflashEvaluated.Add(device.Id);
-            }
+            bool isNew;
+            lock (_gate) { isNew = !_devices.ContainsKey(device.Id); _devices[device.Id] = device; }
 
             // Detection ownership (adr.md Decision 9). While a probe family is armed on this
             // bridge, the loop is the only thing that may say a target is present — it is the only
@@ -369,7 +357,13 @@ public sealed class FlashAnythingService : IAsyncDisposable
                 isNew ? "new" : "existing", mode, device.Id, DisplayName(device), family, state.ActivityStatus);
             Emit(new AppEvent.TargetDetected(
                 device.Id, DisplayName(device), family, identification, mode, bridge, device.PortName));
-            if (becameActive) MaybeAutoflash(device.Id); // once per appearance, on activity; re-arrival after a reset re-evaluates (and dedupes)
+            // Autoflash fires on activity, never on presence (ADR-0088 D1): a devnode in the tree
+            // whose driver has not started cannot be opened, and a wasted open eats the recovery
+            // budget on healthy hardware. The presence tick still surfaces the target above (D2,
+            // inventory). MaybeAutoflash dedupes within the armed session (_flashedThisSession), so
+            // firing it on each Active tick still flashes at most once, and a device that
+            // deactivates and reactivates while present re-evaluates against that one gate.
+            if (state.IsActive) MaybeAutoflash(device.Id);
         }
         else
         {
@@ -390,11 +384,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
                 if (!_tracker.Trackers.TryGetValue(id, out var child) || !child.IsPresent)
                     gone.Add(id);
             }
-            foreach (var id in gone)
-            {
-                _devices.Remove(id);
-                _autoflashEvaluated.Remove(id); // the next appearance is evaluated afresh
-            }
+            foreach (var id in gone) _devices.Remove(id);
         }
         foreach (var id in gone)
         {
@@ -793,11 +783,10 @@ public sealed class FlashAnythingService : IAsyncDisposable
                      .Where(t => t.Identification == IdentificationMode.Passive)
                      .Select(t => t.Id).ToList())
         {
-            // Only targets that are active now (ADR-0088). One that is present but not started
-            // is evaluated by OnTrackerState on its first Active tick.
+            // Only targets that are active now (ADR-0088). One that is present but not started is
+            // flashed later, by OnTrackerState on its first Active tick.
             if (!_tracker.Trackers.TryGetValue(id, out var child) || !child.IsActive)
                 continue;
-            lock (_gate) _autoflashEvaluated.Add(id);
             MaybeAutoflash(id);
         }
     }
@@ -1159,6 +1148,18 @@ public sealed class FlashAnythingService : IAsyncDisposable
                 if (armed is null)
                 {
                     Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "disarmed before flash", label));
+                    continue;
+                }
+
+                // Re-check activity immediately before the flash opens the device (ADR-0088 D1).
+                // The enqueue happened on an Active tick, but a Deactivated can land in the gap
+                // between there and here — the device stays present, so the removal path does not
+                // fire and the cached DeviceInfo is stale-active. Opening it now is the presence
+                // open this fix exists to prevent. Un-mark it so its next Active tick re-enqueues.
+                if (!_tracker.Trackers.TryGetValue(id, out var child) || !child.IsActive)
+                {
+                    lock (_gate) _flashedThisSession.Remove(id);
+                    Emit(new AppEvent.AutoflashOutcome(id, AutoflashOutcomeKind.Skipped, "target went inactive before flash", label));
                     continue;
                 }
 

@@ -128,6 +128,61 @@ public class AutoflashServiceTests
         finally { File.Delete(fw); }
     }
 
+    /// <summary>
+    /// ADR-0088 D1, at the open rather than only at the enqueue. Autoflash is queued on the Active
+    /// tick, but the open happens later on a worker; a `Deactivated` in that gap leaves the target
+    /// present with a stale-active cached payload. The worker re-checks activity immediately before
+    /// the flash, so it skips rather than opening a device whose driver has stopped, and un-marks
+    /// it so its next Active tick re-enqueues.
+    /// </summary>
+    [Fact]
+    public async Task Skips_a_queued_target_that_goes_inactive_before_the_flash_and_retries_on_reactivation()
+    {
+        var monitor = new FakeMonitor();
+        var opens = new ConcurrentQueue<string>();
+        var releaseA = new TaskCompletionSource();
+        var aOpening = new TaskCompletionSource();
+        // maxFlashConcurrency 1: A holds the single worker while B waits in the queue, so the test
+        // controls the gap between B's enqueue and B's flash deterministically.
+        var reg = new BootloaderRegistry();
+        reg.Register(new FakeBootloaderProvider(Family, _ => true,
+            d =>
+            {
+                opens.Enqueue(d.Id);
+                if (d.Id == "a") { aOpening.TrySetResult(); releaseA.Task.GetAwaiter().GetResult(); }
+                return new FakeFirmwareProgrammer(d, FlashResult.Ok(64, verified: true));
+            },
+            IdentificationMode.Passive));
+        await using var svc = new FlashAnythingService(reg, FakeDevices.Watcher(monitor), maxFlashConcurrency: 1);
+        await svc.RefreshAsync();
+        var fw = await TempBinAsync();
+        try
+        {
+            await svc.LoadFirmwareAsync(fw);
+            await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
+
+            monitor.Plug(FakeDevices.Usb("a"));
+            await aOpening.Task.WaitAsync(TimeSpan.FromSeconds(5)); // worker is inside A's open
+
+            monitor.Plug(FakeDevices.Usb("b"));                    // B enqueues behind A
+            await WaitUntil(svc, s => s.Find("b") is not null);
+            monitor.Deactivate(FakeDevices.Usb("b"));              // B's driver stops, B stays present
+
+            releaseA.TrySetResult();                               // A finishes; worker turns to B
+            await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 1);
+            await Task.Delay(200);
+
+            Assert.Equal(new[] { "a" }, opens.ToArray());          // B was never opened
+            Assert.NotEqual(FlashStage.Flashed, svc.State.Find("b")!.Stage);
+
+            // B re-activates: its Active tick re-enqueues it, and it flashes.
+            monitor.Activate(FakeDevices.Usb("b"));
+            await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 2);
+            Assert.Equal(new[] { "a", "b" }, opens.ToArray());
+        }
+        finally { releaseA.TrySetResult(); File.Delete(fw); }
+    }
+
     [Fact]
     public async Task Flashes_a_hotplugged_target_while_armed()
     {

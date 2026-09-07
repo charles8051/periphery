@@ -195,8 +195,16 @@ internal sealed class FakeMonitor : IDeviceMonitorProvider
     /// </summary>
     public void Unplug(DeviceInfo device)
     {
-        DeviceDeactivated?.Invoke(this, new DeviceChangeEventArgs(device));
+        Deactivate(device);
         DeviceDisappeared?.Invoke(this, new DeviceChangeEventArgs(device));
     }
+
+    /// <summary>
+    /// Simulate the driver stopping while the devnode stays in the tree: <c>Deactivated</c> with no
+    /// <c>Disappeared</c>. On Windows this has no soft edge, but a bench device that resets its own
+    /// link produces it, and it is the case that leaves a present-but-inactive target.
+    /// </summary>
+    public void Deactivate(DeviceInfo device) =>
+        DeviceDeactivated?.Invoke(this, new DeviceChangeEventArgs(device with { IsActive = false }));
 }
 #pragma warning restore CS0067
