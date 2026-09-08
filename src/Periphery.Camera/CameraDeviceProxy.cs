@@ -76,7 +76,26 @@ namespace Periphery.Camera;
 /// device. A reopen into that used to contend and fail in a way that read as a
 /// stream fault; it now fails fast with
 /// <see cref="CameraTeardownPendingException"/>, which the recovery ladder treats
-/// as any other open failure and retries on its own cadence (issue #123).
+/// as any other open failure and retries on its own cadence (issue #123). The
+/// refusal is bounded, so a device whose teardown never returns is not refused
+/// for the life of the process.
+/// </para>
+/// <para>
+/// <b>The reset rung needs no camera-specific mechanism.</b> Issue #123 asked
+/// whether a wedged camera wants its own <see cref="IDeviceReset"/>, on the
+/// <c>TreehopperDeviceReset</c> precedent. It does not, and the difference is
+/// what a reset would have to speak. Treehopper's extra rungs are device-protocol
+/// verbs — a reboot opcode and an EP0 vendor request — that only that firmware
+/// defines. UVC standardises no reset request, so there is no gentler,
+/// camera-specific rung to write. What clears a wedged UVC driver is a USB port
+/// cycle or a PnP disable/enable, the mechanised form of the replug #123
+/// recommends, and <see cref="DeviceReset.PlatformDefault"/> already advertises
+/// both for a USB-backed camera. This proxy reaches them with no camera code: the
+/// escalation is gated by the policy, so pass an
+/// <see cref="EscalatingResetRecoveryPolicy"/> (or any policy returning
+/// <see cref="RecoveryDirective.Reset"/>) as <c>recoveryPolicy</c> to walk the
+/// ladder instead of retrying forever. The default backoff policy never resets,
+/// so this stays opt-in.
 /// </para>
 /// </remarks>
 public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraException>

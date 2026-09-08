@@ -120,6 +120,14 @@ public sealed class CameraTeardownPendingException : CameraException
     /// Completes, always successfully, when every abandoned teardown step on the
     /// device has finished. Never faults and is never cancelled.
     /// </summary>
+    /// <remarks>
+    /// <b>Bounded, not open-ended.</b> A teardown step wedged in a driver call
+    /// may never return, so this also completes once the refusal window from the
+    /// first overrun elapses. Awaiting it is therefore a wait of at most that
+    /// window, and completion means "the device may be opened again", not "the
+    /// abandoned work finished". The retry that follows can still fail, and is an
+    /// ordinary open failure for the caller's recovery policy to handle.
+    /// </remarks>
     public Task Completion { get; }
 
     /// <summary>
