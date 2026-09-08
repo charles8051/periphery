@@ -33,6 +33,13 @@ internal sealed class MfCameraBackend : ICameraBackend
     private volatile bool _isCapturing;
     private bool _disposed;
 
+    // True once this backend's OpenAsync incremented the MF runtime ref-count.
+    // DisposeAsync releases exactly what was acquired: EnsureStarted throws
+    // without incrementing when MFStartup fails, so releasing unconditionally
+    // would decrement a count this backend never took and could shut MF down
+    // under another open backend.
+    private bool _mfStarted;
+
     // Reused per-frame capture buffer (LOH-churn fix). MF previously allocated a fresh ~MB array
     // per frame (1280x720 BGRA32 = 3.7 MB -> ~100 MB/s of LOH at 30fps), driving continuous gen2.
     // ExtractFrame runs single-threaded on the producer's LongRunning thread and the pool copies
@@ -56,40 +63,41 @@ internal sealed class MfCameraBackend : ICameraBackend
         ct.ThrowIfCancellationRequested();
 
         MfRuntime.EnsureStarted();
+        _mfStarted = true;
 
+        // No cleanup on the failure path here. A partly-open backend holds a
+        // source and maybe a reader, and Cleanup can block in Shutdown/Flush on
+        // a wedged driver — the exact wedge this change bounds during disposal.
+        // Cleaning up synchronously here would hang a failed open indefinitely
+        // and, worse, would never reach the bounded DisposeAsync the caller runs
+        // in its catch, so MFShutdown would never be scheduled. Instead the
+        // fields are left as they are and DisposeAsync — which every open path
+        // calls on failure through CameraDevice's bounded disposal — releases
+        // them within budget and abandons observably if they wedge (issue #123).
+        _source = ActivateSource(_deviceInfo.Id);
+
+        // QI for camera-control interfaces. With source-generated wrappers
+        // the cast operator routes through IDynamicInterfaceCastable, which
+        // performs QueryInterface on the underlying COM pointer — null when
+        // the device doesn't expose that interface.
+        _cameraControl = _source as IAMCameraControl;
+        _videoProcAmp = _source as IAMVideoProcAmp;
+
+        IMFAttributes? readerAttrs = CreateReaderAttributes();
         try
         {
-            _source = ActivateSource(_deviceInfo.Id);
-
-            // QI for camera-control interfaces. With source-generated wrappers
-            // the cast operator routes through IDynamicInterfaceCastable, which
-            // performs QueryInterface on the underlying COM pointer — null when
-            // the device doesn't expose that interface.
-            _cameraControl = _source as IAMCameraControl;
-            _videoProcAmp = _source as IAMVideoProcAmp;
-
-            IMFAttributes? readerAttrs = CreateReaderAttributes();
-            try
-            {
-                ThrowForHr(
-                    MfInterop.MFCreateSourceReaderFromMediaSource(_source, readerAttrs, out _reader),
-                    "Failed to create source reader");
-            }
-            finally
-            {
-                MfInterop.Release(ref readerAttrs);
-            }
-
             ThrowForHr(
-                _reader!.SetStreamSelection(MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, true),
-                "Failed to select video stream");
+                MfInterop.MFCreateSourceReaderFromMediaSource(_source, readerAttrs, out _reader),
+                "Failed to create source reader");
         }
-        catch
+        finally
         {
-            Cleanup();
-            MfRuntime.Release();
-            throw;
+            MfInterop.Release(ref readerAttrs);
         }
+
+        ThrowForHr(
+            _reader!.SetStreamSelection(MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, true),
+            "Failed to select video stream");
 
         return Task.CompletedTask;
     }
@@ -789,25 +797,27 @@ internal sealed class MfCameraBackend : ICameraBackend
         _disposed = true;
         _isCapturing = false;
 
-        // Run COM cleanup on a background thread with a hard timeout. Wedged
-        // USB camera drivers can block ANY MF call (Flush, Shutdown, even
-        // Release on the COM ref) indefinitely; we've seen NexiGo MJPEG
-        // 1280x720 30fps freeze after ~20 frames where Flush itself never
-        // returns. Disposal must complete in bounded time so the process
-        // can exit; any abandoned work continues on a background thread,
-        // which is fine because thread-pool threads don't block process
-        // exit and Windows reclaims the COM resources at process end.
-        var cleanupTask = Task.Run(Cleanup);
-        var winner = await Task.WhenAny(cleanupTask, Task.Delay(TimeSpan.FromSeconds(3)))
-            .ConfigureAwait(false);
-        if (winner != cleanupTask)
+        // COM cleanup runs on a background thread because a wedged USB camera
+        // driver can block ANY MF call (Flush, Shutdown, even Release on the COM
+        // ref) indefinitely; we've seen NexiGo MJPEG 1280x720 30fps freeze after
+        // ~20 frames where Flush itself never returns. The budget that keeps
+        // disposal bounded lives one layer up, in CameraDevice, which abandons
+        // this task on overrun and records it so a reopen of the same device is
+        // refused until it completes (issue #123).
+        //
+        // MfRuntime.Release runs after Cleanup on whichever thread finishes it,
+        // never before. It used to run as soon as the budget expired, which on
+        // the last open backend called MFShutdown while an abandoned Cleanup was
+        // still inside Shutdown or Flush holding the source and reader; the MF
+        // documentation requires that no other thread be using Media Foundation
+        // when MFShutdown is called. Holding the ref-count until the abandoned
+        // cleanup returns also means the next open does not restart MF under a
+        // driver that has not let go of the previous instance.
+        await Task.Run(() =>
         {
-            Console.Error.WriteLine(
-                "WARNING: MF cleanup did not complete within 3s; abandoning. " +
-                "If this happens often the camera driver may be wedged — try replugging.");
-        }
-
-        MfRuntime.Release();
+            try { Cleanup(); }
+            finally { if (_mfStarted) MfRuntime.Release(); }
+        }).ConfigureAwait(false);
     }
 
     private void Cleanup()

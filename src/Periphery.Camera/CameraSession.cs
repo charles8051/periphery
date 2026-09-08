@@ -169,7 +169,12 @@ public sealed partial class CameraSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var cameraDevice = await CameraDevice.OpenAsync(device, ct).ConfigureAwait(false);
+        // The session's logger and clock flow into the device it owns, so the
+        // bounded backend disposal that runs when this session is disposed is
+        // logged and timed where the consumer is looking (issue #123).
+        var cameraDevice = await CameraDevice.OpenAsync(
+                device, logger ?? NullLogger<CameraSession>.Instance, timeProvider ?? TimeProvider.System, ct)
+            .ConfigureAwait(false);
         try
         {
             await cameraDevice._backend.ConfigureAsync(configuration, ct).ConfigureAwait(false);
@@ -733,10 +738,15 @@ public sealed partial class CameraSession : IAsyncDisposable
                 // camera is replugged.
                 // Bound the backend stop. We've seen wedged USB-camera drivers
                 // (NexiGo MJPEG @1280x720 30fps after ~20 frames) where
-                // IMFSourceReader::Flush itself blocks indefinitely. Run on a
-                // background task with a timeout so disposal can't hang here.
-                await RunBoundedAsync(_backend.StopCaptureAsync, TimeSpan.FromSeconds(2),
-                    "backend.StopCaptureAsync").ConfigureAwait(false);
+                // IMFSourceReader::Flush itself blocks indefinitely. An overrun
+                // is abandoned observably: counted, logged, and registered so a
+                // reopen of this device fails fast instead of contending with
+                // the thread still inside Flush (issue #123).
+                string deviceId = Device.DeviceInfo.Id;
+                await BoundedTeardown.RunOrAbandonAsync(
+                        _backend.StopCaptureAsync, BoundedTeardown.StopCaptureBudget,
+                        deviceId, BoundedTeardown.Steps.StopCapture, _logger, _timeProvider)
+                    .ConfigureAwait(false);
 
                 if (producerTask is not null)
                 {
@@ -746,13 +756,15 @@ public sealed partial class CameraSession : IAsyncDisposable
                     // doesn't actually interrupt ReadSample), the producer
                     // task may stay running. Bound the wait; the backend
                     // disposal below will Shutdown the source, which is the
-                    // nuclear option, and the producer task is a thread-pool
-                    // background task that won't prevent process exit.
-                    var producerDone = await Task.WhenAny(
-                        producerTask,
-                        Task.Delay(TimeSpan.FromSeconds(2), _timeProvider)).ConfigureAwait(false);
+                    // nuclear option. An overrun here is abandoned the same
+                    // way as the stop: the parked producer still holds the
+                    // backend's reader, so it counts against a reopen too.
+                    bool producerExited = await BoundedTeardown.AwaitOrAbandonAsync(
+                            producerTask, BoundedTeardown.ProducerExitBudget,
+                            deviceId, BoundedTeardown.Steps.ProducerExit, _logger, _timeProvider)
+                        .ConfigureAwait(false);
 
-                    if (producerDone == producerTask)
+                    if (producerExited)
                     {
                         try { await producerTask.ConfigureAwait(false); }
                         catch (OperationCanceledException) { /* normal shutdown */ }
@@ -765,8 +777,6 @@ public sealed partial class CameraSession : IAsyncDisposable
                             Interlocked.CompareExchange(ref _captureFault, ex, null);
                         }
                     }
-                    // else: abandoned. The next backend.DisposeAsync call will
-                    // Shutdown the MF source and unblock it.
                 }
                 producerCts.Dispose();
             }
@@ -843,37 +853,6 @@ public sealed partial class CameraSession : IAsyncDisposable
         // its AvailableWaitHandle is read; this type only ever calls WaitAsync()/
         // Release(), so it owns no unmanaged/IDisposable resource and letting the
         // GC reclaim it leaks nothing.
-    }
-
-    /// <summary>
-    /// Runs a backend cleanup operation with a hard timeout. Wedged USB
-    /// camera drivers can block COM calls (Flush, Shutdown, even Release)
-    /// indefinitely; this lets disposal proceed regardless. Any abandoned
-    /// work continues on a thread-pool background thread that won't prevent
-    /// process exit.
-    /// </summary>
-    /// <remarks>
-    /// The timeout race is measured over the session's injected
-    /// <see cref="_timeProvider"/> so disposal's bounded waits are driven by
-    /// the same clock as the rest of the session (review finding 2.2); under
-    /// <see cref="TimeProvider.System"/> the behaviour is unchanged.
-    /// </remarks>
-    private async Task RunBoundedAsync(Func<Task> work, TimeSpan timeout, string label)
-    {
-        var task = Task.Run(work);
-        var winner = await Task.WhenAny(task, Task.Delay(timeout, _timeProvider)).ConfigureAwait(false);
-        if (winner != task)
-        {
-            // Background task continues, but disposal proceeds. Don't await
-            // its result — this is the whole point.
-            Console.Error.WriteLine(
-                $"WARNING: {label} did not complete within {timeout.TotalSeconds:F1}s; abandoning.");
-        }
-        else
-        {
-            try { await task.ConfigureAwait(false); }
-            catch { /* swallowed; cleanup-time errors aren't actionable */ }
-        }
     }
 
     // ── Source-generated log methods ─────────────────────────────────

@@ -27,16 +27,18 @@ namespace Periphery.Camera;
 public sealed class CameraDevice : IAsyncDisposable
 {
     internal readonly ICameraBackend _backend;
-    private readonly ILogger<CameraDevice> _logger;
+    private readonly ILogger _logger;
+    private readonly TimeProvider _timeProvider;
     private bool _hasActiveSession;
     private bool _disposed;
 
     internal CameraDevice(
-        DeviceInfo deviceInfo, ICameraBackend backend, ILogger<CameraDevice>? logger = null)
+        DeviceInfo deviceInfo, ICameraBackend backend, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         DeviceInfo = deviceInfo;
         _backend = backend;
         _logger = logger ?? NullLogger<CameraDevice>.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     // ── Discovery context ──────────────────────────────────────────────
@@ -74,23 +76,40 @@ public sealed class CameraDevice : IAsyncDisposable
     /// controls) without keeping the device open. This is the ADR-0026 static
     /// snapshot helper.
     /// </summary>
-    public static async Task<CameraSnapshot> ReadSnapshotAsync(
+    public static Task<CameraSnapshot> ReadSnapshotAsync(
         DeviceInfo device,
         CancellationToken ct = default)
+        => ReadSnapshotAsync(device, NullLogger.Instance, TimeProvider.System, ct);
+
+    /// <summary>
+    /// <see cref="ReadSnapshotAsync(DeviceInfo, CancellationToken)"/> for an
+    /// owner that already has a logger and a clock, so the bounded disposal of
+    /// the snapshot's backend is logged and timed where the owner is looking.
+    /// </summary>
+    internal static async Task<CameraSnapshot> ReadSnapshotAsync(
+        DeviceInfo device, ILogger logger, TimeProvider timeProvider, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(device);
+        PendingTeardowns.ThrowIfPending(device.Id);
 
         var backend = CreateBackend(device);
         try
         {
             await backend.OpenAsync(ct).ConfigureAwait(false);
+            // Recheck straight after the open, so a teardown that abandoned
+            // during it is caught before the metadata reads rather than after.
+            PendingTeardowns.ThrowIfPending(device.Id);
             var formats = await backend.GetFormatsAsync(ct).ConfigureAwait(false);
             var controls = await backend.GetControlsAsync(ct).ConfigureAwait(false);
+            // And once more after the last device access, so one that abandoned
+            // during the metadata reads is caught before a usable snapshot is
+            // handed back. The finally disposes the backend we opened (issue #123 review).
+            PendingTeardowns.ThrowIfPending(device.Id);
             return new CameraSnapshot(backend.NativeEndpointId, formats, controls);
         }
         finally
         {
-            await backend.DisposeAsync().ConfigureAwait(false);
+            await DisposeBackendBoundedAsync(backend, device.Id, logger, timeProvider).ConfigureAwait(false);
         }
     }
 
@@ -183,7 +202,18 @@ public sealed class CameraDevice : IAsyncDisposable
         if (_hasActiveSession)
             throw new InvalidOperationException("A session is already active on this device. Dispose the existing session before opening a new one.");
 
+        // A previous session on this device may have abandoned its stop: its
+        // producer is still parked inside the backend's read, or Flush never
+        // returned. The backend is in an unknown state until that thread
+        // finishes, so a new session is refused rather than started on top of
+        // it (issue #123).
+        PendingTeardowns.ThrowIfPending(DeviceInfo.Id);
+
         await _backend.ConfigureAsync(configuration, ct).ConfigureAwait(false);
+        // Recheck after Configure, the one device access this path makes, so a
+        // teardown that abandoned during it does not leave a session running on
+        // a contended backend (issue #123 review).
+        PendingTeardowns.ThrowIfPending(DeviceInfo.Id);
         _hasActiveSession = true;
         var session = new CameraSession(this, ownsDevice: false, _backend, configuration, options ?? new(), logger, timeProvider);
         session.LogSessionOpened();
@@ -199,20 +229,39 @@ public sealed class CameraDevice : IAsyncDisposable
     /// <paramref name="device"/> and returns a <see cref="CameraDevice"/>
     /// ready for capability queries and session creation.
     /// </summary>
-    public static async Task<CameraDevice> OpenAsync(
+    public static Task<CameraDevice> OpenAsync(
         DeviceInfo device,
         CancellationToken ct = default,
         ILogger<CameraDevice>? logger = null)
+        => OpenAsync(device, logger ?? NullLogger<CameraDevice>.Instance, TimeProvider.System, ct);
+
+    /// <summary>
+    /// <see cref="OpenAsync(DeviceInfo, CancellationToken, ILogger{CameraDevice}?)"/>
+    /// for an owner that already has a logger and a clock, so the bounded
+    /// disposal of the backend is logged and timed where the owner is looking.
+    /// </summary>
+    internal static async Task<CameraDevice> OpenAsync(
+        DeviceInfo device, ILogger logger, TimeProvider timeProvider, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentException.ThrowIfNullOrWhiteSpace(device.Id);
         ct.ThrowIfCancellationRequested();
 
+        // Refuse to open into a teardown that never finished. The thread that
+        // abandoned it may still hold the device, and contending with it is how
+        // one wedge became nineteen failures (issue #123).
+        PendingTeardowns.ThrowIfPending(device.Id);
+
         var backend = CreateBackend(device);
         try
         {
             await backend.OpenAsync(ct).ConfigureAwait(false);
-            var camera = new CameraDevice(device, backend, logger);
+            // Recheck after the open. The pre-check is a fast refusal, but a
+            // previous session's teardown can abandon and register in the gap
+            // between it and the native open; the recheck closes that window,
+            // and the catch disposes the backend we just opened (issue #123 review).
+            PendingTeardowns.ThrowIfPending(device.Id);
+            var camera = new CameraDevice(device, backend, logger, timeProvider);
             camera._logger.LogInformation(
                 "Camera device opened: {DeviceName} ({NativeEndpoint})",
                 device.Name ?? "(unnamed)", backend.NativeEndpointId);
@@ -220,7 +269,7 @@ public sealed class CameraDevice : IAsyncDisposable
         }
         catch
         {
-            await backend.DisposeAsync().ConfigureAwait(false);
+            await DisposeBackendBoundedAsync(backend, device.Id, logger, timeProvider).ConfigureAwait(false);
             throw;
         }
     }
@@ -263,6 +312,23 @@ public sealed class CameraDevice : IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        await _backend.DisposeAsync().ConfigureAwait(false);
+        await DisposeBackendBoundedAsync(_backend, DeviceInfo.Id, _logger, _timeProvider).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Disposes a backend within <see cref="BoundedTeardown.BackendDisposeBudget"/>.
+    /// </summary>
+    /// <remarks>
+    /// The budget sits here rather than in each backend because this is the
+    /// layer that has the device id, a logger, and a clock: an overrun is
+    /// counted, logged, and registered against the device so a reopen is
+    /// refused until the abandoned disposal completes (issue #123). Every
+    /// backend gets the same bound, so a Linux close that wedges is abandoned
+    /// the same way a Media Foundation Shutdown is.
+    /// </remarks>
+    private static Task DisposeBackendBoundedAsync(
+        ICameraBackend backend, string deviceId, ILogger logger, TimeProvider timeProvider) =>
+        BoundedTeardown.RunOrAbandonAsync(
+            () => backend.DisposeAsync().AsTask(), BoundedTeardown.BackendDisposeBudget,
+            deviceId, BoundedTeardown.Steps.BackendDispose, logger, timeProvider);
 }

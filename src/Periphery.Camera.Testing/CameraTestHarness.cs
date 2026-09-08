@@ -62,7 +62,10 @@ public static class CameraTestHarness
         await io.OpenAsync(ct).ConfigureAwait(false);
         await io.ConfigureAsync(configuration, ct).ConfigureAwait(false);
 
-        var cameraDevice = new CameraDevice(device, backend);
+        // The device shares the session's clock so the bounded backend disposal
+        // that runs when the session is disposed is driven by the same
+        // FakeTimeProvider as the session's own bounded stop.
+        var cameraDevice = new CameraDevice(device, backend, logger: null, timeProvider);
         return new CameraSession(
             cameraDevice, ownsDevice: true, backend, configuration, options, logger: null, timeProvider);
     }
