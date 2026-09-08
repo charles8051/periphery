@@ -96,13 +96,14 @@ public sealed class CameraDevice : IAsyncDisposable
         try
         {
             await backend.OpenAsync(ct).ConfigureAwait(false);
-            // Recheck after the open. The pre-check is a fast refusal, but a
-            // previous session's teardown can abandon and register in the gap
-            // between it and the native open; the recheck closes that window,
-            // and the finally disposes the backend we just opened (issue #123 review).
-            PendingTeardowns.ThrowIfPending(device.Id);
             var formats = await backend.GetFormatsAsync(ct).ConfigureAwait(false);
             var controls = await backend.GetControlsAsync(ct).ConfigureAwait(false);
+            // Recheck after the last device access, not just after the open. The
+            // pre-check is a fast refusal; the recheck catches a previous
+            // session's teardown that abandoned and registered while this call
+            // was doing native work, before a usable snapshot is handed back.
+            // The finally disposes the backend we opened (issue #123 review).
+            PendingTeardowns.ThrowIfPending(device.Id);
             return new CameraSnapshot(backend.NativeEndpointId, formats, controls);
         }
         finally
@@ -208,6 +209,10 @@ public sealed class CameraDevice : IAsyncDisposable
         PendingTeardowns.ThrowIfPending(DeviceInfo.Id);
 
         await _backend.ConfigureAsync(configuration, ct).ConfigureAwait(false);
+        // Recheck after Configure, the one device access this path makes, so a
+        // teardown that abandoned during it does not leave a session running on
+        // a contended backend (issue #123 review).
+        PendingTeardowns.ThrowIfPending(DeviceInfo.Id);
         _hasActiveSession = true;
         var session = new CameraSession(this, ownsDevice: false, _backend, configuration, options ?? new(), logger, timeProvider);
         session.LogSessionOpened();

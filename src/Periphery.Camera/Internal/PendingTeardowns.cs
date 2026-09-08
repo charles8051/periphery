@@ -36,6 +36,21 @@ namespace Periphery.Camera.Internal;
 /// owner left alive to hold it: the session and device that started the
 /// teardown are disposed by the time it matters.
 /// </para>
+/// <para>
+/// The guarantee is exact for the case this exists to cover. Abandonment
+/// registers <em>before</em> the disposing session's <c>DisposeAsync</c>
+/// returns, so a consumer that disposes one session and then opens another on
+/// the same device — the long-lived reopen-after-fault pattern, and the #123
+/// cascade itself — always sees the registration and is refused. An open that
+/// <em>overlaps</em> a still-running dispose is narrower: each open path
+/// rechecks after its last device access, so an abandonment that registers
+/// while the open is doing native work is caught before a usable handle is
+/// returned, but the check is a read, not a reservation. Fully serialising an
+/// open against a concurrent abandonment needs a per-device lease, which is
+/// <c>CameraDeviceProxy</c>'s to own when it lands (ADR-0084 D5); a C# lease
+/// cannot in any case prevent the OS-level contention a wedged driver holds
+/// independently of this registry.
+/// </para>
 /// </remarks>
 internal static class PendingTeardowns
 {
