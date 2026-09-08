@@ -40,28 +40,14 @@ public sealed class MonitorDeviceProxy : DeviceProxyBase<MonitorDevice, MonitorE
     /// Creates a self-contained proxy that owns its watcher and starts tracking
     /// monitors matching <paramref name="profile"/>.
     /// </summary>
-    public static async Task<MonitorDeviceProxy> OpenAsync(
+    public static Task<MonitorDeviceProxy> OpenAsync(
         DeviceProfile profile,
         IRecoveryPolicy? recoveryPolicy = null,
         CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-
-        var tracker = new DeviceTracker(profile.Filter, profile.Name);
-        var watcher = Devices.Watch().AddTracker(tracker);
-        var handle = new MonitorDeviceProxy(tracker, watcher, recoveryPolicy);
-
-        try
-        {
-            await watcher.StartAsync(ct).ConfigureAwait(false);
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
-    }
+        => OpenWithOwnedWatcherAsync(
+            profile,
+            (tracker, watcher) => new MonitorDeviceProxy(tracker, watcher, recoveryPolicy),
+            ct);
 
     /// <summary>
     /// Creates a proxy that borrows a caller-owned <paramref name="tracker"/>
@@ -70,11 +56,7 @@ public sealed class MonitorDeviceProxy : DeviceProxyBase<MonitorDevice, MonitorE
     public static MonitorDeviceProxy Create(
         DeviceTracker tracker,
         IRecoveryPolicy? recoveryPolicy = null)
-    {
-        ArgumentNullException.ThrowIfNull(tracker);
-
-        var handle = new MonitorDeviceProxy(tracker, recoveryPolicy);
-        handle.CheckInitialState();
-        return handle;
-    }
+        => CreateWithBorrowedTracker(
+            tracker,
+            t => new MonitorDeviceProxy(t, recoveryPolicy));
 }

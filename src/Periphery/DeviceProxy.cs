@@ -157,22 +157,12 @@ public sealed class DeviceProxy<TDevice>
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(openDevice);
 
-        var tracker = new DeviceTracker(profile.Filter, profile.Name);
-        var watcher = Devices.Watch().AddTracker(tracker);
-        var handle = new DeviceProxy<TDevice>(
-            tracker, watcher, openDevice, onActivated, onDeactivated, whileOpen,
-            recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery);
-
-        try
-        {
-            await watcher.StartAsync(ct).ConfigureAwait(false);
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
+        return await OpenWithOwnedWatcherAsync(
+            profile,
+            (tracker, watcher) => new DeviceProxy<TDevice>(
+                tracker, watcher, openDevice, onActivated, onDeactivated, whileOpen,
+                recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery),
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -233,11 +223,11 @@ public sealed class DeviceProxy<TDevice>
         ArgumentNullException.ThrowIfNull(tracker);
         ArgumentNullException.ThrowIfNull(openDevice);
 
-        var handle = new DeviceProxy<TDevice>(
-            tracker, openDevice, onActivated, onDeactivated, whileOpen,
-            recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery);
-        handle.CheckInitialState();
-        return handle;
+        return CreateWithBorrowedTracker(
+            tracker,
+            t => new DeviceProxy<TDevice>(
+                t, openDevice, onActivated, onDeactivated, whileOpen,
+                recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery));
     }
 }
 
@@ -431,24 +421,12 @@ public sealed class DeviceProxy
         bool faultedNodeRecovery = false,
         CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(profile);
-
-        var tracker = new DeviceTracker(profile.Filter, profile.Name);
-        var watcher = Devices.Watch().AddTracker(tracker);
-        var handle = new DeviceProxy(
-            tracker, watcher, onActivated, onDeactivated, whileOpen,
-            recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery);
-
-        try
-        {
-            await watcher.StartAsync(ct).ConfigureAwait(false);
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
+        return await OpenWithOwnedWatcherAsync(
+            profile,
+            (tracker, watcher) => new DeviceProxy(
+                tracker, watcher, onActivated, onDeactivated, whileOpen,
+                recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery),
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -498,12 +476,10 @@ public sealed class DeviceProxy
         IResetSafetyGate? resetSafetyGate = null,
         bool faultedNodeRecovery = false)
     {
-        ArgumentNullException.ThrowIfNull(tracker);
-
-        var handle = new DeviceProxy(
-            tracker, onActivated, onDeactivated, whileOpen,
-            recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery);
-        handle.CheckInitialState();
-        return handle;
+        return CreateWithBorrowedTracker(
+            tracker,
+            t => new DeviceProxy(
+                t, onActivated, onDeactivated, whileOpen,
+                recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery));
     }
 }
