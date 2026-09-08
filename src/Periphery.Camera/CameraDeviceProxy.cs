@@ -40,6 +40,23 @@ namespace Periphery.Camera;
 /// reference it gets back; anything else is application policy.
 /// </para>
 /// <para>
+/// <b>The callback's duration is the lease's duration, and that is what sizes the
+/// pool.</b> A frame occupies a pooled buffer for exactly as long as
+/// <c>onFrame</c> runs. Work done inline — a pixel-format conversion, a scale, an
+/// encode, a large copy — holds that buffer for its whole length, so the pool has
+/// to be budgeted against callback latency rather than against frame rate alone.
+/// <see cref="CameraSessionOptions.BufferCount"/> is how many frames a consumer
+/// may hold at once; with a slow callback, or with work fanned out to several
+/// consumers that each retain a frame, the default of three is reached quickly and
+/// the rest are dropped under
+/// <see cref="CameraSessionOptions.ExhaustionPolicy"/>. That is arithmetic, not a
+/// fault, and the drops are counted in
+/// <see cref="CameraSessionMetrics.FramesDropped"/>. Size the pool through the
+/// <c>configure</c> hook, or return from the callback promptly and do the slow
+/// work on an owned copy. <see cref="LeasedCameraFrame.AddRef"/> extends a lease;
+/// it does not release one.
+/// </para>
+/// <para>
 /// <b>A dead stream is an ordinary fault.</b> A wedged camera stays enumerated
 /// and active while delivering nothing, so no PnP edge fires and a tracker-driven
 /// reopen never happens. <see cref="CameraCaptureOptions.FrameTimeout"/> — five
@@ -159,7 +176,10 @@ public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraExc
     /// <param name="onFrame">
     /// Invoked for each delivered frame. The frame is disposed when this returns;
     /// call <see cref="LeasedCameraFrame.AddRef"/> to retain one beyond the call.
-    /// A throw from here faults the pump and triggers recovery.
+    /// A throw from here faults the pump and triggers recovery. <b>However long
+    /// this runs is how long a pooled buffer is held</b> — see the pool-sizing
+    /// note on <see cref="CameraDeviceProxy"/> before doing conversion or encode
+    /// work inline.
     /// </param>
     /// <param name="configure">
     /// Optional format and session configuration, applied to a fresh builder on
@@ -211,7 +231,8 @@ public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraExc
     /// </summary>
     /// <param name="tracker">A tracker already attached to a running watcher.</param>
     /// <param name="onFrame">
-    /// Invoked for each delivered frame. The frame is disposed when this returns.
+    /// Invoked for each delivered frame. The frame is disposed when this returns,
+    /// and holds a pooled buffer for as long as it runs.
     /// </param>
     /// <param name="configure">Optional per-connection session configuration.</param>
     /// <param name="captureOptions">Optional per-capture options.</param>
