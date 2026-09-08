@@ -241,11 +241,16 @@ public sealed class CameraDeviceProxyTests
 
     // The gentlest rung for a wedged camera is the platform's, not a
     // camera-specific one (issue #123's fourth direction, declined). A USB-backed
-    // camera already advertises the port-cycle and disable/enable rungs, and the
+    // camera is already in the reset strategy table with both rungs, and the
     // escalating policy walks them — so reaching the reset ladder from this proxy
     // is a policy argument, with no camera code involved.
+    //
+    // The table is asserted rather than DeviceReset.PlatformDefault, because the
+    // platform mechanism is Windows-only: PlatformDefault is NullDeviceReset off
+    // Windows and advertises nothing. That is a pre-existing property of ADR-0060's
+    // core, not something the camera decision changes.
     [Fact]
-    public void AUsbCameraAdvertisesThePlatformResetRungs_AndTheEscalatingPolicyWalksThem()
+    public void AUsbCameraIsResettableByTheTable_AndTheEscalatingPolicyWalksBothRungs()
     {
         var camera = TestHelpers.CreateDeviceInfo(@"USB\VID_046D&PID_0825\CAM") with
         {
@@ -253,23 +258,51 @@ public sealed class CameraDeviceProxyTests
             BusType = BusType.USB,
         };
 
-        var strategies = DeviceReset.PlatformDefault.StrategiesFor(camera);
+        Assert.True(ResetStrategyMap.IsUsbBacked(camera));
+        var strategies = ResetStrategyMap.ForTransport(camera);
         Assert.Equal(
             [ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable],
             strategies.Select(s => s.Kind));
 
-        // Attempt 1 is the sanity retry; attempt 2 takes the gentlest rung.
+        // Attempt 1 is the sanity retry; attempts 2 and 3 take the rungs in order.
         var policy = new EscalatingResetRecoveryPolicy();
-        var context = new RecoveryContext(
-            Attempt: 2,
+        var wedged = new CameraTeardownPendingException(
+            "wedged", camera.Id, Task.CompletedTask, TimeSpan.FromSeconds(9));
+
+        Assert.IsType<RecoveryDirective.Retry>(policy.Decide(Context(1)));
+        Assert.Equal(ResetKind.UsbPortCycle, Rung(2));
+        Assert.Equal(ResetKind.PnpDisableEnable, Rung(3));
+
+        RecoveryContext Context(int attempt) => new(
+            Attempt: attempt,
             ResetCount: 0,
-            LastFault: new CameraTeardownPendingException(
-                "wedged", camera.Id, Task.CompletedTask, TimeSpan.FromSeconds(9)),
+            LastFault: wedged,
             Device: camera,
             AvailableResets: strategies);
 
-        var reset = Assert.IsType<RecoveryDirective.Reset>(policy.Decide(context));
-        Assert.Equal(ResetKind.UsbPortCycle, reset.Strategy.Kind);
+        ResetKind Rung(int attempt) =>
+            Assert.IsType<RecoveryDirective.Reset>(policy.Decide(Context(attempt))).Strategy.Kind;
+    }
+
+    // On Windows the same camera reaches those rungs through the mechanism the
+    // proxy uses by default, with no camera-specific IDeviceReset.
+    [Fact]
+    public void OnWindows_ThePlatformResetAdvertisesThoseRungsForACamera()
+    {
+        // cfgmgr32 reset does not exist off Windows; PlatformDefault is
+        // NullDeviceReset there and correctly advertises nothing.
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var camera = TestHelpers.CreateDeviceInfo(@"USB\VID_046D&PID_0825\CAM") with
+        {
+            IsActive = true,
+            BusType = BusType.USB,
+        };
+
+        Assert.Equal(
+            [ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable],
+            DeviceReset.PlatformDefault.StrategiesFor(camera).Select(s => s.Kind));
     }
 
     // A policy that records the first fault it is asked about and retries fast,

@@ -567,7 +567,7 @@ change to what gets promoted or to what the bag holds.
 
 **The lifecycle owner shipped as proposed. `StallTimeout` and
 `CameraStallException` were cut, as were the per-device open lease and the
-camera-specific reset rung.** The proposal below missed an option the session
+camera-specific reset rung. Nothing in D5 added public surface in the end.** The proposal below missed an option the session
 already had, and its recovery argument turned out to be satisfied by that option
 without new surface. What was measured is recorded here; the superseded text is
 kept at the end.
@@ -694,28 +694,39 @@ Each open path already rechecks after its last device access, which closes the
 window that produced the `#123` cascade. That boundary is now written on
 `PendingTeardowns` as a decision rather than a deferral.
 
-#### The refusal expires
+#### The refusal has no expiry, and a window written for it was reverted
 
-Asking the lease question surfaced a defect the lease would not have fixed: a
-pending entry had no expiry. An abandoned step that never returns refused its
-device for the life of the process, and neither elapsed time nor a replug lifted
-the refusal, because the registry never sees PnP edges. The exception's own
-remedy — replug the camera if the driver is wedged — did not work. Awaiting its
-`Completion` was likewise an unbounded wait on a step that may never complete,
-which is the hang the registry exists to replace rather than reproduce.
+Asking the lease question surfaced a related property: a pending entry has no
+expiry, and this registry never sees PnP edges. If an abandoned step's native
+call genuinely never returns, its device stays refused for the life of the
+process, and the exception's own advice — replug the camera if the driver is
+wedged — would not lift it.
 
-`PendingTeardowns.RefusalTtl` bounds both at one minute, against teardown budgets
-of two, two and three seconds. Past it, `Find` reports nothing and the open is
-attempted. If the driver is genuinely still held that open fails, and the
-caller's recovery ladder handles it.
+**A one-minute refusal window was written for that and reverted before merge.**
+Two things were wrong with it, and the second is the one that matters.
 
-The asymmetry is the whole argument for a short window: expiring too early
-degrades into a noisy ladder for one device, expiring too late has no recovery at
-all short of a process restart. The window is not configurable, because a knob
-here would be tuned to zero, which is the pre-`#123` cascade. A second
-abandonment after a lapsed window starts a fresh window rather than widening the
-lapsed entry, which would otherwise carry the old timestamp forward and be born
-expired.
+The premise was unmeasured. The evidence offered was a test in which the
+teardown parks on a `TaskCompletionSource` that never completes, no matter what
+happens to the device. That fake models "the call never returns, ever"; it cannot
+model what a surprise-removal does to a call blocked in a driver, which on real
+hardware typically returns a device-removed error and so completes the step and
+clears the entry. Both platform backends already classify that errno — `ENODEV`
+on a yanked V4L2 camera — which is weak evidence pointing the other way. So
+"a replug cannot lift the refusal" was never established, only assumed.
+
+The cost was measured, and it is worse than the failure it was meant to fix.
+Today a `CameraDeviceProxy` retrying on the default backoff gets a cheap typed
+refusal on every attempt. Past an expiry window, every attempt instead performs a
+real native open against a driver that may still be wedged — the `#123` cascade
+with a scheduler behind it, running until the process ends. Trading one clean
+permanent refusal for an unbounded automated cascade is the wrong direction.
+
+What would settle it is a bench measurement on a genuinely wedged driver: does
+surprise-removal unblock the parked call? Until that is answered, the refusal
+stays unbounded and the limitation is written on `PendingTeardowns` rather than
+papered over. Recording the reverted design here is the point — the reasoning
+looked sound and the implementation was complete before the evidence for it was
+examined.
 
 #### Why there is no camera-specific reset rung
 
@@ -729,14 +740,20 @@ ADR-0060 places a device-specific soft reset in an extension rather than in core
 UVC standardises no reset request, so there is no gentler camera-specific rung to
 write. What clears a wedged UVC driver is a USB port cycle or a PnP
 disable/enable: the mechanised form of the replug `#123` recommends, and both are
-already advertised by `DeviceReset.PlatformDefault` for a USB-backed camera.
+already advertised by `DeviceReset.PlatformDefault` for a USB-backed camera —
+on Windows. Off Windows `PlatformDefault` is `NullDeviceReset` and advertises
+nothing, so the ladder is unavailable there. That is a pre-existing property of
+ADR-0060's core rather than something this decision changes, and it is the reason
+the camera test asserts `ResetStrategyMap` (pure, platform-agnostic) and gates
+the `PlatformDefault` assertion on Windows.
 
 So the rung exists and `CameraDeviceProxy` reaches it with no camera code. The
 escalation is gated by the policy, so a consumer passes an
 `EscalatingResetRecoveryPolicy` as `recoveryPolicy` to walk the ladder instead of
 retrying forever; the default backoff policy never resets, so this stays opt-in.
 Both halves are pinned by test
-(`AUsbCameraAdvertisesThePlatformResetRungs_AndTheEscalatingPolicyWalksThem`).
+(`AUsbCameraIsResettableByTheTable_AndTheEscalatingPolicyWalksBothRungs`, plus
+`OnWindows_ThePlatformResetAdvertisesThoseRungsForACamera`).
 
 #### The scope line held
 
