@@ -40,6 +40,29 @@ namespace Periphery.Camera;
 /// reference it gets back; anything else is application policy.
 /// </para>
 /// <para>
+/// <b>A pooled buffer stays held for at least as long as the callback runs, and
+/// that is what sizes the pool.</b> The callback's own lease lasts exactly as long
+/// as <c>onFrame</c> does. A reference taken with
+/// <see cref="LeasedCameraFrame.AddRef"/> keeps the <em>same</em> pooled buffer
+/// leased past the return, until that reference is disposed too — so retaining a
+/// frame extends occupancy rather than escaping it. Either way the buffer is
+/// unavailable to the producer for the whole time, so the pool has to be budgeted
+/// against how long consumers hold frames rather than against frame rate alone.
+/// Work done inline — a pixel-format conversion, a scale, an encode, a large copy
+/// — and work done on a retained reference both count.
+/// <see cref="CameraSessionOptions.BufferCount"/> is how many frames a consumer
+/// may hold at once; with a slow callback, or with frames retained and fanned out
+/// to several consumers, the default of three is reached quickly and the rest are
+/// dropped under
+/// <see cref="CameraSessionOptions.ExhaustionPolicy"/>. That is arithmetic, not a
+/// fault, and the drops are counted in
+/// <see cref="CameraSessionMetrics.FramesDropped"/>. Size the pool through the
+/// <c>configure</c> hook, or return from the callback promptly and do the slow
+/// work on a frame that owns its memory — <see cref="LeasedCameraFrame.Copy"/> is
+/// the escape from the pool, where <see cref="LeasedCameraFrame.AddRef"/> only
+/// extends a lease on it.
+/// </para>
+/// <para>
 /// <b>A dead stream is an ordinary fault.</b> A wedged camera stays enumerated
 /// and active while delivering nothing, so no PnP edge fires and a tracker-driven
 /// reopen never happens. <see cref="CameraCaptureOptions.FrameTimeout"/> — five
@@ -159,7 +182,11 @@ public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraExc
     /// <param name="onFrame">
     /// Invoked for each delivered frame. The frame is disposed when this returns;
     /// call <see cref="LeasedCameraFrame.AddRef"/> to retain one beyond the call.
-    /// A throw from here faults the pump and triggers recovery.
+    /// A throw from here faults the pump and triggers recovery. <b>A pooled buffer
+    /// is held for at least as long as this runs</b>, and longer still if the
+    /// callback retains the frame — see the pool-sizing note on
+    /// <see cref="CameraDeviceProxy"/> before doing conversion or encode work
+    /// inline.
     /// </param>
     /// <param name="configure">
     /// Optional format and session configuration, applied to a fresh builder on
@@ -211,7 +238,9 @@ public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraExc
     /// </summary>
     /// <param name="tracker">A tracker already attached to a running watcher.</param>
     /// <param name="onFrame">
-    /// Invoked for each delivered frame. The frame is disposed when this returns.
+    /// Invoked for each delivered frame. The frame is disposed when this returns,
+    /// and holds a pooled buffer for at least as long as it runs — longer if the
+    /// callback retains it.
     /// </param>
     /// <param name="configure">Optional per-connection session configuration.</param>
     /// <param name="captureOptions">Optional per-capture options.</param>
