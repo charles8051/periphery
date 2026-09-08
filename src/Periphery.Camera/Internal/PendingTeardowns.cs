@@ -45,11 +45,39 @@ namespace Periphery.Camera.Internal;
 /// <em>overlaps</em> a still-running dispose is narrower: each open path
 /// rechecks after its last device access, so an abandonment that registers
 /// while the open is doing native work is caught before a usable handle is
-/// returned, but the check is a read, not a reservation. Fully serialising an
-/// open against a concurrent abandonment needs a per-device lease, which is
-/// <c>CameraDeviceProxy</c>'s to own when it lands (ADR-0084 D5); a C# lease
-/// cannot in any case prevent the OS-level contention a wedged driver holds
-/// independently of this registry.
+/// returned, but the check is a read, not a reservation.
+/// </para>
+/// <para>
+/// <b>There is no per-device lease, and that is now a decision rather than a
+/// deferral.</b> The reservation was left to <c>CameraDeviceProxy</c> when it
+/// landed (ADR-0084 D5); the proxy has landed and does not take it, for three
+/// reasons. A proxy-owned lease covers only proxy-driven opens, and
+/// <c>CameraSession.For(DeviceInfo)</c> remains supported, so it would buy
+/// partial atomicity in place of a stated boundary. A registry-owned lease
+/// fares no better on the case that matters: the abandoned thread is already
+/// inside a driver call, so the contention it causes is at the OS and no C#
+/// mutual exclusion reaches it. And the residual window it would close — an
+/// abandonment registering between the recheck and the handle being returned —
+/// hands the caller a session that faults on first use, which the recovery
+/// ladder already treats as an ordinary stream fault. The lease would convert
+/// one recoverable fault into another.
+/// </para>
+/// <para>
+/// <b>A refusal has no expiry, and that is unresolved rather than settled.</b>
+/// This registry never sees PnP edges, so nothing here observes a replug. If an
+/// abandoned step's native call genuinely never returns, its device stays
+/// refused for the life of the process and the exception's own advice — replug
+/// the camera — would not lift it. A bounded refusal window was written for that
+/// and reverted before merge, because the premise is unmeasured and the cost is
+/// not: past such a window a proxy on the default backoff retries forever, and
+/// each retry becomes a real native open against a driver that may still be
+/// wedged, which is the #123 cascade with a scheduler behind it. The cheap typed
+/// refusal is the better failure while the premise is unproven. What would settle
+/// it is a bench measurement on a genuinely wedged driver — does surprise-removal
+/// unblock the parked call? The platform backends already classify the
+/// device-removed errno (<c>ENODEV</c> on a yanked V4L2 camera), which is weak
+/// evidence that it does, and a fake gated on a <c>TaskCompletionSource</c>
+/// cannot answer it either way.
 /// </para>
 /// </remarks>
 internal static class PendingTeardowns

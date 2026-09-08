@@ -563,7 +563,219 @@ meaningful gets *promoted* to a typed field. That promotion rule is why the
 record is 51 wide. D4 changes how the promoted surface is *read*, and proposes no
 change to what gets promoted or to what the bag holds.
 
-### D5 — `CameraDeviceProxy`, and a stall deadline on the session
+### D5 — Superseded in part: `CameraDeviceProxy` shipped, the stall deadline was cut
+
+**The lifecycle owner shipped as proposed. `StallTimeout` and
+`CameraStallException` were cut, as were the per-device open lease and the
+camera-specific reset rung. Nothing in D5 added public surface in the end.** The proposal below missed an option the session
+already had, and its recovery argument turned out to be satisfied by that option
+without new surface. What was measured is recorded here; the superseded text is
+kept at the end.
+
+#### What shipped
+
+`CameraDeviceProxy` (`src/Periphery.Camera/CameraDeviceProxy.cs`, issue `#139`),
+built on `DeviceProxyBase`. It supplies two hooks and inherits everything else:
+`OpenDeviceAsync` opens a configured `CameraSession`, `WhileOpenAsync` is the
+frame pump, and `HasWorker => true`. The activation window, the reconnect loop,
+`IRecoveryPolicy` (ADR-0055) and `IDeviceReset` escalation (ADR-0060) come from
+the base unchanged.
+
+The shipped factory differs from the sketch below in argument order, because
+`onFrame` is required and the sketch put it after two optional parameters:
+
+```csharp
+await using var camera = await CameraDeviceProxy.OpenAsync(
+    profile,
+    onFrame: (frame, ct) => sink.WriteAsync(frame, ct),
+    configure: b => b.PreferNv12().MaxResolution(1920, 1080),
+    captureOptions: null,        // null = the default five-second FrameTimeout
+    recoveryPolicy: policy,
+    ct);
+```
+
+`CameraDeviceProxy.Create(tracker, ...)` is the borrowed-tracker form, and
+`CameraSession.For(DeviceInfo)` stays as proposed — the proxy is the recommended
+composition, not the only one.
+
+**The device type is the session, not the device.** `CameraSession` owns the
+`CameraDevice` it was opened from, so disposing the session on every close,
+fault and dispose path releases the whole chain. A proxy over `CameraDevice`
+would have left the session as a second thing to own.
+
+Three things were settled during implementation rather than in the proposal:
+
+- **The builder is rebuilt per connection.** Format selection reads a snapshot of
+  the device that just arrived, and a replugged camera can enumerate different
+  formats than the one it replaced. Reusing a resolved `CameraConfiguration`
+  would reapply a format the new device may not advertise.
+- **A producer that ends without cancellation is a fault, not a normal return.**
+  The base treats a returning worker as "leave the device open", which would park
+  a live handle behind a stream that is never going to deliver again. The pump
+  throws instead, so the recovery ladder recycles it.
+- **A pooled buffer is held for at least as long as the callback runs**, and
+  longer if the callback retains the frame with `AddRef`. That is what sizes
+  `CameraSessionOptions.BufferCount`, and it is documented on the proxy rather
+  than left for consumers to infer from drop counts.
+
+The sequencing held. `#70` landed first, so the camera proxy is a caller of the
+shared factory bodies rather than a fourth copy of them; `#123` landed before the
+proxy, so automatic reopen was safe from the proxy's first commit. The
+proposal's two-step rollout — report the stall first, automate the reopen later
+— collapsed into one step for that reason, not because the ordering argument was
+wrong. That argument was the most valuable thing in the proposal and it is
+unchanged.
+
+#### Why `StallTimeout` was cut
+
+The proposal did not account for `CameraCaptureOptions.FrameTimeout`, which
+already exists, already defaults to five seconds, and already throws
+`CameraTimeoutException` on the streaming path the proxy drives. The recovery
+story D5 was written to enable was therefore already complete before D5 started.
+
+That is measured, not inferred
+(`CameraDeviceProxyTests.StalledStream_ReachesTheRecoveryPolicyAsATimeout_WithNoStallSpecificSurface`).
+A backend that parks on every read produces a `CameraTimeoutException` as the
+`RecoveryContext.LastFault` handed to the policy, and the ladder's next retry
+delivers frames once the backend recovers — with no stall-specific option and no
+stall-specific exception type anywhere in the path.
+
+Shipping `StallTimeout` next to `FrameTimeout` would have put two frame-arrival
+deadlines on one session, needing a written precedence rule to keep them from
+drifting. D4 declined a facet predicate on exactly this ground, one decision
+earlier in this ADR.
+
+**A session-scoped default was also declined** (`#219`'s second option: a
+`CameraSessionOptions.FrameTimeout` that a null capture option inherits). It
+solves having to thread a capture option through every read. The proxy takes
+`captureOptions` once at construction and a direct caller passes options at the
+one `CaptureAsync` call, so the problem it solves has no instance here.
+
+#### What a deadline cannot express
+
+The condition genuinely uncovered is a stream that delivers **slowly**, not one
+that stops. `FrameTimeout` is binary and per-frame: a session configured at 30
+fps and delivering half a frame a second never trips a five-second wait and
+never will. Dead and slow also want opposite responses. A dead stream should be
+recovered; a struggling one should be reported, because tearing down and
+reopening a camera that is already struggling tends to make it worse.
+
+A second binary deadline does not reach this. It distinguishes dead from dead.
+If a third concept ever earns its place the axis is **rate**, not another
+deadline, and it reports degradation rather than faulting the capture — a larger
+and more speculative design than D5 sketched, and additive whenever it happens.
+
+Meanwhile the raw material is already public: delivered rate from
+`CameraSessionMetrics.FramesProduced` and `LastFrameTimestamp` against the
+configured `CameraFormat.MaxFrameRate`. The gap is that Periphery does not answer
+the question *for* the consumer, not that the consumer cannot answer it. That is
+recorded on `CameraCaptureOptions` so the next reader does not re-propose the
+knob.
+
+#### Why there is no per-device open/teardown lease
+
+`PendingTeardowns.ThrowIfPending` is a read, not a reservation. Review raised
+this three times on `#123`'s implementation and it was deferred to this decision
+on the grounds that the proxy would own it. The proxy has landed and does not,
+for three reasons:
+
+- A proxy-owned lease covers only proxy-driven opens.
+  `CameraSession.For(DeviceInfo)` remains supported, so the result would be
+  partial atomicity in place of a stated boundary.
+- A registry-owned lease fares no better on the case that matters. The abandoned
+  thread is already inside a driver call, so the contention it causes is at the
+  OS, and no C# mutual exclusion reaches it.
+- The window it would close — an abandonment registering between an open path's
+  recheck and the handle being returned — hands the caller a session that faults
+  on first use, which the recovery ladder already treats as an ordinary stream
+  fault. The lease converts one recoverable fault into another.
+
+Each open path already rechecks after its last device access, which closes the
+window that produced the `#123` cascade. That boundary is now written on
+`PendingTeardowns` as a decision rather than a deferral.
+
+#### The refusal has no expiry, and a window written for it was reverted
+
+Asking the lease question surfaced a related property: a pending entry has no
+expiry, and this registry never sees PnP edges. If an abandoned step's native
+call genuinely never returns, its device stays refused for the life of the
+process, and the exception's own advice — replug the camera if the driver is
+wedged — would not lift it.
+
+**A one-minute refusal window was written for that and reverted before merge.**
+Two things were wrong with it, and the second is the one that matters.
+
+The premise was unmeasured. The evidence offered was a test in which the
+teardown parks on a `TaskCompletionSource` that never completes, no matter what
+happens to the device. That fake models "the call never returns, ever"; it cannot
+model what a surprise-removal does to a call blocked in a driver, which on real
+hardware typically returns a device-removed error and so completes the step and
+clears the entry. Both platform backends already classify that errno — `ENODEV`
+on a yanked V4L2 camera — which is weak evidence pointing the other way. So
+"a replug cannot lift the refusal" was never established, only assumed.
+
+The cost was measured, and it is worse than the failure it was meant to fix.
+Today a `CameraDeviceProxy` retrying on the default backoff gets a cheap typed
+refusal on every attempt. Past an expiry window, every attempt instead performs a
+real native open against a driver that may still be wedged — the `#123` cascade
+with a scheduler behind it, running until the process ends. Trading one clean
+permanent refusal for an unbounded automated cascade is the wrong direction.
+
+What would settle it is a bench measurement on a genuinely wedged driver: does
+surprise-removal unblock the parked call? Until that is answered, the refusal
+stays unbounded and the limitation is written on `PendingTeardowns` rather than
+papered over. Recording the reverted design here is the point — the reasoning
+looked sound and the implementation was complete before the evidence for it was
+examined.
+
+#### Why there is no camera-specific reset rung
+
+`#123`'s fourth direction asked whether a camera whose teardown abandoned wants
+its own `IDeviceReset`, on the `TreehopperDeviceReset` precedent. It does not,
+and the difference is what such a reset would have to speak.
+
+Treehopper's extra rungs are device-protocol verbs — a reboot opcode and an EP0
+vendor request — whose wire contract only that firmware defines, which is why
+ADR-0060 places a device-specific soft reset in an extension rather than in core.
+UVC standardises no reset request, so there is no gentler camera-specific rung to
+write. What clears a wedged UVC driver is a USB port cycle or a PnP
+disable/enable: the mechanised form of the replug `#123` recommends, and both are
+already advertised by `DeviceReset.PlatformDefault` for a USB-backed camera —
+on Windows. Off Windows `PlatformDefault` is `NullDeviceReset` and advertises
+nothing, so the ladder is unavailable there. That is a pre-existing property of
+ADR-0060's core rather than something this decision changes, and it is the reason
+the camera test asserts `ResetStrategyMap` (pure, platform-agnostic) and gates
+the `PlatformDefault` assertion on Windows.
+
+So the rung exists and `CameraDeviceProxy` reaches it with no camera code. The
+escalation is gated by the policy, so a consumer passes an
+`EscalatingResetRecoveryPolicy` as `recoveryPolicy` to walk the ladder instead of
+retrying forever; the default backoff policy never resets, so this stays opt-in.
+Both halves are pinned by test
+(`AUsbCameraIsResettableByTheTable_AndTheEscalatingPolicyWalksBothRungs`, plus
+`OnWindows_ThePlatformResetAdvertisesThoseRungsForACamera`).
+
+#### The scope line held
+
+`#121`'s test is unchanged and the proxy passes it: it hands a consumer one frame
+at a time and has no opinion about what happens next. The pump disposes each
+frame when the callback returns, and a consumer that needs one to outlive the
+call takes an `AddRef` and owns the reference it gets back. There is no fan-out,
+no router, and no subscriber list.
+
+---
+
+<details>
+<summary>Original D5 as proposed (superseded)</summary>
+
+The original text proposed the proxy — which shipped as described — plus
+`CameraSessionOptions.StallTimeout` and a `CameraStallException`, and staged the
+automatic reopen behind `#123` as a second step.
+
+The staging argument was right, and is why the proxy could ship with reopen
+enabled. The stall deadline was not: it was proposed without reference to
+`CameraCaptureOptions.FrameTimeout`, which already turns a stream that stops
+delivering into a typed, recoverable fault on the very path the proxy drives.
 
 Give `Periphery.Camera` the lifecycle owner the other three extensions have.
 
@@ -628,6 +840,10 @@ about it.
 `CameraSession.For(DeviceInfo)` and the direct `OpenAsync` path stay. The proxy
 is the recommended composition, not the only one — the same relationship
 `UsbDeviceProxy` has to `UsbDevice`.
+
+</details>
+
+---
 
 ### D6 — A start attempt is transactional. No policy overload.
 
@@ -810,7 +1026,8 @@ resolution latches).
 ### Neutral
 
 - No device model, provider, enricher, or platform contract changes.
-- D1, D2, D4 and D5 are additive; the D6 policy overload was cut. D3 and the
+- D1, D2, D4 and D5 are additive; D5's `StallTimeout` and the D6 policy overload
+  were both cut, so neither added public surface after all. D3 and the
   `_started` rollback in D6 are behavioural but within the documented contract,
   and both shipped as fixes on a minor (#149, #150) rather than together on a
   major as first planned.
@@ -862,7 +1079,9 @@ where the two differ.
    shipped as a fix (#150).
 6. **D5** — `CameraDeviceProxy` and `StallTimeout`. Largest single piece,
    independent of D1–D4, and **blocked on `#123`**: a stall the proxy cannot
-   reopen from deterministically is not worth automating.
+   reopen from deterministically is not worth automating. `#123` landed first as
+   planned; the proxy shipped as `#139` with reopen enabled from its first
+   commit, and `StallTimeout` was cut (`#219`).
 
 `#70` (hoist the three identical `DeviceProxy` factory bodies into
 `DeviceProxyBase`) is the same duplication class as D1, one layer down. Doing it
@@ -895,7 +1114,13 @@ than a fourth copy of one.
 - `#121` — document the frame fan-out recipe; do not ship a router. Sets the
   scope posture D5 must not violate.
 - `#123` — abandoned camera teardown is invisible and cascades into the next
-  open. Blocks D5's `StallTimeout`.
+  open. Blocked D5's `StallTimeout`; landed before the proxy, so reopen was safe
+  from the proxy's first commit. Its fourth direction, a camera-specific reset
+  rung, was declined in D5.
+- `#219` — does `StallTimeout` earn its place next to
+  `CameraCaptureOptions.FrameTimeout`? Answered no: one frame-arrival deadline,
+  and the slow-stream case recorded as the real gap.
+- `#139` — `Periphery.Camera` has no lifecycle owner. D5's proxy half.
 - `#70` — hoist the three identical `DeviceProxy` factory bodies into
   `DeviceProxyBase`. Same duplication class as D1; worth doing before D5.
 - `#17` — teardown-time backend error mis-classified as a capture fault.

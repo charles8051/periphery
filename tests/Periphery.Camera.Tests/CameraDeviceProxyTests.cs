@@ -200,6 +200,128 @@ public sealed class CameraDeviceProxyTests
             CameraDeviceProxy.Create(CreateTracker(), onFrame: null!));
     }
 
+    // ── The stall case: no second deadline, and no stall-specific exception ──
+
+    // ADR-0084 D5 proposed CameraSessionOptions.StallTimeout plus a
+    // CameraStallException so the proxy could recover a wedged stream. Issue #219
+    // cut both, on the grounds that CameraCaptureOptions.FrameTimeout already
+    // produces a typed, recoverable fault for a stream that stops delivering.
+    // This is that claim, driven end to end through the proxy: the backend parks
+    // on every read, the pump's next-frame wait expires, and the recovery policy
+    // is handed a CameraTimeoutException — no new option and no new type in the
+    // path. The short FrameTimeout only shortens the test; the default five
+    // seconds runs the identical code.
+    [Fact]
+    public async Task StalledStream_ReachesTheRecoveryPolicyAsATimeout_WithNoStallSpecificSurface()
+    {
+        bool stalled = true;
+        using var scope = CameraTestScope.Install(
+            _ => new InMemoryCameraBackend { HangOnRead = Volatile.Read(ref stalled) });
+
+        var tracker = CreateTracker();
+        var policy = new RecordingRetryPolicy(TimeSpan.FromMilliseconds(50));
+        var framesAfterRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var proxy = CameraDeviceProxy.Create(
+            tracker,
+            onFrame: (_, _) => { framesAfterRecovery.TrySetResult(); return Task.CompletedTask; },
+            captureOptions: new CameraCaptureOptions(TimeSpan.FromMilliseconds(200)),
+            recoveryPolicy: policy);
+
+        SimulateConnect(tracker, ActiveCamera());
+
+        var fault = await policy.FirstFault.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.IsType<CameraTimeoutException>(fault);
+
+        // And the ladder is a real ladder: let the camera come good and the next
+        // retry delivers frames without the consumer doing anything.
+        Volatile.Write(ref stalled, false);
+        await framesAfterRecovery.Task.WaitAsync(TimeSpan.FromSeconds(15));
+    }
+
+    // The gentlest rung for a wedged camera is the platform's, not a
+    // camera-specific one (issue #123's fourth direction, declined). A USB-backed
+    // camera is already in the reset strategy table with both rungs, and the
+    // escalating policy walks them — so reaching the reset ladder from this proxy
+    // is a policy argument, with no camera code involved.
+    //
+    // The table is asserted rather than DeviceReset.PlatformDefault, because the
+    // platform mechanism is Windows-only: PlatformDefault is NullDeviceReset off
+    // Windows and advertises nothing. That is a pre-existing property of ADR-0060's
+    // core, not something the camera decision changes.
+    [Fact]
+    public void AUsbCameraIsResettableByTheTable_AndTheEscalatingPolicyWalksBothRungs()
+    {
+        var camera = TestHelpers.CreateDeviceInfo(@"USB\VID_046D&PID_0825\CAM") with
+        {
+            IsActive = true,
+            BusType = BusType.USB,
+        };
+
+        Assert.True(ResetStrategyMap.IsUsbBacked(camera));
+        var strategies = ResetStrategyMap.ForTransport(camera);
+        Assert.Equal(
+            [ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable],
+            strategies.Select(s => s.Kind));
+
+        // Attempt 1 is the sanity retry; attempts 2 and 3 take the rungs in order.
+        var policy = new EscalatingResetRecoveryPolicy();
+        var wedged = new CameraTeardownPendingException(
+            "wedged", camera.Id, Task.CompletedTask, TimeSpan.FromSeconds(9));
+
+        Assert.IsType<RecoveryDirective.Retry>(policy.Decide(Context(1)));
+        Assert.Equal(ResetKind.UsbPortCycle, Rung(2));
+        Assert.Equal(ResetKind.PnpDisableEnable, Rung(3));
+
+        RecoveryContext Context(int attempt) => new(
+            Attempt: attempt,
+            ResetCount: 0,
+            LastFault: wedged,
+            Device: camera,
+            AvailableResets: strategies);
+
+        ResetKind Rung(int attempt) =>
+            Assert.IsType<RecoveryDirective.Reset>(policy.Decide(Context(attempt))).Strategy.Kind;
+    }
+
+    // On Windows the same camera reaches those rungs through the mechanism the
+    // proxy uses by default, with no camera-specific IDeviceReset.
+    [Fact]
+    public void OnWindows_ThePlatformResetAdvertisesThoseRungsForACamera()
+    {
+        // cfgmgr32 reset does not exist off Windows; PlatformDefault is
+        // NullDeviceReset there and correctly advertises nothing.
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var camera = TestHelpers.CreateDeviceInfo(@"USB\VID_046D&PID_0825\CAM") with
+        {
+            IsActive = true,
+            BusType = BusType.USB,
+        };
+
+        Assert.Equal(
+            [ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable],
+            DeviceReset.PlatformDefault.StrategiesFor(camera).Select(s => s.Kind));
+    }
+
+    // A policy that records the first fault it is asked about and retries fast,
+    // so a recovery path can be observed without waiting out the default
+    // 1-2-4-5s backoff.
+    private sealed class RecordingRetryPolicy(TimeSpan delay) : IRecoveryPolicy
+    {
+        private readonly TaskCompletionSource<Exception?> _first =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<Exception?> FirstFault => _first.Task;
+
+        public RecoveryDirective Decide(RecoveryContext context)
+        {
+            _first.TrySetResult(context.LastFault);
+            return new RecoveryDirective.Retry(delay);
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
