@@ -35,28 +35,14 @@ public sealed class UsbDeviceProxy : DeviceProxyBase<UsbDevice, UsbException>
     /// Creates a self-contained proxy that owns its watcher and starts tracking
     /// devices matching <paramref name="profile"/>.
     /// </summary>
-    public static async Task<UsbDeviceProxy> OpenAsync(
+    public static Task<UsbDeviceProxy> OpenAsync(
         DeviceProfile profile,
         IRecoveryPolicy? recoveryPolicy = null,
         CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-
-        var tracker = new DeviceTracker(profile.Filter, profile.Name);
-        var watcher = Devices.Watch().AddTracker(tracker);
-        var handle = new UsbDeviceProxy(tracker, watcher, recoveryPolicy);
-
-        try
-        {
-            await watcher.StartAsync(ct).ConfigureAwait(false);
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
-    }
+        => OpenWithOwnedWatcherAsync(
+            profile,
+            (tracker, watcher) => new UsbDeviceProxy(tracker, watcher, recoveryPolicy),
+            ct);
 
     /// <summary>
     /// Creates a proxy that borrows a caller-owned <paramref name="tracker"/>
@@ -65,11 +51,7 @@ public sealed class UsbDeviceProxy : DeviceProxyBase<UsbDevice, UsbException>
     public static UsbDeviceProxy Create(
         DeviceTracker tracker,
         IRecoveryPolicy? recoveryPolicy = null)
-    {
-        ArgumentNullException.ThrowIfNull(tracker);
-
-        var handle = new UsbDeviceProxy(tracker, recoveryPolicy);
-        handle.CheckInitialState();
-        return handle;
-    }
+        => CreateWithBorrowedTracker(
+            tracker,
+            t => new UsbDeviceProxy(t, recoveryPolicy));
 }

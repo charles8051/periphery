@@ -80,28 +80,14 @@ public sealed class HidDeviceProxy
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="profile"/> is <see langword="null"/>.
     /// </exception>
-    public static async Task<HidDeviceProxy> OpenAsync(
+    public static Task<HidDeviceProxy> OpenAsync(
         DeviceProfile profile,
         IRecoveryPolicy? recoveryPolicy = null,
         CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-
-        var tracker = new DeviceTracker(profile.Filter, profile.Name);
-        var watcher = Devices.Watch().AddTracker(tracker);
-        var handle = new HidDeviceProxy(tracker, watcher, recoveryPolicy);
-
-        try
-        {
-            await watcher.StartAsync(ct).ConfigureAwait(false);
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
-    }
+        => OpenWithOwnedWatcherAsync(
+            profile,
+            (tracker, watcher) => new HidDeviceProxy(tracker, watcher, recoveryPolicy),
+            ct);
 
     /// <summary>
     /// Creates a <see cref="HidDeviceProxy"/> that borrows an existing
@@ -124,11 +110,7 @@ public sealed class HidDeviceProxy
     public static HidDeviceProxy Create(
         DeviceTracker tracker,
         IRecoveryPolicy? recoveryPolicy = null)
-    {
-        ArgumentNullException.ThrowIfNull(tracker);
-
-        var handle = new HidDeviceProxy(tracker, recoveryPolicy);
-        handle.CheckInitialState();
-        return handle;
-    }
+        => CreateWithBorrowedTracker(
+            tracker,
+            t => new HidDeviceProxy(t, recoveryPolicy));
 }

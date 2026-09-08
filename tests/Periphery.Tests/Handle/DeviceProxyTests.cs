@@ -473,6 +473,36 @@ public class DeviceProxyTests
             DeviceProxy.Create(null!));
     }
 
+    // The OpenAsync factories validate through the shared body hoisted into
+    // DeviceProxyBase (issue #70), so these pin that the argument checks
+    // survived the hoist rather than being lost with the copied bodies. Each
+    // throws before a tracker or watcher is ever built, so no watcher starts.
+
+    [Fact]
+    public async Task GenericOpenAsync_NullProfile_ThrowsArgumentNullException()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            DeviceProxy<FakeDevice>.OpenAsync(
+                null!,
+                openDevice: (_, _) => Task.FromResult(new FakeDevice())));
+    }
+
+    [Fact]
+    public async Task GenericOpenAsync_NullOpenDevice_ThrowsArgumentNullException()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            DeviceProxy<FakeDevice>.OpenAsync(
+                new DeviceProfile(f => f.WithName("nothing-matches-this"), "test"),
+                openDevice: null!));
+    }
+
+    [Fact]
+    public async Task NonGenericOpenAsync_NullProfile_ThrowsArgumentNullException()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            DeviceProxy.OpenAsync(null!));
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Non-generic DeviceProxy — unified base lifecycle (folded onto
     // DeviceProxyBase per ADR-0055): injectable policy, State / GaveUp,

@@ -212,6 +212,87 @@ public abstract class DeviceProxyBase<TDevice, TException>
     }
 
     // -------------------------------------------------------------------
+    // Factory bodies
+    //
+    // Every leaf ships the same two entry points — an OpenAsync that owns its
+    // watcher and a Create that borrows a caller's tracker — and the body of
+    // each was hand-copied into all five proxy types (issue #70, review finding
+    // 3.4). The bodies are identical apart from the type being constructed, and
+    // a generic base cannot `new` its own derived type, so each leaf passes a
+    // construction delegate instead. The extra per-leaf arguments (recovery
+    // policy, the delegate-configured proxies' hooks, the reset knobs) ride
+    // along in that closure, which is why these helpers take so few parameters.
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// The shared body of a leaf's <c>OpenAsync</c>: build a tracker from
+    /// <paramref name="profile"/>, attach it to a watcher this handle will own,
+    /// construct the handle, and start the watcher.
+    /// </summary>
+    /// <remarks>
+    /// A failed start disposes the handle before rethrowing. The handle owns the
+    /// watcher, so that is what releases the watcher and any provider
+    /// registration the failed start took — leaking one would leave a cfgmgr32
+    /// registration or a udev fd behind with no second chance to release it.
+    /// </remarks>
+    /// <param name="profile">Profile describing the device to track.</param>
+    /// <param name="create">
+    /// Constructs the leaf from the tracker and the watcher it will own. Called
+    /// exactly once, before the watcher is started.
+    /// </param>
+    /// <param name="ct">Cancellation token for the initial watcher start.</param>
+    protected static async Task<TProxy> OpenWithOwnedWatcherAsync<TProxy>(
+        DeviceProfile profile,
+        Func<DeviceTracker, DeviceWatcher, TProxy> create,
+        CancellationToken ct)
+        where TProxy : DeviceProxyBase<TDevice, TException>
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(create);
+
+        var tracker = new DeviceTracker(profile.Filter, profile.Name);
+        var watcher = Devices.Watch().AddTracker(tracker);
+        var handle = create(tracker, watcher);
+
+        try
+        {
+            await watcher.StartAsync(ct).ConfigureAwait(false);
+            return handle;
+        }
+        catch
+        {
+            await handle.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The shared body of a leaf's <c>Create</c>: construct the handle over a
+    /// caller-owned <paramref name="tracker"/>, then settle it against the
+    /// tracker's current state.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="CheckInitialState"/> is the whole point of the separate entry
+    /// point: the caller's watcher may already be running, so a device that is
+    /// active at construction has no edge left to raise and would otherwise
+    /// never be opened.
+    /// </remarks>
+    /// <param name="tracker">A tracker already attached to a running watcher.</param>
+    /// <param name="create">Constructs the leaf from the tracker. Called exactly once.</param>
+    protected static TProxy CreateWithBorrowedTracker<TProxy>(
+        DeviceTracker tracker,
+        Func<DeviceTracker, TProxy> create)
+        where TProxy : DeviceProxyBase<TDevice, TException>
+    {
+        ArgumentNullException.ThrowIfNull(tracker);
+        ArgumentNullException.ThrowIfNull(create);
+
+        var handle = create(tracker);
+        handle.CheckInitialState();
+        return handle;
+    }
+
+    // -------------------------------------------------------------------
     // Public state
     // -------------------------------------------------------------------
 
