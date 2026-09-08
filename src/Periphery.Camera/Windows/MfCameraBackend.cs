@@ -860,6 +860,15 @@ internal static class MfRuntime
     private static int s_refCount;
     private static readonly object s_lock = new();
 
+    /// <summary>
+    /// Live client count, for tests that assert one <see cref="EnsureStarted"/> is
+    /// balanced by exactly one <see cref="Release"/>. Zero means MF is shut down.
+    /// </summary>
+    internal static int RefCount
+    {
+        get { lock (s_lock) { return s_refCount; } }
+    }
+
     internal static void EnsureStarted()
     {
         lock (s_lock)
