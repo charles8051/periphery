@@ -81,3 +81,50 @@ public sealed class CameraTimeoutException : CameraException
     public CameraTimeoutException(string message, string? deviceId = null)
         : base(message, deviceId) { }
 }
+
+/// <summary>
+/// Thrown when a camera is opened while a previous session's teardown of the
+/// same device is still running in the background after overrunning its budget
+/// (issue #123).
+/// </summary>
+/// <remarks>
+/// <para>
+/// The device is still enumerated and may still report as active. What holds it
+/// is a thread inside a driver call that never returned, typically a wedged
+/// Media Foundation Shutdown or Flush. Opening into that contends for the
+/// device, and on a wedged driver the open fails in a way that looks like a
+/// stream fault, which is how one wedge became nineteen consecutive failures.
+/// Refusing the open and naming the cause is the honest answer; the thread
+/// cannot be cancelled.
+/// </para>
+/// <para>
+/// <see cref="Completion"/> completes when the abandoned work does, so a caller
+/// that would rather wait than fail can
+/// <c>await ex.Completion.WaitAsync(timeout, ct)</c> and retry. It may never
+/// complete if the driver is truly wedged; replugging the camera is then the
+/// only recovery.
+/// </para>
+/// </remarks>
+public sealed class CameraTeardownPendingException : CameraException
+{
+    public CameraTeardownPendingException(
+        string message, string? deviceId, Task completion, TimeSpan pendingFor)
+        : base(message, deviceId)
+    {
+        ArgumentNullException.ThrowIfNull(completion);
+        Completion = completion;
+        PendingFor = pendingFor;
+    }
+
+    /// <summary>
+    /// Completes, always successfully, when every abandoned teardown step on the
+    /// device has finished. Never faults and is never cancelled.
+    /// </summary>
+    public Task Completion { get; }
+
+    /// <summary>
+    /// How long the teardown had been pending when this was thrown, measured
+    /// from the first step to overrun its budget.
+    /// </summary>
+    public TimeSpan PendingFor { get; }
+}

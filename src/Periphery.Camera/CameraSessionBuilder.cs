@@ -225,7 +225,15 @@ public sealed class CameraSessionBuilder
     /// </exception>
     public async Task<CameraSession> OpenAsync(CancellationToken ct = default)
     {
-        var snapshot = await CameraDevice.ReadSnapshotAsync(_device, ct).ConfigureAwait(false);
+        // The snapshot pass opens and disposes a backend of its own; its bounded
+        // disposal logs and ticks on the same logger and clock as the session
+        // that follows (issue #123).
+        var snapshot = await CameraDevice.ReadSnapshotAsync(
+                _device,
+                (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                _timeProvider ?? TimeProvider.System,
+                ct)
+            .ConfigureAwait(false);
 
         CameraFormat format;
         if (_asyncFormatSelector is not null)

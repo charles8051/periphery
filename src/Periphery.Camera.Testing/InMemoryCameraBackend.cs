@@ -112,6 +112,21 @@ public sealed class InMemoryCameraBackend : ICameraBackend
     /// session's frame-timeout deterministically.</summary>
     public bool HangOnRead { get; set; }
 
+    /// <summary>When set, <c>StopCaptureAsync</c> awaits this task before
+    /// returning — models a backend whose stop call (Media Foundation Flush,
+    /// V4L2 STREAMOFF) never returns on a wedged driver. Leave it incomplete and
+    /// the session abandons the stop once its budget elapses; complete it to
+    /// model the driver letting go. Drive the budget with a
+    /// <c>FakeTimeProvider</c> on the session.</summary>
+    public Task? BlockStopUntil { get; set; }
+
+    /// <summary>When set, <c>DisposeAsync</c> awaits this task before marking the
+    /// backend disposed — models a backend whose native cleanup (Media
+    /// Foundation Shutdown, V4L2 close) never returns. Leave it incomplete and
+    /// the owning device abandons the disposal once its budget elapses; a reopen
+    /// of the same <c>DeviceInfo</c> is then refused until it completes.</summary>
+    public Task? BlockDisposeUntil { get; set; }
+
     /// <summary>Produce this many frames, then park forever on subsequent reads.
     /// Lets a test pin an exact frame count without racing the producer loop.
     /// Defaults to <see cref="int.MaxValue"/> (unbounded).</summary>
@@ -350,19 +365,21 @@ public sealed class InMemoryCameraBackend : ICameraBackend
         return GenerateFrame(w, h, format, frameIndex);
     }
 
-    Task ICameraBackend.StopCaptureAsync()
+    async Task ICameraBackend.StopCaptureAsync()
     {
+        if (BlockStopUntil is { } gate)
+            await gate.ConfigureAwait(false);
         Volatile.Write(ref _isCapturing, false);
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        if (BlockDisposeUntil is { } gate)
+            await gate.ConfigureAwait(false);
         Volatile.Write(ref _isCapturing, false);
         Volatile.Write(ref _isOpen, false);
         Volatile.Write(ref _disposed, true);
-        return ValueTask.CompletedTask;
     }
 
     // ── Guards ─────────────────────────────────────────────────────────

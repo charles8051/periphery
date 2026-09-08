@@ -73,4 +73,27 @@ internal static class CameraDiagnostics
         name: "periphery.camera.outstanding_leases",
         unit: "{lease}",
         description: "Leased camera frames currently held by consumers.");
+
+    /// <summary>
+    /// Teardown steps that overran their budget and were abandoned to a
+    /// background thread still holding the device (issue #123). Tagged with
+    /// <see cref="BoundedTeardown.StepTag"/>. One of these is the earliest
+    /// signal of a wedged driver; a run of them on one device is the cascade
+    /// the issue measured.
+    /// </summary>
+    internal static readonly Counter<long> TeardownsAbandoned = Meter.CreateCounter<long>(
+        name: "periphery.camera.teardowns_abandoned",
+        unit: "{step}",
+        description: "Camera teardown steps that overran their budget and were abandoned.");
+
+    /// <summary>
+    /// How long an abandoned teardown step ran on past its budget before it
+    /// completed. Recorded on completion, so a step that never returns is in
+    /// <see cref="TeardownsAbandoned"/> and not here; the gap between the two is
+    /// the count of drivers that stayed wedged.
+    /// </summary>
+    internal static readonly Histogram<double> AbandonedTeardownDuration = Meter.CreateHistogram<double>(
+        name: "periphery.camera.abandoned_teardown_ms",
+        unit: "ms",
+        description: "Time an abandoned camera teardown step ran on past its budget before completing.");
 }
