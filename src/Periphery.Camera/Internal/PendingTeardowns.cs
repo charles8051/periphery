@@ -93,6 +93,23 @@ internal static class PendingTeardowns
     }
 
     /// <summary>
+    /// Completes when the device has no abandoned teardown step still running.
+    /// </summary>
+    /// <remarks>
+    /// Re-reads the registry each loop rather than awaiting a single snapshot,
+    /// so a step registered after the one being awaited is picked up too. A
+    /// second step can register while the first is in flight — stop abandoned,
+    /// then producer-exit abandoned — and each abandonment replaces the entry
+    /// with a wider composite. Awaiting the entry captured at one instant would
+    /// return while a later step is still running; this does not.
+    /// </remarks>
+    internal static async Task WhenClearedAsync(string deviceId)
+    {
+        while (Find(deviceId) is { } pending)
+            await pending.Completion.ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Test seam: forgets every registration. The abandoned work itself keeps
     /// running; only the record of it is dropped.
     /// </summary>
@@ -148,11 +165,15 @@ internal sealed class PendingTeardown
     internal CameraTeardownPendingException ToException()
     {
         var pendingFor = PendingFor;
+        // The exception's Completion is resolved against the registry, not from
+        // this entry's snapshot: a step abandoned after this instance was read
+        // replaces the entry with a wider composite, and a caller awaiting the
+        // signal must wait for that step too (issue #123 review).
         return new CameraTeardownPendingException(
             $"Camera '{DeviceId}' cannot be opened: a previous session's teardown " +
             $"({string.Join(", ", Steps)}) overran its budget {pendingFor.TotalSeconds:F1}s ago and is " +
             "still running in the background, holding the device. Await Completion and retry, or " +
             "replug the camera if the driver is wedged.",
-            DeviceId, Completion, pendingFor);
+            DeviceId, PendingTeardowns.WhenClearedAsync(DeviceId), pendingFor);
     }
 }

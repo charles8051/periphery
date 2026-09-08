@@ -96,6 +96,11 @@ public sealed class CameraDevice : IAsyncDisposable
         try
         {
             await backend.OpenAsync(ct).ConfigureAwait(false);
+            // Recheck after the open. The pre-check is a fast refusal, but a
+            // previous session's teardown can abandon and register in the gap
+            // between it and the native open; the recheck closes that window,
+            // and the finally disposes the backend we just opened (issue #123 review).
+            PendingTeardowns.ThrowIfPending(device.Id);
             var formats = await backend.GetFormatsAsync(ct).ConfigureAwait(false);
             var controls = await backend.GetControlsAsync(ct).ConfigureAwait(false);
             return new CameraSnapshot(backend.NativeEndpointId, formats, controls);
@@ -245,6 +250,11 @@ public sealed class CameraDevice : IAsyncDisposable
         try
         {
             await backend.OpenAsync(ct).ConfigureAwait(false);
+            // Recheck after the open. The pre-check is a fast refusal, but a
+            // previous session's teardown can abandon and register in the gap
+            // between it and the native open; the recheck closes that window,
+            // and the catch disposes the backend we just opened (issue #123 review).
+            PendingTeardowns.ThrowIfPending(device.Id);
             var camera = new CameraDevice(device, backend, logger, timeProvider);
             camera._logger.LogInformation(
                 "Camera device opened: {DeviceName} ({NativeEndpoint})",

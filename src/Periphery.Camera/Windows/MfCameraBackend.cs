@@ -33,6 +33,13 @@ internal sealed class MfCameraBackend : ICameraBackend
     private volatile bool _isCapturing;
     private bool _disposed;
 
+    // True once this backend's OpenAsync incremented the MF runtime ref-count.
+    // DisposeAsync releases exactly what was acquired: EnsureStarted throws
+    // without incrementing when MFStartup fails, so releasing unconditionally
+    // would decrement a count this backend never took and could shut MF down
+    // under another open backend.
+    private bool _mfStarted;
+
     // Reused per-frame capture buffer (LOH-churn fix). MF previously allocated a fresh ~MB array
     // per frame (1280x720 BGRA32 = 3.7 MB -> ~100 MB/s of LOH at 30fps), driving continuous gen2.
     // ExtractFrame runs single-threaded on the producer's LongRunning thread and the pool copies
@@ -56,40 +63,41 @@ internal sealed class MfCameraBackend : ICameraBackend
         ct.ThrowIfCancellationRequested();
 
         MfRuntime.EnsureStarted();
+        _mfStarted = true;
 
+        // No cleanup on the failure path here. A partly-open backend holds a
+        // source and maybe a reader, and Cleanup can block in Shutdown/Flush on
+        // a wedged driver — the exact wedge this change bounds during disposal.
+        // Cleaning up synchronously here would hang a failed open indefinitely
+        // and, worse, would never reach the bounded DisposeAsync the caller runs
+        // in its catch, so MFShutdown would never be scheduled. Instead the
+        // fields are left as they are and DisposeAsync — which every open path
+        // calls on failure through CameraDevice's bounded disposal — releases
+        // them within budget and abandons observably if they wedge (issue #123).
+        _source = ActivateSource(_deviceInfo.Id);
+
+        // QI for camera-control interfaces. With source-generated wrappers
+        // the cast operator routes through IDynamicInterfaceCastable, which
+        // performs QueryInterface on the underlying COM pointer — null when
+        // the device doesn't expose that interface.
+        _cameraControl = _source as IAMCameraControl;
+        _videoProcAmp = _source as IAMVideoProcAmp;
+
+        IMFAttributes? readerAttrs = CreateReaderAttributes();
         try
         {
-            _source = ActivateSource(_deviceInfo.Id);
-
-            // QI for camera-control interfaces. With source-generated wrappers
-            // the cast operator routes through IDynamicInterfaceCastable, which
-            // performs QueryInterface on the underlying COM pointer — null when
-            // the device doesn't expose that interface.
-            _cameraControl = _source as IAMCameraControl;
-            _videoProcAmp = _source as IAMVideoProcAmp;
-
-            IMFAttributes? readerAttrs = CreateReaderAttributes();
-            try
-            {
-                ThrowForHr(
-                    MfInterop.MFCreateSourceReaderFromMediaSource(_source, readerAttrs, out _reader),
-                    "Failed to create source reader");
-            }
-            finally
-            {
-                MfInterop.Release(ref readerAttrs);
-            }
-
             ThrowForHr(
-                _reader!.SetStreamSelection(MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, true),
-                "Failed to select video stream");
+                MfInterop.MFCreateSourceReaderFromMediaSource(_source, readerAttrs, out _reader),
+                "Failed to create source reader");
         }
-        catch
+        finally
         {
-            Cleanup();
-            MfRuntime.Release();
-            throw;
+            MfInterop.Release(ref readerAttrs);
         }
+
+        ThrowForHr(
+            _reader!.SetStreamSelection(MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, true),
+            "Failed to select video stream");
 
         return Task.CompletedTask;
     }
@@ -808,7 +816,7 @@ internal sealed class MfCameraBackend : ICameraBackend
         await Task.Run(() =>
         {
             try { Cleanup(); }
-            finally { MfRuntime.Release(); }
+            finally { if (_mfStarted) MfRuntime.Release(); }
         }).ConfigureAwait(false);
     }
 

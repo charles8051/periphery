@@ -176,6 +176,81 @@ public sealed class AbandonedTeardownTests : IDisposable
         }
     }
 
+    // Review finding: the exception's Completion must cover a step abandoned
+    // after the exception was built, not just the step present when it was.
+    [Fact]
+    public async Task ExceptionCompletion_WaitsForAStepAbandonedAfterItWasBuilt()
+    {
+        var clock = new FakeTimeProvider();
+        var id = "TEST\\CAM\\OVERLAP";
+        var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var producerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // First step abandons; the exception is built from that snapshot.
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, stopGate.Task, clock);
+        var ex = PendingTeardowns.Find(id)!.ToException();
+
+        // A second step abandons before the first completes.
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.ProducerExit, producerGate.Task, clock);
+
+        // Completing only the first step must not clear the signal.
+        stopGate.SetResult();
+        await Task.Delay(50);
+        Assert.False(ex.Completion.IsCompleted);
+
+        // The signal clears only once the later step completes too.
+        producerGate.SetResult();
+        await ex.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Null(PendingTeardowns.Find(id));
+    }
+
+    // Review finding: a teardown that registers between the pre-check and the
+    // native open must still refuse the open, and dispose the backend it opened.
+    [Fact]
+    public async Task OpenThatRacesARegisteringTeardown_IsRefused_AndDisposesTheBackend()
+    {
+        var clock = new FakeTimeProvider();
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\RACE");
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RegisterOnOpenBackend? captured = null;
+
+        var previous = CameraDevice.BackendFactory;
+        CameraDevice.BackendFactory = _ =>
+        {
+            captured = new RegisterOnOpenBackend(device.Id, pending.Task, clock);
+            return captured;
+        };
+        try
+        {
+            var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
+                () => CameraDevice.OpenAsync(device));
+            Assert.Equal(device.Id, ex.DeviceId);
+            Assert.NotNull(captured);
+            Assert.True(captured!.InnerDisposed, "the backend opened during the race must be disposed");
+        }
+        finally
+        {
+            CameraDevice.BackendFactory = previous;
+            pending.TrySetResult();
+        }
+    }
+
+    // Review finding (media-foundation-lifetime), at the CameraDevice layer: a
+    // failed open disposes the backend through the bounded path and leaves no
+    // pending entry behind.
+    [Fact]
+    public async Task FailedOpen_DisposesTheBackend_AndRegistersNoPending()
+    {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\OPENFAIL");
+        var backend = new InMemoryCameraBackend { FaultOnOpen = new CameraException("open boom", device.Id) };
+        using var scope = CameraTestScope.Install(backend);
+
+        await Assert.ThrowsAsync<CameraException>(() => CameraDevice.OpenAsync(device));
+
+        Assert.True(backend.IsDisposed);
+        Assert.Null(PendingTeardowns.Find(device.Id));
+    }
+
     // Runs DisposeAsync on a background task and advances the fake clock past the
     // teardown budgets until it completes, mirroring the pattern in
     // CameraSessionClockTests: virtual time drives the abandon, real yields let
@@ -208,5 +283,47 @@ public sealed class AbandonedTeardownTests : IDisposable
         listener.SetMeasurementEventCallback<T>((_, value, _, _) => onMeasurement(value));
         listener.Start();
         return listener;
+    }
+
+    // A backend that registers a pending teardown for its device *during* the
+    // open, modelling a previous session's teardown that abandons in the gap
+    // between the pre-check and the native open. Delegates everything else to a
+    // real InMemoryCameraBackend so the open otherwise succeeds.
+    private sealed class RegisterOnOpenBackend : ICameraBackend
+    {
+        private readonly InMemoryCameraBackend _inner = new();
+        private readonly ICameraBackend _io;
+        private readonly string _deviceId;
+        private readonly Task _pending;
+        private readonly TimeProvider _clock;
+
+        public RegisterOnOpenBackend(string deviceId, Task pending, TimeProvider clock)
+        {
+            _io = _inner;
+            _deviceId = deviceId;
+            _pending = pending;
+            _clock = clock;
+        }
+
+        public bool InnerDisposed => _inner.IsDisposed;
+
+        public string NativeEndpointId => _io.NativeEndpointId;
+
+        public async Task OpenAsync(CancellationToken ct)
+        {
+            await _io.OpenAsync(ct).ConfigureAwait(false);
+            PendingTeardowns.Register(_deviceId, BoundedTeardown.Steps.StopCapture, _pending, _clock);
+        }
+
+        public Task<IReadOnlyList<CameraFormat>> GetFormatsAsync(CancellationToken ct) => _io.GetFormatsAsync(ct);
+        public Task<IReadOnlyList<CameraControlInfo>> GetControlsAsync(CancellationToken ct) => _io.GetControlsAsync(ct);
+        public Task<CameraControlState?> GetControlAsync(CameraControlKind control, CancellationToken ct) => _io.GetControlAsync(control, ct);
+        public Task SetControlAsync(CameraControlKind control, double value, CancellationToken ct) => _io.SetControlAsync(control, value, ct);
+        public Task ResetControlAsync(CameraControlKind control, CancellationToken ct) => _io.ResetControlAsync(control, ct);
+        public Task ConfigureAsync(CameraConfiguration configuration, CancellationToken ct) => _io.ConfigureAsync(configuration, ct);
+        public Task StartCaptureAsync(CancellationToken ct) => _io.StartCaptureAsync(ct);
+        public Task<RawCameraFrame> ReadRawFrameAsync(CancellationToken ct) => _io.ReadRawFrameAsync(ct);
+        public Task StopCaptureAsync() => _io.StopCaptureAsync();
+        public ValueTask DisposeAsync() => _io.DisposeAsync();
     }
 }
