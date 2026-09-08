@@ -96,13 +96,14 @@ public sealed class CameraDevice : IAsyncDisposable
         try
         {
             await backend.OpenAsync(ct).ConfigureAwait(false);
+            // Recheck straight after the open, so a teardown that abandoned
+            // during it is caught before the metadata reads rather than after.
+            PendingTeardowns.ThrowIfPending(device.Id);
             var formats = await backend.GetFormatsAsync(ct).ConfigureAwait(false);
             var controls = await backend.GetControlsAsync(ct).ConfigureAwait(false);
-            // Recheck after the last device access, not just after the open. The
-            // pre-check is a fast refusal; the recheck catches a previous
-            // session's teardown that abandoned and registered while this call
-            // was doing native work, before a usable snapshot is handed back.
-            // The finally disposes the backend we opened (issue #123 review).
+            // And once more after the last device access, so one that abandoned
+            // during the metadata reads is caught before a usable snapshot is
+            // handed back. The finally disposes the backend we opened (issue #123 review).
             PendingTeardowns.ThrowIfPending(device.Id);
             return new CameraSnapshot(backend.NativeEndpointId, formats, controls);
         }
