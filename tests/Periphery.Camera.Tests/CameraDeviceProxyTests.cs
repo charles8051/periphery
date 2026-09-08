@@ -168,6 +168,24 @@ public sealed class CameraDeviceProxyTests
                 onFrame: null!));
     }
 
+    // Assert.ThrowsAsync passes whether the exception arrives synchronously or
+    // on the returned task, so it cannot tell the two apart. Calling without
+    // awaiting can: a synchronous throw escapes the call itself and fails the
+    // test. The other four proxies' OpenAsync factories fault the task, and this
+    // one must not be the odd member for the same mistake.
+    [Fact]
+    public async Task OpenAsync_NullArguments_FaultTheTaskRatherThanThrowingSynchronously()
+    {
+        Task<CameraDeviceProxy> nullProfile =
+            CameraDeviceProxy.OpenAsync(null!, onFrame: (_, _) => Task.CompletedTask);
+        Task<CameraDeviceProxy> nullOnFrame = CameraDeviceProxy.OpenAsync(
+            new DeviceProfile(f => f.OfCategory(DeviceCategory.Camera), "cam"),
+            onFrame: null!);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => nullProfile);
+        await Assert.ThrowsAsync<ArgumentNullException>(() => nullOnFrame);
+    }
+
     [Fact]
     public void Create_NullTracker_ThrowsArgumentNullException()
     {

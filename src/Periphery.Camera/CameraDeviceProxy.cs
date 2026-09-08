@@ -175,7 +175,18 @@ public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraExc
     /// <see cref="ExponentialBackoffRecoveryPolicy.Default"/>.
     /// </param>
     /// <param name="ct">Cancellation token for the initial watcher start.</param>
-    public static Task<CameraDeviceProxy> OpenAsync(
+    /// <remarks>
+    /// Deliberately <c>async</c> rather than returning the helper's task
+    /// directly. The other proxies' <c>OpenAsync</c> factories validate only
+    /// <paramref name="profile"/>, which the shared helper checks from inside an
+    /// async method — so a null argument reaches the caller as a faulted task.
+    /// This one has a second required argument to check before construction, and
+    /// checking it in a non-async method would throw synchronously instead,
+    /// making the one camera factory behave differently from the other four for
+    /// the same mistake. <c>DeviceProxy&lt;TDevice&gt;.OpenAsync</c> is async for
+    /// exactly this reason.
+    /// </remarks>
+    public static async Task<CameraDeviceProxy> OpenAsync(
         DeviceProfile profile,
         Func<LeasedCameraFrame, CancellationToken, Task> onFrame,
         Action<CameraSessionBuilder>? configure = null,
@@ -186,11 +197,11 @@ public sealed class CameraDeviceProxy : DeviceProxyBase<CameraSession, CameraExc
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(onFrame);
 
-        return OpenWithOwnedWatcherAsync(
+        return await OpenWithOwnedWatcherAsync(
             profile,
             (tracker, watcher) => new CameraDeviceProxy(
                 tracker, watcher, onFrame, configure, captureOptions, recoveryPolicy),
-            ct);
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>
