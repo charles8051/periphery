@@ -27,6 +27,12 @@
     <InternalsVisibleTo Include="Periphery.Hid" />
     <InternalsVisibleTo Include="Periphery.Usb" />
     <InternalsVisibleTo Include="Periphery.Monitor" />
+    <!-- CameraDeviceProxy (ADR-0084 D5) is the one proxy whose lifecycle tests cannot live in
+         Periphery.Tests, because driving it needs the camera package's backend seam as well as a
+         tracker. Simulating a replug means raising the tracker's connect/disconnect edges, which
+         are internal — the reason the Hid/Usb/Monitor test projects have no proxy lifecycle tests
+         at all. This grants the camera suite the access Periphery.Tests already has. -->
+    <InternalsVisibleTo Include="Periphery.Camera.Tests" />
     <!-- The EFM8 uploader emits a per-record diagnostic trace via PeripheryLoggerFactory, the
          same static sink every other Periphery.* library logs through (so a wired file log captures it). -->
     <InternalsVisibleTo Include="Periphery.Bootloader.Efm8.Usb" />
