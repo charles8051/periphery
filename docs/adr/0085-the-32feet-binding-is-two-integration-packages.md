@@ -1,13 +1,13 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
 status: "Proposed"
-status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware."
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make."
 date: "2026-09-02"
 authors: "@charles8051"
-tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm"]
+tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm", "api-design", "device-proxy"]
 supersedes: ""
 superseded_by: ""
-depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md", "0054-windows-property-freshness-events-over-polling.md", "0079-port-path-is-a-parsed-value.md", "0083-ble-identity-does-not-survive-repairing.md"]
+depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md", "0054-windows-property-freshness-events-over-polling.md", "0079-port-path-is-a-parsed-value.md", "0083-ble-identity-does-not-survive-repairing.md", "0084-one-criteria-surface-and-a-lifecycle-owner-per-extension.md", "0087-reconcile-activity-at-the-watcher-boundary.md", "0088-open-handles-on-activity-not-presence.md"]
 ---
 
 # ADR-0085: The 32feet binding is two integration packages, and neither of them is `Periphery.Bluetooth`
@@ -346,13 +346,146 @@ then the name stays unclaimed rather than being spent on a wrapper.
 
 ---
 
+### D7 — Contents: a join, an activity source, and one adapter. No GATT abstraction
+
+D1–D6 settle the names, the TFMs, and where the packages live. None of them says
+what is *inside* a package, and the question has a plausible default answer that
+is wrong: bind 32feet, then re-express its API in Periphery's vocabulary.
+
+**The house pattern is a thin adapter, not a re-abstraction.** Both integration
+packages that exist today are small, and they are small for the same reason:
+
+| Package | Size | What it is |
+|---|---|---|
+| `Periphery.Serial.Rjcp` | one file | `SerialDuplexPipe : IDuplexPipe` over `RJCP.IO.Ports.SerialPortStream` |
+| `Periphery.Camera.OpenCvSharp` | four files | `CameraFrame` ↔ `Mat`, plus the layout and scope types that conversion needs |
+
+Neither wraps its vendor library. Each exists because Periphery already owns an
+abstraction — `IDuplexPipe`, `CameraFrame` — that the vendor type has to be
+adapted *to*. Where no such abstraction exists, an integration package has
+nothing to adapt, and inventing one is how a binding becomes a fork of somebody
+else's API surface.
+
+That test splits the two packages here, and it splits them unevenly.
+
+| | `Periphery.Bluetooth.InTheHand` | `Periphery.Ble.InTheHand` |
+|---|---|---|
+| Periphery abstraction to adapt to | `IDuplexPipe`, two backends shipping | none |
+| Adapter | `RfcommDuplexPipe : IDuplexPipe` over `BluetoothClient.GetStream()` | — |
+| I/O surface authored here | that one type | nothing |
+
+`BluetoothClient.GetStream()` returns a `NetworkStream`, and `Periphery.Serial`
+already carries two `IDuplexPipe` implementations over a stream-shaped transport.
+RFCOMM is a third instance of a shape this repo has settled twice. Whether it
+needs `SerialDuplexPipe`'s dedicated pump thread or can take
+`PipeReader.Create(stream)` directly is a measurement rather than a design
+question. That pump exists because the BCL's serial stream ignores cancellation,
+and a `NetworkStream` over a Bluetooth socket may not carry the same defect.
+
+Beyond that one adapter, both packages carry the same three non-I/O members.
+
+#### 1. The join
+
+D5 puts `BluetoothAddress` in core. Converting it to the vendor type is each
+integration's only mandatory job, and it is one or two extension methods per
+package:
+
+```csharp
+// Periphery.Bluetooth.InTheHand
+public static BluetoothDeviceInfo ToBluetoothDeviceInfo(this DeviceInfo device);
+
+// Periphery.Ble.InTheHand
+public static Task<BluetoothDevice?> ToBluetoothDeviceAsync(
+    this DeviceInfo device, CancellationToken cancellationToken = default);
+```
+
+The BLE one is asynchronous and nullable because WinRT resolves an LE device by
+address over the air. The peripheral may simply not be reachable, and that is an
+ordinary outcome rather than a fault.
+
+#### 2. The activity source, which is why either package is worth building
+
+Context §1 measured that Windows raises no watcher edge for a BR/EDR link
+toggle. ADR-0088 D4 names the same gap from the other side, and names Bluetooth
+as its example: a peripheral going out of range produces no close edge at all on
+Windows, because cfgmgr32 pushes no soft driver-stop signal. A polled
+`BluetoothDeviceInfo.Connected`, joined by D5, is currently the only signal that
+closes it. That argument holds on both transports and is independent of any I/O
+use case.
+
+**This cannot be an ambient service offered beside the watcher.** ADR-0087 D1
+makes the watcher the authority on activity and reconciles contradicting
+payloads in `OnProviderAppeared`, before any tracker or consumer sees them. A
+poll-sourced edge that bypasses that arrives second and loses. So what a package
+contributes is an activity *source* the watcher consumes, and the shape of that
+seam belongs to core rather than to an integration package.
+
+**That is a dependency this ADR creates and does not discharge.** Core has no
+extension point for a third-party activity source today. Naming one is a
+separate decision. Until it exists, these packages can expose the poll only as a
+consumer-driven `Task<bool>`, which is strictly weaker than what Context §1
+argues for, and the Context §1 benefit should not be claimed as delivered on the
+strength of this ADR alone.
+
+#### 3. A lifecycle owner — proposed for the classic package, deferred for BLE
+
+ADR-0084 D5 gives every extension one, and four exist: `UsbDeviceProxy`,
+`HidDeviceProxy`, `MonitorDeviceProxy`, and `CameraDeviceProxy`, all on
+`DeviceProxyBase`. A `BluetoothDeviceProxy` follows directly, over a session type
+that owns the connected `BluetoothClient` and the `RfcommDuplexPipe` above it. It
+inherits the activation window, the reopen loop, and `IRecoveryPolicy` — which is
+exactly the machinery ADR-0088 D4 says a hand-rolled consumer gets wrong on a
+Bluetooth peripheral.
+
+A `BleDeviceProxy` does not follow, and the blocker is ADR-0083. A proxy's
+premise is that a device can be found again by identity after it goes away.
+ADR-0083 measured an LE peripheral whose identity did not survive a re-pair, and
+an LE device advertising a resolvable private address rotates that address by
+design, so the D5 join key changes underneath a `DeviceProfile` while the device
+is the same device. A proxy that cannot rebind has nothing to reopen.
+
+The three LE address types are not equally affected, and this ADR has direct
+evidence for none of them, because the peripheral ADR-0083 measured was a
+commodity mouse whose address type was not under the observer's control:
+
+| Peripheral address type | Does the D5 key hold across a disconnect? | Measured |
+|---|---|---|
+| Public | expected yes | no |
+| Static random | expected yes, until the peripheral reboots | no |
+| Resolvable private | expected no | no — inferred from ADR-0083's re-pair result |
+
+So `BleDeviceProxy` is deferred rather than rejected, and it is deferred on a
+measurement rather than on a design argument. See [Open questions](#open-questions).
+
+#### What stays out of both packages
+
+No `IGattClient`. No Periphery-shaped service, characteristic, or descriptor
+types. No RFCOMM client of Periphery's own beside `BluetoothClient`.
+
+D6 declines the *domain* package on the grounds that the two I/O surfaces share
+no base. D7 declines the per-package abstractions for a different reason.
+`InTheHand.Bluetooth` models the Web Bluetooth API: already asynchronous, already
+task-based, already close to the shape a .NET consumer would write by hand.
+Wrapping it costs a translation layer pinned to a version line Periphery does not
+control, and buys no portability, because there is no second GATT backend to swap
+in behind it. If one ever appears, D6 already says what happens then — the
+`Periphery.Bluetooth` name is spent at that point, not at this one.
+
+D7 therefore sizes both packages at roughly what `Periphery.Camera.OpenCvSharp`
+came to. A binding that needs more than that is either discovering a Periphery
+abstraction that should exist, or forking 32feet.
+
+---
+
 ## Consequences
 
 ### Positive
 
 - Windows gains a live Bluetooth liveness signal for the first time. A poll over
   `BluetoothDeviceInfo.Connected`, joined by D5, closes the gap in Context §1 —
-  measured to agree with `IsActive` in both directions.
+  measured to agree with `IsActive` in both directions. D7 §2 qualifies how far
+  this reaches: a consumer who polls by hand gets it today, and routing it
+  through the watcher needs a core seam that does not exist yet.
 - A Windows consumer who targets a Windows TFM can reach a clean graph — no
   `Tmds.DBus`, no CVE — via D4's table. A consumer of `Periphery` core inherits
   nothing either way.
@@ -374,6 +507,14 @@ then the name stays unclaimed rather than being spent on a wrapper.
   one, so a Linux consumer has no way to opt out.
 - macOS gets BLE (via the BLE package's Apple assets, untested here) and no
   BR/EDR — `InTheHand.Net.Bluetooth` has no macOS asset at all.
+- `Periphery.Ble.InTheHand` ships without the lifecycle owner ADR-0084 D5 gives
+  every other extension, and it is the only package in the repo with that gap.
+  D7 §3 defers it on ADR-0083; a consumer wanting reconnect for an LE peripheral
+  writes it by hand, which ADR-0088 D3 says is the case consumers get wrong.
+- The asymmetry between the two packages is now visible in their contents as well
+  as their TFMs. The classic package authors an `IDuplexPipe` backend and a
+  proxy; the BLE package authors two extension methods. A reader who expects the
+  pair to look alike will be surprised by the second one.
 
 ### Neutral
 
@@ -406,7 +547,8 @@ entirely. Not something to block on; D3 is reversible if it lands.
 
 ## Open questions
 
-Two of the four are closed by Context §5 and the numbers below; two remain.
+Two of the original four are closed by Context §5 and the numbers below; two
+remain, and D7 adds two more.
 
 **Closed — the bare asset drives Win32.** Context §5. D4's Windows TFM on the
 classic package stays a hygiene measure rather than becoming a correctness one,
@@ -428,6 +570,26 @@ probe measures the BR/EDR half today.
 **Open — macOS BR/EDR.** No answer here. Whether the gap matters depends on
 demand that does not exist yet.
 
+**Open — does the D5 join key survive a disconnect on each LE address type?**
+D7's blocker on `BleDeviceProxy`. ADR-0083's evidence is one re-pair of one
+commodity mouse whose advertised address type was not under the observer's
+control, so it cannot distinguish "LE identity is not durable" from "that
+peripheral used a resolvable private address". The measurement needs a peripheral
+that can be configured to advertise a public address, a static random address,
+and an RPA in turn, with each case run over a disconnect, a reconnect, a
+peripheral reboot, and a re-pair. A development board flashed with a standard
+GATT peripheral sample is the cheapest way to get one. Until it is run,
+`BleDeviceProxy` stays deferred and the BLE package ships without a lifecycle
+owner.
+
+**Open — what does core expose as a third-party activity source?** D7 §2 needs a
+seam that does not exist. ADR-0087 D1 makes the watcher the authority on
+activity, so a 32feet poll has to reach consumers through the watcher rather than
+beside it, and neither this ADR nor ADR-0087 names the interface that would carry
+it. Without it, Context §1's benefit is available only to a consumer who polls by
+hand, which is weaker than what Context §1 argues for. The seam is core's
+decision, not this binding's.
+
 ---
 
 ## References
@@ -440,7 +602,10 @@ demand that does not exist yet.
 - [ADR-0054: Windows property freshness — events over polling](0054-windows-property-freshness-events-over-polling.md) — the `DeviceDeactivated` gap Context §1 extends
 - [ADR-0069: Restore net8 TFM](0069-restore-net8-tfm-untested.md) — the TFM set D3 departs from
 - [ADR-0079: Port path is a parsed value](0079-port-path-is-a-parsed-value.md) — the precedent D5 follows
-- [ADR-0083: BLE identity does not survive re-pairing](0083-ble-identity-does-not-survive-repairing.md) — the durability caveat D5 carries
+- [ADR-0083: BLE identity does not survive re-pairing](0083-ble-identity-does-not-survive-repairing.md) — the durability caveat D5 carries, and D7's blocker on `BleDeviceProxy`
+- [ADR-0084: One criteria surface and a lifecycle owner per extension](0084-one-criteria-surface-and-a-lifecycle-owner-per-extension.md) — D5's lifecycle-owner rule, which D7 §3 applies to one package and defers on the other
+- [ADR-0087: Reconcile device activity at the watcher boundary](0087-reconcile-activity-at-the-watcher-boundary.md) — D1 makes the watcher the authority on activity, which constrains where D7 §2's poll can attach
+- [ADR-0088: Open handles on activity, never on presence](0088-open-handles-on-activity-not-presence.md) — D4 names a Bluetooth peripheral going out of range as the gap D7 §2 closes
 
 ### Patterns
 
