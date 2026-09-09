@@ -352,7 +352,7 @@ public class DeviceWatcherHandlerIsolationTests
         using var handlerListener = StartFaultListener(handlers);
 
         EventIsolation.LogTargetFaulted(
-            new ThrowingLogger(), Boom("tracker"), "Appeared", "tracker", "a tracker", "USB\X");
+            new ThrowingLogger(), Boom("tracker"), "Appeared", "tracker", "a tracker", "USB-TEST-1");
 
         Assert.Equal(["Appeared"], targets);
         Assert.Empty(handlers);
