@@ -32,6 +32,26 @@ internal static class ReadinessPoll
     /// call and no wall-clock. A predicate that throws is not caught: a probe that
     /// cannot answer is a real fault, not a "not ready yet".
     /// </remarks>
+    /// <param name="isReady">
+    /// The question being asked, as a pure predicate over observed state. Called
+    /// before the first delay and once per interval thereafter. It is not allowed to
+    /// throw: a probe that cannot answer is a real fault, not a "not ready yet", so
+    /// the exception propagates rather than being read as a negative result.
+    /// </param>
+    /// <param name="timeout">
+    /// How long to keep asking before giving up and returning <see langword="null"/>.
+    /// Measured from entry, and checked after the predicate, so a zero or already
+    /// expired timeout still reports a subject that is ready right now.
+    /// </param>
+    /// <param name="interval">
+    /// How long to wait between predicate calls. The final wait is shortened to land
+    /// on the deadline rather than overshoot it.
+    /// </param>
+    /// <param name="ct">
+    /// Cancels the wait. Cancellation is a caller decision, not a timeout, so it
+    /// surfaces as an <see cref="OperationCanceledException"/> instead of the
+    /// <see langword="null"/> that means "not ready in time".
+    /// </param>
     /// <param name="timeProvider">
     /// Clock for the deadline and the delay. Defaults to
     /// <see cref="TimeProvider.System"/>; a test passes one whose readings it
