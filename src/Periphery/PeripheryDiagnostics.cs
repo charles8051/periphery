@@ -69,6 +69,33 @@ internal static class PeripheryDiagnostics
         unit: "{fault}",
         description: "Exceptions thrown by a tracker being notified of a device event.");
 
-    /// <summary>Tag naming the event whose handler or target threw.</summary>
+    /// <summary>
+    /// Exceptions thrown by a caller-supplied filter predicate
+    /// (<see cref="DeviceFilter.Where(System.Func{DeviceInfo, bool})"/>) while the
+    /// watcher was deciding whether a device matched (issue #229). Tagged with
+    /// <c>periphery.event</c> and with <see cref="FilterFallbackTag"/>, the answer
+    /// used in the predicate's place.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="HandlerFaults"/> even though both are consumer
+    /// code, because the consequence differs and so does the response. A handler
+    /// that throws loses one notification. A filter that throws makes the watcher
+    /// guess about membership, and the guess is directional — see
+    /// <c>DeviceWatcher.MatchesIsolated</c>. The tag says which way it went, so a
+    /// run of suppressed arrivals and a run of announced removals are
+    /// distinguishable rather than one undifferentiated number.
+    /// </remarks>
+    internal static readonly Counter<long> FilterFaults = Meter.CreateCounter<long>(
+        name: "periphery.events.filter_faults",
+        unit: "{fault}",
+        description: "Exceptions thrown by a caller-supplied filter predicate during a device event.");
+
+    /// <summary>Tag naming the event whose handler, target or filter threw.</summary>
     internal const string EventTag = "periphery.event";
+
+    /// <summary>
+    /// Tag on <see cref="FilterFaults"/> recording the answer substituted for the
+    /// predicate: <c>announced</c> or <c>suppressed</c>.
+    /// </summary>
+    internal const string FilterFallbackTag = "periphery.filter_fallback";
 }
