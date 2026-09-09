@@ -481,11 +481,14 @@ abstraction that should exist, or forking 32feet.
 
 ### Positive
 
-- Windows gains a live Bluetooth liveness signal for the first time. A poll over
-  `BluetoothDeviceInfo.Connected`, joined by D5, closes the gap in Context §1 —
-  measured to agree with `IsActive` in both directions. D7 §2 qualifies how far
-  this reaches: a consumer who polls by hand gets it today, and routing it
-  through the watcher needs a core seam that does not exist yet.
+- **A route to a live Bluetooth liveness signal on Windows, which does not exist
+  today.** This ADR is Proposed and ships no code, so nothing below is a delivered
+  result. What the evidence supports is that a poll over
+  `BluetoothDeviceInfo.Connected`, joined by D5, *would* close the gap in Context
+  §1: it was measured to agree with `IsActive` in both directions. D7 §2 bounds
+  how far even a built package would reach. Routing that signal through the
+  watcher needs a core seam that has not been designed, so the first version
+  serves only a consumer who polls by hand.
 - A Windows consumer who targets a Windows TFM can reach a clean graph — no
   `Tmds.DBus`, no CVE — via D4's table. A consumer of `Periphery` core inherits
   nothing either way.
