@@ -48,9 +48,13 @@ internal static class ReadinessPoll
     /// on the deadline rather than overshoot it.
     /// </param>
     /// <param name="ct">
-    /// Cancels the wait. Cancellation is a caller decision, not a timeout, so it
-    /// surfaces as an <see cref="OperationCanceledException"/> instead of the
-    /// <see langword="null"/> that means "not ready in time".
+    /// Cancels the wait. Observed only by the delay, so cancellation raises an
+    /// <see cref="OperationCanceledException"/> only when it is seen while waiting.
+    /// It does not take precedence over the deadline: if the predicate returns
+    /// <see langword="false"/> once <paramref name="timeout"/> has already elapsed,
+    /// the method returns <see langword="null"/> without observing the token, even
+    /// if it was cancelled before the call. A caller that needs cancellation to win
+    /// at that boundary has to check the token itself.
     /// </param>
     /// <param name="timeProvider">
     /// Clock for the deadline and the delay. Defaults to
