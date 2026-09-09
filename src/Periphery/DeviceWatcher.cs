@@ -1196,7 +1196,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
             lock (_deviceCache) _deviceCache[device.Id] = device;
 
             // Global events: apply watcher-level filter
-            bool announced = _filter.Matches(device);
+            bool announced = MatchesIsolated(device, nameof(Appeared));
             if (announced)
             {
                 snapshotCount++;
@@ -1431,7 +1431,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
         // arrived live is invisible to ReplayKnownDevicesTo, so a Reconfigure erases it.
         lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
 
-        if (_filter.Matches(e.Device))
+        if (MatchesIsolated(e.Device, nameof(Appeared)))
         {
             Interlocked.Increment(ref _appearedEventCount);
             _logger.LogDebug("Device appeared (event #{Count}): {DeviceId} ({DeviceName})",
@@ -1516,7 +1516,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
         if (!isNew) return;
 
-        if (_filter.Matches(e.Device))
+        if (MatchesIsolated(e.Device, nameof(Activated)))
         {
             Interlocked.Increment(ref _activatedEventCount);
             _logger.LogDebug("Device activated (event #{Count}): {DeviceId} ({DeviceName})",
@@ -1542,7 +1542,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
         lock (_deviceCache) _deviceCache[e.Device.Id] = e.Device;
 
-        if (_filter.Matches(e.Device))
+        if (MatchesIsolated(e.Device, nameof(Deactivated)))
         {
             Interlocked.Increment(ref _deactivatedEventCount);
             _logger.LogDebug("Device deactivated (event #{Count}): {DeviceId} ({DeviceName})",
@@ -1574,7 +1574,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
         lock (_knownConnectedIds) wasConnected = _knownConnectedIds.Remove(e.Device.Id);
         if (wasConnected)
         {
-            if (_filter.Matches(e.Device))
+            if (MatchesIsolated(e.Device, nameof(Deactivated)))
             {
                 Interlocked.Increment(ref _deactivatedEventCount);
                 _logger.LogDebug("Device deactivated (cascade from disappeared): {DeviceId} ({DeviceName})",
@@ -1586,7 +1586,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
             FanOutGroupDeactivated(e.Device);
         }
 
-        if (_filter.Matches(e.Device))
+        if (MatchesIsolated(e.Device, nameof(Disappeared)))
         {
             Interlocked.Increment(ref _disappearedEventCount);
             _logger.LogDebug("Device disappeared (event #{Count}): {DeviceId} ({DeviceName})",
@@ -1614,12 +1614,88 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
         var args = new DevicePropertyChangedEventArgs(e.Previous, e.Current, changedProperties);
 
-        if (_filter.Matches(e.Current))
+        if (MatchesIsolated(e.Current, nameof(PropertyChanged)))
             RaiseIsolated(PropertyChanged, args, nameof(PropertyChanged), e.Current.Id);
 
         FanOutPropertyChanged(e.Previous, e.Current, changedProperties);
         FanOutGroupPropertyChanged(e.Previous, e.Current, changedProperties);
     }
+
+    // ── Internal — filter isolation ─────────────────────────────────────
+
+    /// <summary>
+    /// Evaluates the watcher's filter against a device without letting a
+    /// caller-supplied predicate escape into the provider's notification pump
+    /// (issue #229).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="DeviceFilter.Where(Func{DeviceInfo, bool})"/> stores consumer
+    /// delegates and <c>Matches</c> invokes them. Those calls sat outside the
+    /// isolation #143 put around every raise and every notification, so a
+    /// predicate throwing on one odd device — a null <see cref="DeviceInfo.Name"/>
+    /// is enough — unwound the pump and froze the application's whole device view.
+    /// The same defect, at the one site that fix did not cover.
+    /// </para>
+    /// <para>
+    /// <b>The substituted answer is directional, and that is the design.</b> On an
+    /// arrival the fallback is "no match": a device is not announced on the
+    /// strength of a predicate that could not answer. On a removal it is "match":
+    /// suppressing a <see cref="Disappeared"/> or <see cref="Deactivated"/>
+    /// because the predicate threw would leave a device the consumer was already
+    /// told about present forever, with no later edge to correct it. That is the
+    /// leak ADR-0084 D1 refused to accept from watcher tag filters — fires
+    /// <see cref="Appeared"/>, never fires <see cref="Disappeared"/> — and a
+    /// predicate that throws for some devices and not others produces it directly.
+    /// A spurious removal for a device nobody tracked is the cheaper error.
+    /// </para>
+    /// <para>
+    /// The direction comes from the event rather than from each call site, so no
+    /// site can pick the wrong one, and every fault is counted on
+    /// <see cref="PeripheryDiagnostics.FilterFaults"/> tagged with the answer used.
+    /// <see cref="KnownDevices"/> deliberately does not use this: a caller is
+    /// awaiting that property, so a broken predicate is theirs to see.
+    /// </para>
+    /// </remarks>
+    private bool MatchesIsolated(DeviceInfo device, string eventName)
+    {
+        try
+        {
+            return _filter.Matches(device);
+        }
+        catch (Exception ex)
+        {
+            bool announced = AnnouncesOnFilterFault(eventName);
+            EventIsolation.LogFilterFaulted(_logger, ex, eventName, device.Id, announced);
+            return announced;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="MatchesIsolated(DeviceInfo, string)"/> for a tracker's own
+    /// profiles, which carry caller predicates for the same reason.
+    /// </summary>
+    private bool MatchesIsolated(DeviceTracker tracker, DeviceInfo device, string eventName)
+    {
+        try
+        {
+            return tracker.Matches(device);
+        }
+        catch (Exception ex)
+        {
+            bool announced = AnnouncesOnFilterFault(eventName);
+            EventIsolation.LogFilterFaulted(_logger, ex, eventName, device.Id, announced);
+            return announced;
+        }
+    }
+
+    /// <summary>
+    /// Whether a filter that threw counts as a match for
+    /// <paramref name="eventName"/>: true for the edges that take a device away,
+    /// false for the rest.
+    /// </summary>
+    private static bool AnnouncesOnFilterFault(string eventName) =>
+        eventName is nameof(Disappeared) or nameof(Deactivated);
 
     // ── Internal — isolated dispatch ────────────────────────────────────
     //
@@ -1707,7 +1783,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
     {
         foreach (var tracker in TrackerSnapshot())
         {
-            if (!tracker.Matches(device))
+            if (!MatchesIsolated(tracker, device, eventName))
                 continue;
 
             try

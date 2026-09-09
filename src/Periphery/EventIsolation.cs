@@ -153,6 +153,41 @@ internal static class EventIsolation
     }
 
     /// <summary>
+    /// Records a caller-supplied filter predicate that threw, and the answer used
+    /// in its place. <b>Never throws</b>, for the same reason as the others.
+    /// </summary>
+    internal static void LogFilterFaulted(
+        ILogger logger, Exception ex, string eventName, string deviceId, bool announced)
+    {
+        try
+        {
+            PeripheryDiagnostics.FilterFaults.Add(
+                1,
+                new KeyValuePair<string, object?>(PeripheryDiagnostics.EventTag, eventName),
+                new KeyValuePair<string, object?>(
+                    PeripheryDiagnostics.FilterFallbackTag, announced ? "announced" : "suppressed"));
+        }
+        catch
+        {
+            // Deliberately empty — see LogHandlerFaulted's remarks.
+        }
+
+        try
+        {
+            logger.LogError(
+                ex,
+                "A filter predicate threw while deciding whether {DeviceId} matches for {EventName}; "
+                    + "treated as {Fallback}. A Where() predicate must be total — it is asked about every "
+                    + "device the platform reports, including ones with null or unexpected fields.",
+                deviceId, eventName, announced ? "a match" : "no match");
+        }
+        catch
+        {
+            // Deliberately empty — see LogHandlerFaulted's remarks.
+        }
+    }
+
+    /// <summary>
     /// Records the fault on <paramref name="counter"/>.
     /// </summary>
     /// <remarks>

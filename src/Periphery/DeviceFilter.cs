@@ -120,6 +120,28 @@ public sealed class DeviceFilter
     }
 
     /// <summary>Keep only devices matching <paramref name="predicate"/>.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The predicate must be total.</b> It is asked about every device the
+    /// platform reports, not only the ones you expect to match — including
+    /// devices with a null <see cref="DeviceInfo.Name"/>, an empty manufacturer,
+    /// or fields no enricher populated on this platform. <c>d =&gt;
+    /// d.Name.StartsWith("Acme")</c> throws on the first nameless device in the
+    /// tree.
+    /// </para>
+    /// <para>
+    /// What a throwing predicate does depends on who is asking, and the split is
+    /// deliberate. On an enumeration (<see cref="DeviceQuery"/>) or a
+    /// caller-facing read such as <see cref="DeviceWatcher.KnownDevices"/> it
+    /// propagates: a caller is awaiting the answer and the bug is theirs to see.
+    /// On a <see cref="DeviceWatcher"/> event there is no caller to receive it and
+    /// the throw would unwind the platform's notification pump, so it is caught,
+    /// counted on <c>periphery.events.filter_faults</c>, and answered in the
+    /// predicate's place — as "no match" for an arrival, and as "match" for a
+    /// removal, so a device already announced cannot be stranded present by a
+    /// filter that started failing (issue #229).
+    /// </para>
+    /// </remarks>
     public DeviceFilter Where(Func<DeviceInfo, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
