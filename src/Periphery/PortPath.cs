@@ -617,7 +617,7 @@ public readonly struct PortPath : IEquatable<PortPath>
     /// the bare-<c>bool</c> confusion D7 rejects would be most tempting to write.</para>
     /// <para><b>Do not use an unparsed value as a dictionary key.</b> Every non-port-path is
     /// <c>default</c> and they are all equal to one another, so a <c>ToDictionary</c> or
-    /// <c>GroupBy</c> that ignores <see cref="TryParse"/>'s result folds them into a single
+    /// <c>GroupBy</c> that ignores <see cref="TryParse(string, out PortPath)"/>'s result folds them into a single
     /// entry reading as "these devices are at the same port" — on the machine ADR-0079 was
     /// measured on, 204 of 300 devices. Equality is deliberately <i>not</i> the guard against
     /// that: an earlier revision made an unparsed value equal to nothing, which broke
