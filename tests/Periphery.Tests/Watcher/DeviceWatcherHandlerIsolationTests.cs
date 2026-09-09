@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Periphery.Tests;
 
 /// <summary>
@@ -182,6 +184,79 @@ public class DeviceWatcherHandlerIsolationTests
 
         monitor.SimulateConnect(MakeDevice());
         monitor.SimulateDisconnect(MakeDevice());
+    }
+
+    // ── Review findings on the first cut of the fix ─────────────────────
+
+    [Fact]
+    public async Task ASubscriberBehindAThrowingOne_OnTheSameTracker_StillRuns()
+    {
+        var (watcher, monitor) = CreateWatcher();
+        await using var _ = watcher;
+
+        var tracker = new DeviceTracker(new DeviceFilter(), "one tracker, two subscribers");
+        watcher.AddTracker(tracker);
+
+        var seen = new List<string?>();
+        tracker.StateChanged += (_, _) => throw Boom("first subscriber");
+        tracker.StateChanged += (_, s) => seen.Add(s.Device?.Id);
+
+        await watcher.StartAsync();
+        monitor.SimulateConnect(MakeDevice(id: "USB\\SAMETRACKER"));
+
+        // Isolating per tracker is not enough: the tracker's own StateChanged is
+        // a multicast event, so an unisolated raise there still lost every
+        // subscriber behind the thrower.
+        Assert.Contains("USB\\SAMETRACKER", seen);
+    }
+
+    // No test for the reentrant-disposal case, deliberately. Disposal clears the
+    // tracker list the fan-out walks, so a live enumeration would throw from
+    // MoveNext — outside the per-target try/catch — and unwind the pump. The fix
+    // is to walk a snapshot, which is correct by construction. Exercising the
+    // unfixed path is not: the Clear happens after an await inside DisposeAsync,
+    // so a fire-and-forget dispose races the walk on another thread (a flaky
+    // test), and blocking on it from the handler deadlocks — a separate,
+    // pre-existing hazard worth its own issue rather than a test here.
+
+    // Exercised against EventIsolation directly rather than through the watcher,
+    // because every type's logger is a static readonly captured at type load — a
+    // factory swapped in mid-run does not reach an already-loaded type, so a test
+    // driving this through DeviceWatcher would pass without proving anything.
+    [Fact]
+    public void AThrowingLogger_DoesNotEscapeTheIsolationItIsReporting()
+    {
+        EventHandler<EventArgs>? handlers = null;
+        handlers += (_, _) => throw Boom("subscriber");
+
+        // The log call happens inside the catch that keeps a handler off the
+        // provider's pump. A logger that throws there would escape from the very
+        // place the isolation is being reported, and unwind the pump anyway.
+        EventIsolation.Raise(this, handlers, EventArgs.Empty, new ThrowingLogger(), "Test", "ctx");
+    }
+
+    [Fact]
+    public void AThrowingLogger_DoesNotStopTheRemainingSubscribers()
+    {
+        var seen = new List<int>();
+        EventHandler<EventArgs>? handlers = null;
+        handlers += (_, _) => seen.Add(1);
+        handlers += (_, _) => throw Boom("middle");
+        handlers += (_, _) => seen.Add(3);
+
+        EventIsolation.Raise(this, handlers, EventArgs.Empty, new ThrowingLogger(), "Test", "ctx");
+
+        Assert.Equal([1, 3], seen);
+    }
+
+    private sealed class ThrowingLogger : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => throw new InvalidOperationException("the logging sink is down");
     }
 
     // ── The watcher keeps working afterwards ────────────────────────────

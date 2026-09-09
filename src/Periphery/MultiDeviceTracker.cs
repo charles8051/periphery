@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 
 namespace Periphery;
 
@@ -40,6 +41,9 @@ namespace Periphery;
 /// </remarks>
 public sealed class MultiDeviceTracker : IObservable<DeviceTrackerState>
 {
+    private static readonly ILogger<MultiDeviceTracker> _logger =
+        PeripheryLoggerFactory.CreateLogger<MultiDeviceTracker>();
+
     private readonly DeviceFilter _filter;
     private readonly ConcurrentDictionary<DeviceId, DeviceTracker> _children = new();
     private readonly List<IObserver<DeviceTrackerState>> _observers = [];
@@ -224,7 +228,7 @@ public sealed class MultiDeviceTracker : IObservable<DeviceTrackerState>
             return _children[device.Id];
         }
 
-        DeviceAdded?.Invoke(this, child);
+        EventIsolation.Raise(this, DeviceAdded, child, _logger, nameof(DeviceAdded), Name ?? device.Id);
         return child;
     }
 

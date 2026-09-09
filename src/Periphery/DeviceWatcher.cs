@@ -1221,7 +1221,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
         // transition. The hook early-returns for already-resolved trackers, so this
         // is a no-op for matched ones. Group trackers (MultiDeviceTracker) need no
         // call — their children are created already-matched and never sit Unknown.
-        foreach (var tracker in _trackers)
+        foreach (var tracker in TrackerSnapshot())
         {
             // Isolated like every other tracker notification (#143): this hook
             // emits the Unknown -> Absent transition, so it raises StateChanged
@@ -1286,14 +1286,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
             // Isolated (#143): Unbind notifies subscribers, so it runs consumer
             // code on the disposal path. An unisolated throw would abandon the
             // remaining trackers still bound and leave the watcher half-disposed.
-            foreach (var tracker in _trackers)
+            foreach (var tracker in TrackerSnapshot())
             {
                 try { tracker.Unbind(); }
                 catch (Exception ex) { LogFanOutFaulted(ex, "Unbind", "tracker", tracker.Name, "(none)"); }
             }
             _trackers.Clear();
 
-            foreach (var group in _multiTrackers)
+            foreach (var group in GroupSnapshot())
             {
                 try { group.Unbind(); }
                 catch (Exception ex) { LogFanOutFaulted(ex, "Unbind", "group tracker", group.Name, "(none)"); }
@@ -1584,48 +1584,26 @@ public sealed class DeviceWatcher : IAsyncDisposable
     private void RaiseIsolated<TArgs>(
         EventHandler<TArgs>? handlers, TArgs args, string eventName, string deviceId)
         where TArgs : EventArgs
-    {
-        if (handlers is null)
-            return;
+        => EventIsolation.Raise(this, handlers, args, _logger, eventName, deviceId);
 
-        var subscribers = handlers.GetInvocationList();
-        for (int i = 0; i < subscribers.Length; i++)
-        {
-            try
-            {
-                ((EventHandler<TArgs>)subscribers[i])(this, args);
-            }
-            catch (Exception ex)
-            {
-                LogHandlerFaulted(ex, eventName, deviceId, subscribers[i], i, subscribers.Length);
-            }
-        }
-    }
+    private static void LogFanOutFaulted(Exception ex, string eventName, string kind, string? name, string deviceId)
+        => EventIsolation.LogTargetFaulted(_logger, ex, eventName, kind, name, deviceId);
 
-    private void LogHandlerFaulted(
-        Exception ex, string eventName, string deviceId, Delegate handler, int index, int total)
-    {
-        var method = handler.Method;
-        _logger.LogError(
-            ex,
-            "A {EventName} handler threw and was isolated; the remaining subscribers still ran. "
-                + "Device={DeviceId} Handler={HandlerType}.{HandlerMethod} ({Index} of {Total})",
-            eventName,
-            deviceId,
-            method.DeclaringType?.FullName ?? "(unknown)",
-            method.Name,
-            index + 1,
-            total);
-    }
+    /// <summary>
+    /// A stable copy of the trackers to notify.
+    /// </summary>
+    /// <remarks>
+    /// Snapshotted rather than enumerated live because a notification runs
+    /// consumer code, and that code may dispose the watcher — which clears these
+    /// lists. Enumerating the live <see cref="List{T}"/> would then throw from
+    /// <c>MoveNext</c>, outside the per-target try/catch, and unwind the pump
+    /// exactly as an unisolated handler used to. Handler isolation makes this
+    /// more reachable rather than less: a handler that disposes now keeps running
+    /// where before its own throw would have ended the walk.
+    /// </remarks>
+    private DeviceTracker[] TrackerSnapshot() => [.. _trackers];
 
-    private void LogFanOutFaulted(Exception ex, string eventName, string kind, string? name, string deviceId)
-    {
-        _logger.LogError(
-            ex,
-            "A {Kind} threw while being notified of {EventName} and was isolated; the remaining "
-                + "{Kind}s still ran. Name={TrackerName} Device={DeviceId}",
-            kind, eventName, kind, name ?? "(unnamed)", deviceId);
-    }
+    private MultiDeviceTracker[] GroupSnapshot() => [.. _multiTrackers];
 
     // ── Internal — tracker fan-out ─────────────────────────────────────
 
@@ -1653,7 +1631,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// </remarks>
     private void FanOutToTrackers(DeviceInfo device, Action<DeviceTracker, DeviceInfo> notify, string eventName)
     {
-        foreach (var tracker in _trackers)
+        foreach (var tracker in TrackerSnapshot())
         {
             if (!tracker.Matches(device))
                 continue;
@@ -1671,7 +1649,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void FanOutPropertyChanged(DeviceInfo previous, DeviceInfo current, IReadOnlySet<string> changedProperties)
     {
-        foreach (var tracker in _trackers)
+        foreach (var tracker in TrackerSnapshot())
         {
             try
             {
@@ -1700,7 +1678,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void FanOutToGroups(DeviceInfo device, Action<MultiDeviceTracker, DeviceInfo> notify, string eventName)
     {
-        foreach (var group in _multiTrackers)
+        foreach (var group in GroupSnapshot())
         {
             try
             {
@@ -1715,7 +1693,7 @@ public sealed class DeviceWatcher : IAsyncDisposable
 
     private void FanOutGroupPropertyChanged(DeviceInfo previous, DeviceInfo current, IReadOnlySet<string> changedProperties)
     {
-        foreach (var group in _multiTrackers)
+        foreach (var group in GroupSnapshot())
         {
             try
             {
