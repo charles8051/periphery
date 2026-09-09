@@ -55,17 +55,27 @@ internal static class WindowsCategoryMap
         if (sep <= 0) return BusType.Unknown;
         return deviceId[..sep].ToUpperInvariant() switch
         {
-            "USB"       => BusType.USB,
-            "PCI"       => BusType.PCI,
-            "BTHENUM"   => BusType.Bluetooth,
-            "HID"       => BusType.HID,
-            "SWD"       => BusType.Software,
-            "HDAUDIO"   => BusType.HDAudio,
-            "DISPLAY"   => BusType.Display,
-            "SCSI"      => BusType.SCSI,
-            "IDE"       => BusType.IDE,
-            "ACPI"      => BusType.ACPI,
-            _           => BusType.Unknown
+            "USB"         => BusType.USB,
+            "PCI"         => BusType.PCI,
+            // Windows spreads Bluetooth across five enumerators, not one. BTHENUM
+            // carries BR/EDR devices and their SDP service nodes; BTHLE carries LE
+            // devices and BTHLEDEVICE their GATT service nodes; BTHHFENUM carries
+            // handsfree audio. BTH carries the radio's own protocol-driver nodes
+            // (MS_BTHLE, MS_RFCOMM, MS_BTHPAN, MS_BTHBRB), mapped here for the same
+            // reason a USB root hub maps to BusType.USB.
+            "BTH"         => BusType.Bluetooth,
+            "BTHENUM"     => BusType.Bluetooth,
+            "BTHLE"       => BusType.Bluetooth,
+            "BTHLEDEVICE" => BusType.Bluetooth,
+            "BTHHFENUM"   => BusType.Bluetooth,
+            "HID"         => BusType.HID,
+            "SWD"         => BusType.Software,
+            "HDAUDIO"     => BusType.HDAudio,
+            "DISPLAY"     => BusType.Display,
+            "SCSI"        => BusType.SCSI,
+            "IDE"         => BusType.IDE,
+            "ACPI"        => BusType.ACPI,
+            _             => BusType.Unknown
         };
     }
 

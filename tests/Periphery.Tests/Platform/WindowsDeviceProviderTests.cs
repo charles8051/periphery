@@ -14,6 +14,41 @@ public class WindowsDeviceProviderTests
         Assert.Equal(DeviceCategory.Audio, category);
     }
 
+    // ── Bus type inference ─────────────────────────────────────────────
+    // Windows spreads Bluetooth across five enumerators, and only BTHENUM was
+    // mapped, so every LE device and GATT service node reported Unknown (#233).
+    // The instance-ID shapes below are taken from a Windows 11 host with two
+    // bonded BR/EDR and two bonded LE peripherals; the addresses are synthetic.
+
+    [Theory]
+    // BR/EDR: the device node, then one of its SDP service nodes.
+    [InlineData(@"BTHENUM\DEV_AABBCCDDEEFF\A&16071615&0&BLUETOOTHDEVICE_AABBCCDDEEFF")]
+    [InlineData(@"BTHENUM\{0000110B-0000-1000-8000-00805F9B34FB}_VID&00010000_PID&0000\A&16071615&0&AABBCCDDEEFF_C00000000")]
+    // LE: the device node, then two GATT service nodes in both shapes Windows uses.
+    [InlineData(@"BTHLE\DEV_112233445566\A&EDE6A8A&0&112233445566")]
+    [InlineData(@"BTHLEDEVICE\{00001801-0000-1000-8000-00805F9B34FB}_112233445566\B&22CEDFE8&0&0001")]
+    [InlineData(@"BTHLEDEVICE\{00001812-0000-1000-8000-00805F9B34FB}_DEV_VID&020000_PID&0000_REV&0000_112233445566\B&91E3812&0&0015")]
+    // Handsfree audio, and the radio's own protocol-driver nodes.
+    [InlineData(@"BTHHFENUM\BTHHFPAUDIO\B&A0AC332&0&97")]
+    [InlineData(@"BTH\MS_BTHLE\9&2A39FB0E&0&3")]
+    [InlineData(@"BTH\MS_RFCOMM\9&2A39FB0E&0&0")]
+    public void InferBusType_AnyBluetoothEnumerator_ReturnsBluetooth(string instanceId)
+    {
+        var busType = WindowsCategoryMap.InferBusType(instanceId);
+
+        Assert.Equal(BusType.Bluetooth, busType);
+    }
+
+    [Fact]
+    public void InferBusType_UnrecognisedBluetoothLikePrefix_ReturnsUnknown()
+    {
+        // The match is on the whole enumerator, not a "BTH" prefix. A future
+        // enumerator has to be added deliberately rather than matched by accident.
+        var busType = WindowsCategoryMap.InferBusType(@"BTHFUTURE\DEV_AABBCCDDEEFF\0");
+
+        Assert.Equal(BusType.Unknown, busType);
+    }
+
     [Fact]
     public void ParseUsbClassCodeFromCompatibleIds_WithMidiCompatibleId_ParsesCode()
     {
