@@ -812,14 +812,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// should I list or track it. A handler that needs both does the presence work here
     /// and the I/O on <see cref="Activated"/>.</para>
     /// <para><b>A throwing handler is isolated and cannot break the others.</b>
-    /// Subscribers are invoked one at a time; a fault is logged at Error naming the
-    /// device, this event and the handler, and the remaining subscribers still run.
-    /// It never unwinds the platform notification pump that raised it. The corollary
-    /// is that a handler swallowing its own errors is invisible except in that log
-    /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// Subscribers are invoked one at a time, the remaining ones still run, and the
+    /// exception never unwinds the platform notification pump that raised it
+    /// (issue #143). The fault is recorded twice over: at
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>, naming the device
+    /// and the handler that failed, and on the
+    /// <c>periphery.events.handler_faults</c> meter, which no logging configuration
+    /// can filter away. The watcher will not crash the process on a handler's
+    /// behalf, so handle errors inside the handler.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Appeared;
 
@@ -829,14 +829,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// </summary>
     /// <remarks>
     /// <para><b>A throwing handler is isolated and cannot break the others.</b>
-    /// Subscribers are invoked one at a time; a fault is logged at Error naming the
-    /// device, this event and the handler, and the remaining subscribers still run.
-    /// It never unwinds the platform notification pump that raised it. The corollary
-    /// is that a handler swallowing its own errors is invisible except in that log
-    /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// Subscribers are invoked one at a time, the remaining ones still run, and the
+    /// exception never unwinds the platform notification pump that raised it
+    /// (issue #143). The fault is recorded twice over: at
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>, naming the device
+    /// and the handler that failed, and on the
+    /// <c>periphery.events.handler_faults</c> meter, which no logging configuration
+    /// can filter away. The watcher will not crash the process on a handler's
+    /// behalf, so handle errors inside the handler.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Disappeared;
 
@@ -864,14 +864,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// with their reopen and readiness loops. A hand-rolled subscription will not, and
     /// will hold a handle across a stop it never hears about.</para>
     /// <para><b>A throwing handler is isolated and cannot break the others.</b>
-    /// Subscribers are invoked one at a time; a fault is logged at Error naming the
-    /// device, this event and the handler, and the remaining subscribers still run.
-    /// It never unwinds the platform notification pump that raised it. The corollary
-    /// is that a handler swallowing its own errors is invisible except in that log
-    /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// Subscribers are invoked one at a time, the remaining ones still run, and the
+    /// exception never unwinds the platform notification pump that raised it
+    /// (issue #143). The fault is recorded twice over: at
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>, naming the device
+    /// and the handler that failed, and on the
+    /// <c>periphery.events.handler_faults</c> meter, which no logging configuration
+    /// can filter away. The watcher will not crash the process on a handler's
+    /// behalf, so handle errors inside the handler.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Activated;
 
@@ -882,14 +882,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// </summary>
     /// <remarks>
     /// <para><b>A throwing handler is isolated and cannot break the others.</b>
-    /// Subscribers are invoked one at a time; a fault is logged at Error naming the
-    /// device, this event and the handler, and the remaining subscribers still run.
-    /// It never unwinds the platform notification pump that raised it. The corollary
-    /// is that a handler swallowing its own errors is invisible except in that log
-    /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// Subscribers are invoked one at a time, the remaining ones still run, and the
+    /// exception never unwinds the platform notification pump that raised it
+    /// (issue #143). The fault is recorded twice over: at
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>, naming the device
+    /// and the handler that failed, and on the
+    /// <c>periphery.events.handler_faults</c> meter, which no logging configuration
+    /// can filter away. The watcher will not crash the process on a handler's
+    /// behalf, so handle errors inside the handler.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Deactivated;
 
@@ -912,14 +912,14 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// <see cref="DeviceInfo.IsActive"/> transitions, which are
     /// complementary to <see cref="Activated"/>/<see cref="Deactivated"/>.</para>
     /// <para><b>A throwing handler is isolated and cannot break the others.</b>
-    /// Subscribers are invoked one at a time; a fault is logged at Error naming the
-    /// device, this event and the handler, and the remaining subscribers still run.
-    /// It never unwinds the platform notification pump that raised it. The corollary
-    /// is that a handler swallowing its own errors is invisible except in that log
-    /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// Subscribers are invoked one at a time, the remaining ones still run, and the
+    /// exception never unwinds the platform notification pump that raised it
+    /// (issue #143). The fault is recorded twice over: at
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>, naming the device
+    /// and the handler that failed, and on the
+    /// <c>periphery.events.handler_faults</c> meter, which no logging configuration
+    /// can filter away. The watcher will not crash the process on a handler's
+    /// behalf, so handle errors inside the handler.</para>
     /// </remarks>
     public event EventHandler<DevicePropertyChangedEventArgs>? PropertyChanged;
 

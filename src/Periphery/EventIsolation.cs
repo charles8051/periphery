@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using System;
+using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
 namespace Periphery;
@@ -26,21 +27,29 @@ namespace Periphery;
 /// </para>
 /// <para>
 /// <b>The failure policy, stated plainly.</b> A consumer exception is swallowed.
-/// The only signal is an <see cref="LogLevel.Error"/> record, and that signal is
-/// <em>not</em> guaranteed: a logger configured above Error for the category, no
-/// provider registered at all, or a sink that drops the record each leave the
-/// failure entirely invisible while the operation continues as though it
-/// succeeded. This is a deliberate trade — an exception that reaches the
-/// platform's notification pump takes the whole application's device view down
-/// with it, which is worse than a lost log line — but it is a trade, and a
-/// consumer whose handler can fail should not rely on this class to tell it.
-/// Handle errors inside the handler.
+/// This is a deliberate trade: an exception reaching the platform's notification
+/// pump takes the whole application's device view down with it, which is worse
+/// than a lost handler failure. A consumer whose handler can fail should still
+/// handle errors inside the handler — nothing here re-raises for it.
 /// </para>
 /// <para>
-/// Making that signal unconditional needs a counter alongside the log, which is
-/// the pairing <c>docs/patterns/logging-and-diagnostics.md</c> §7 prescribes.
-/// The core package has no <c>Meter</c> yet, so that is issue #225 rather than
-/// something this type can assume.
+/// <b>Two signals, and only one of them survives configuration.</b> The fault is
+/// recorded at <see cref="LogLevel.Error"/>, which carries the detail — which
+/// handler, which device — but a logger filtered above Error for the category,
+/// or no provider at all, drops it silently. So it is also counted on
+/// <see cref="PeripheryDiagnostics.HandlerFaults"/>, tagged with the event name,
+/// which no logging configuration can filter away. The counter answers "is
+/// consumer code failing", the log answers "where"; the pairing is the rule in
+/// <c>docs/patterns/logging-and-diagnostics.md</c> §7, and both are incremented
+/// from the same site so they cannot drift (issue #225).
+/// </para>
+/// <para>
+/// A fault from a notified <em>target</em> — a tracker the watcher was fanning an
+/// event out to, rather than a subscriber — is counted separately on
+/// <see cref="PeripheryDiagnostics.TargetFaults"/>. A tracker's own subscribers
+/// are isolated inside the tracker, so what surfaces at the fan-out is the
+/// tracker failing in its own code: a library fault, not consumer code
+/// misbehaving, and worth being able to find on its own.
 /// </para>
 /// </remarks>
 internal static class EventIsolation
@@ -97,6 +106,8 @@ internal static class EventIsolation
         ILogger logger, Exception ex, string eventName, string context,
         Delegate handler, int index, int total)
     {
+        Count(PeripheryDiagnostics.HandlerFaults, eventName);
+
         try
         {
             var method = handler.Method;
@@ -125,6 +136,8 @@ internal static class EventIsolation
     internal static void LogTargetFaulted(
         ILogger logger, Exception ex, string eventName, string kind, string? name, string context)
     {
+        Count(PeripheryDiagnostics.TargetFaults, eventName);
+
         try
         {
             logger.LogError(
@@ -136,6 +149,28 @@ internal static class EventIsolation
         catch
         {
             // Deliberately empty — see LogHandlerFaulted's remarks.
+        }
+    }
+
+    /// <summary>
+    /// Records the fault on <paramref name="counter"/>.
+    /// </summary>
+    /// <remarks>
+    /// Counted before the log is attempted, and guarded like it, because this is
+    /// the half of the signal that survives configuration: a logger filtered above
+    /// Error drops the record, where the counter is still incremented. Both are
+    /// best-effort against a listener that throws — nothing here may escape into
+    /// the notification pump the isolation exists to protect.
+    /// </remarks>
+    private static void Count(System.Diagnostics.Metrics.Counter<long> counter, string eventName)
+    {
+        try
+        {
+            counter.Add(1, new KeyValuePair<string, object?>(PeripheryDiagnostics.EventTag, eventName));
+        }
+        catch
+        {
+            // Deliberately empty — see the remarks above.
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 
 namespace Periphery.Tests;
@@ -297,6 +298,91 @@ public class DeviceWatcherHandlerIsolationTests
         await watcher.DisposeAsync();
 
         Assert.IsType<ObjectDisposedException>(observed);
+    }
+
+    // ── The counter is the signal that survives configuration (#225) ────
+
+    [Fact]
+    public async Task AnIsolatedHandlerFault_IsCounted_TaggedWithTheEvent()
+    {
+        var faults = new List<string?>();
+        using var listener = StartFaultListener(faults);
+
+        var (watcher, monitor) = CreateWatcher();
+        await using var _ = watcher;
+        watcher.Appeared += (_, _) => throw Boom("Appeared");
+        await watcher.StartAsync();
+
+        monitor.SimulateConnect(MakeDevice());
+
+        Assert.Contains("Appeared", faults);
+    }
+
+    [Fact]
+    public void TheCounterIsIncrementedEvenWhenTheLoggerDropsEverything()
+    {
+        var faults = new List<string?>();
+        using var listener = StartFaultListener(faults);
+
+        EventHandler<EventArgs>? handlers = null;
+        handlers += (_, _) => throw Boom("subscriber");
+
+        // A logger that throws stands in for the whole class of loggers that
+        // carry nothing — filtered above Error, no provider registered, a sink
+        // that is down. The counter is the half that still fires (#225).
+        EventIsolation.Raise(this, handlers, EventArgs.Empty, new ThrowingLogger(), "Filtered", "ctx");
+
+        Assert.Equal(["Filtered"], faults);
+    }
+
+    [Fact]
+    public void ATargetFault_IsCountedSeparatelyFromAHandlerFault()
+    {
+        // A tracker's own subscribers are isolated inside the tracker, so a fault
+        // that surfaces at the watcher's fan-out is the tracker failing in its own
+        // code — a library fault, not consumer code misbehaving. Folding the two
+        // into one counter would bury the more alarming of them (#225 review).
+        //
+        // Driven through EventIsolation directly: with every notification path
+        // isolated, a target fault is by design hard to provoke end to end, and a
+        // test that cannot provoke one would prove nothing about the split.
+        var targets = new List<string?>();
+        var handlers = new List<string?>();
+        using var targetListener = StartFaultListener(targets, "periphery.events.target_faults");
+        using var handlerListener = StartFaultListener(handlers);
+
+        EventIsolation.LogTargetFaulted(
+            new ThrowingLogger(), Boom("tracker"), "Appeared", "tracker", "a tracker", "USB-TEST-1");
+
+        Assert.Equal(["Appeared"], targets);
+        Assert.Empty(handlers);
+    }
+
+    private static MeterListener StartFaultListener(
+        List<string?> faults, string instrumentName = "periphery.events.handler_faults")
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == "Periphery" && instrument.Name == instrumentName)
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "periphery.event")
+                {
+                    lock (faults) faults.Add(tag.Value as string);
+                }
+            }
+        });
+        listener.Start();
+        return listener;
     }
 
     // ── The watcher keeps working afterwards ────────────────────────────
