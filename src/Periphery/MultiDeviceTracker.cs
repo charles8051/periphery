@@ -43,9 +43,10 @@ namespace Periphery;
 /// are invoked one at a time; an exception from one is logged at Error and the
 /// remaining subscribers still run, so a handler cannot unwind the platform
 /// notification pump these events are ultimately raised from (issue #143). The
-/// exception is swallowed and the log record is the only signal, which a logging
-/// configuration above Error will not carry — see <see cref="EventIsolation"/>
-/// for the full policy. Handle errors inside the handler.
+/// exception is swallowed; it is recorded at Error and counted on the
+/// <c>periphery.events.handler_faults</c> meter, which a logging configuration
+/// cannot filter away — see <see cref="EventIsolation"/> for the full policy.
+/// Handle errors inside the handler.
 /// </para>
 /// </remarks>
 public sealed class MultiDeviceTracker : IObservable<DeviceTrackerState>

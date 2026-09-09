@@ -817,9 +817,11 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// It never unwinds the platform notification pump that raised it. The corollary
     /// is that a handler swallowing its own errors is invisible except in that log
     /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>
+    /// and carries which handler failed; a configuration filtering Error out for
+    /// this category loses that detail, but the fault is still counted on the
+    /// <c>periphery.events.handler_faults</c> meter, which filtering cannot
+    /// suppress.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Appeared;
 
@@ -834,9 +836,11 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// It never unwinds the platform notification pump that raised it. The corollary
     /// is that a handler swallowing its own errors is invisible except in that log
     /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>
+    /// and carries which handler failed; a configuration filtering Error out for
+    /// this category loses that detail, but the fault is still counted on the
+    /// <c>periphery.events.handler_faults</c> meter, which filtering cannot
+    /// suppress.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Disappeared;
 
@@ -869,9 +873,11 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// It never unwinds the platform notification pump that raised it. The corollary
     /// is that a handler swallowing its own errors is invisible except in that log
     /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>
+    /// and carries which handler failed; a configuration filtering Error out for
+    /// this category loses that detail, but the fault is still counted on the
+    /// <c>periphery.events.handler_faults</c> meter, which filtering cannot
+    /// suppress.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Activated;
 
@@ -887,9 +893,11 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// It never unwinds the platform notification pump that raised it. The corollary
     /// is that a handler swallowing its own errors is invisible except in that log
     /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>
+    /// and carries which handler failed; a configuration filtering Error out for
+    /// this category loses that detail, but the fault is still counted on the
+    /// <c>periphery.events.handler_faults</c> meter, which filtering cannot
+    /// suppress.</para>
     /// </remarks>
     public event EventHandler<DeviceChangeEventArgs>? Deactivated;
 
@@ -917,9 +925,11 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// It never unwinds the platform notification pump that raised it. The corollary
     /// is that a handler swallowing its own errors is invisible except in that log
     /// record — the watcher will not crash the process on its behalf (issue #143).
-    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-    /// so a configuration that filters Error out for this category leaves the
-    /// failure with no signal at all.</para>
+    /// The record is written at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>
+    /// and carries which handler failed; a configuration filtering Error out for
+    /// this category loses that detail, but the fault is still counted on the
+    /// <c>periphery.events.handler_faults</c> meter, which filtering cannot
+    /// suppress.</para>
     /// </remarks>
     public event EventHandler<DevicePropertyChangedEventArgs>? PropertyChanged;
 
