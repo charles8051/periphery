@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 
 namespace Periphery;
 
@@ -48,9 +49,21 @@ namespace Periphery;
 /// and <see cref="IObserver{T}"/> subscriptions remain attached. The tracker can
 /// be re-attached to a new watcher — at most one active watcher at a time,
 /// enforced at runtime.</para>
+/// <para>
+/// <b>A throwing event handler is isolated.</b> Subscribers on this type's events
+/// are invoked one at a time; an exception from one is logged at Error and the
+/// remaining subscribers still run, so a handler cannot unwind the platform
+/// notification pump these events are ultimately raised from (issue #143). The
+/// exception is swallowed and the log record is the only signal, which a logging
+/// configuration above Error will not carry — see <see cref="EventIsolation"/>
+/// for the full policy. Handle errors inside the handler.
+/// </para>
 /// </remarks>
 public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerState>
 {
+    private static readonly ILogger<DeviceTracker> _logger =
+        PeripheryLoggerFactory.CreateLogger<DeviceTracker>();
+
     private IReadOnlyList<DeviceProfile> _profiles;
 
     // Pure latch/resolution state (the functional core). Swapped wholesale
@@ -564,6 +577,10 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
 
     // ── Private — notification ─────────────────────────────────────────
 
+    // Locator for an isolated-handler log record: the tracker's name, falling
+    // back to the device it holds, so the record can be tied to something.
+    private string Id() => Name ?? _state.Device?.Id ?? "(unnamed tracker)";
+
     private void NotifyChanges(DeviceTrackerState before, DeviceTrackerState after,
         DevicePropertyChangedEventArgs? propertyChangedArgs = null)
     {
@@ -573,7 +590,7 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
 
         if (stateChanged)
         {
-            StateChanged?.Invoke(this, after);
+            EventIsolation.Raise(this, StateChanged, after, _logger, nameof(StateChanged), Id());
             IObserver<DeviceTrackerState>[] snapshot;
             lock (_lock) snapshot = [.. _observers];
             foreach (var observer in snapshot)
@@ -590,14 +607,18 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
             }
 
             var transition = new DeviceTrackerTransition(before, after);
-            if (!before.IsPresent && after.IsPresent)   Appeared?.Invoke(this, transition);
-            if (before.IsPresent && !after.IsPresent)   Disappeared?.Invoke(this, transition);
-            if (!before.IsActive && after.IsActive)     Activated?.Invoke(this, transition);
-            if (before.IsActive && !after.IsActive)     Deactivated?.Invoke(this, transition);
+            if (!before.IsPresent && after.IsPresent)
+                EventIsolation.Raise(this, Appeared, transition, _logger, nameof(Appeared), Id());
+            if (before.IsPresent && !after.IsPresent)
+                EventIsolation.Raise(this, Disappeared, transition, _logger, nameof(Disappeared), Id());
+            if (!before.IsActive && after.IsActive)
+                EventIsolation.Raise(this, Activated, transition, _logger, nameof(Activated), Id());
+            if (before.IsActive && !after.IsActive)
+                EventIsolation.Raise(this, Deactivated, transition, _logger, nameof(Deactivated), Id());
         }
 
         if (propertyChangedArgs is not null)
-            PropertyChanged?.Invoke(this, propertyChangedArgs);
+            EventIsolation.Raise(this, PropertyChanged, propertyChangedArgs, _logger, nameof(PropertyChanged), Id());
     }
 
     private sealed class Unsubscriber(DeviceTracker tracker, IObserver<DeviceTrackerState> observer) : IDisposable
