@@ -24,6 +24,24 @@ namespace Periphery;
 /// a tracker's own events are raised from inside that raise, so an unisolated
 /// tracker event reaches the pump just as surely as an unisolated watcher one.
 /// </para>
+/// <para>
+/// <b>The failure policy, stated plainly.</b> A consumer exception is swallowed.
+/// The only signal is an <see cref="LogLevel.Error"/> record, and that signal is
+/// <em>not</em> guaranteed: a logger configured above Error for the category, no
+/// provider registered at all, or a sink that drops the record each leave the
+/// failure entirely invisible while the operation continues as though it
+/// succeeded. This is a deliberate trade — an exception that reaches the
+/// platform's notification pump takes the whole application's device view down
+/// with it, which is worse than a lost log line — but it is a trade, and a
+/// consumer whose handler can fail should not rely on this class to tell it.
+/// Handle errors inside the handler.
+/// </para>
+/// <para>
+/// Making that signal unconditional needs a counter alongside the log, which is
+/// the pairing <c>docs/patterns/logging-and-diagnostics.md</c> §7 prescribes.
+/// The core package has no <c>Meter</c> yet, so that is issue #225 rather than
+/// something this type can assume.
+/// </para>
 /// </remarks>
 internal static class EventIsolation
 {

@@ -38,6 +38,15 @@ namespace Periphery;
 ///
 /// <para><b>Threading:</b> All events fire on thread-pool threads.
 /// UI dispatch is the consumer's responsibility.</para>
+/// <para>
+/// <b>A throwing event handler is isolated.</b> Subscribers on this type's events
+/// are invoked one at a time; an exception from one is logged at Error and the
+/// remaining subscribers still run, so a handler cannot unwind the platform
+/// notification pump these events are ultimately raised from (issue #143). The
+/// exception is swallowed and the log record is the only signal, which a logging
+/// configuration above Error will not carry — see <see cref="EventIsolation"/>
+/// for the full policy. Handle errors inside the handler.
+/// </para>
 /// </remarks>
 public sealed class MultiDeviceTracker : IObservable<DeviceTrackerState>
 {
