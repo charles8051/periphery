@@ -43,6 +43,14 @@ namespace Periphery;
 /// <c>docs/patterns/logging-and-diagnostics.md</c> §7, and both are incremented
 /// from the same site so they cannot drift (issue #225).
 /// </para>
+/// <para>
+/// A fault from a notified <em>target</em> — a tracker the watcher was fanning an
+/// event out to, rather than a subscriber — is counted separately on
+/// <see cref="PeripheryDiagnostics.TargetFaults"/>. A tracker's own subscribers
+/// are isolated inside the tracker, so what surfaces at the fan-out is the
+/// tracker failing in its own code: a library fault, not consumer code
+/// misbehaving, and worth being able to find on its own.
+/// </para>
 /// </remarks>
 internal static class EventIsolation
 {
@@ -98,7 +106,7 @@ internal static class EventIsolation
         ILogger logger, Exception ex, string eventName, string context,
         Delegate handler, int index, int total)
     {
-        Count(eventName);
+        Count(PeripheryDiagnostics.HandlerFaults, eventName);
 
         try
         {
@@ -128,7 +136,7 @@ internal static class EventIsolation
     internal static void LogTargetFaulted(
         ILogger logger, Exception ex, string eventName, string kind, string? name, string context)
     {
-        Count(eventName);
+        Count(PeripheryDiagnostics.TargetFaults, eventName);
 
         try
         {
@@ -145,7 +153,7 @@ internal static class EventIsolation
     }
 
     /// <summary>
-    /// Records the fault on <see cref="PeripheryDiagnostics.HandlerFaults"/>.
+    /// Records the fault on <paramref name="counter"/>.
     /// </summary>
     /// <remarks>
     /// Counted before the log is attempted, and guarded like it, because this is
@@ -154,12 +162,11 @@ internal static class EventIsolation
     /// best-effort against a listener that throws — nothing here may escape into
     /// the notification pump the isolation exists to protect.
     /// </remarks>
-    private static void Count(string eventName)
+    private static void Count(System.Diagnostics.Metrics.Counter<long> counter, string eventName)
     {
         try
         {
-            PeripheryDiagnostics.HandlerFaults.Add(
-                1, new KeyValuePair<string, object?>(PeripheryDiagnostics.EventTag, eventName));
+            counter.Add(1, new KeyValuePair<string, object?>(PeripheryDiagnostics.EventTag, eventName));
         }
         catch
         {

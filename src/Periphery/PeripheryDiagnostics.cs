@@ -50,6 +50,25 @@ internal static class PeripheryDiagnostics
         unit: "{fault}",
         description: "Event-handler exceptions caught and swallowed to protect the notification pump.");
 
-    /// <summary>Tag naming the event whose handler threw.</summary>
+    /// <summary>
+    /// Exceptions thrown by a notified <see cref="DeviceTracker"/> or
+    /// <see cref="MultiDeviceTracker"/> while the watcher was fanning an event out
+    /// to it, caught so the remaining targets still hear about the device
+    /// (issue #143). Tagged with <c>periphery.event</c>.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not folded into <see cref="HandlerFaults"/>. A tracker's own
+    /// event subscribers are isolated inside the tracker, and a fault there lands
+    /// on <see cref="HandlerFaults"/> under that tracker's event name. What
+    /// reaches the watcher's fan-out is the tracker failing in its own code —
+    /// a library-internal fault, not consumer code misbehaving. Counting the two
+    /// together would make the more alarming of them unfindable.
+    /// </remarks>
+    internal static readonly Counter<long> TargetFaults = Meter.CreateCounter<long>(
+        name: "periphery.events.target_faults",
+        unit: "{fault}",
+        description: "Exceptions thrown by a tracker being notified of a device event.");
+
+    /// <summary>Tag naming the event whose handler or target threw.</summary>
     internal const string EventTag = "periphery.event";
 }

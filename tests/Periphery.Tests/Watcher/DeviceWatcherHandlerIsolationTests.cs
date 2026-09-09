@@ -335,14 +335,37 @@ public class DeviceWatcherHandlerIsolationTests
         Assert.Equal(["Filtered"], faults);
     }
 
-    private static MeterListener StartFaultListener(List<string?> faults)
+    [Fact]
+    public void ATargetFault_IsCountedSeparatelyFromAHandlerFault()
+    {
+        // A tracker's own subscribers are isolated inside the tracker, so a fault
+        // that surfaces at the watcher's fan-out is the tracker failing in its own
+        // code — a library fault, not consumer code misbehaving. Folding the two
+        // into one counter would bury the more alarming of them (#225 review).
+        //
+        // Driven through EventIsolation directly: with every notification path
+        // isolated, a target fault is by design hard to provoke end to end, and a
+        // test that cannot provoke one would prove nothing about the split.
+        var targets = new List<string?>();
+        var handlers = new List<string?>();
+        using var targetListener = StartFaultListener(targets, "periphery.events.target_faults");
+        using var handlerListener = StartFaultListener(handlers);
+
+        EventIsolation.LogTargetFaulted(
+            new ThrowingLogger(), Boom("tracker"), "Appeared", "tracker", "a tracker", "USB\X");
+
+        Assert.Equal(["Appeared"], targets);
+        Assert.Empty(handlers);
+    }
+
+    private static MeterListener StartFaultListener(
+        List<string?> faults, string instrumentName = "periphery.events.handler_faults")
     {
         var listener = new MeterListener
         {
             InstrumentPublished = (instrument, l) =>
             {
-                if (instrument.Meter.Name == "Periphery"
-                    && instrument.Name == "periphery.events.handler_faults")
+                if (instrument.Meter.Name == "Periphery" && instrument.Name == instrumentName)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }
