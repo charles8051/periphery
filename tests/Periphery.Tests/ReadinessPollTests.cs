@@ -68,6 +68,62 @@ public class ReadinessPollTests
     }
 
     [Fact]
+    public async Task ADeadlineThatPassesDuringTheProbe_reportsNotReadyRatherThanThrowing()
+    {
+        // The probe outlives the whole budget, so the deadline is already behind us
+        // by the time it is consulted. Reachable without any clock trickery, and
+        // the plain contract: not ready in time is null, never an exception.
+        var elapsed = await ReadinessPoll.UntilAsync(
+            () => { Thread.Sleep(40); return false; },
+            timeout: TimeSpan.FromMilliseconds(10), Interval, CancellationToken.None);
+
+        Assert.Null(elapsed);
+    }
+
+    [Fact]
+    public async Task ADeadlineCrossedBetweenClockReads_reportsNotReadyRatherThanThrowing()
+    {
+        // The #226 defect: the deadline check and the delay were computed from two
+        // separate clock readings, so a deadline crossed between them produced a
+        // negative delay and an ArgumentOutOfRangeException out of Task.Delay.
+        //
+        // A wall clock lands in that window only by luck, which is why the original
+        // escaped as an intermittent CI failure. This clock advances on every read,
+        // so the second reading of an iteration is always later than the first —
+        // exactly the race, made a certainty. With the timeout set between one and
+        // two steps, a two-read implementation goes negative on its first pass.
+        var clock = new AdvancingOnReadTimeProvider(TimeSpan.FromMilliseconds(10));
+
+        var elapsed = await ReadinessPoll.UntilAsync(
+            () => false,
+            timeout: TimeSpan.FromMilliseconds(15),
+            interval: TimeSpan.FromMilliseconds(5),
+            CancellationToken.None,
+            clock);
+
+        Assert.Null(elapsed);
+    }
+
+    /// <summary>
+    /// A clock that moves forward by a fixed step on every <see cref="GetTimestamp"/>,
+    /// so two readings taken back to back are never equal. Timers are left to the
+    /// base class, so an awaited delay still completes against real time.
+    /// </summary>
+    private sealed class AdvancingOnReadTimeProvider(TimeSpan step) : TimeProvider
+    {
+        private long _ticks;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp()
+        {
+            long now = _ticks;
+            _ticks += step.Ticks;
+            return now;
+        }
+    }
+
+    [Fact]
     public async Task Cancellation_propagatesRatherThanReportingNotReady()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));

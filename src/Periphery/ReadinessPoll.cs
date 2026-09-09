@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -33,26 +32,44 @@ internal static class ReadinessPoll
     /// call and no wall-clock. A predicate that throws is not caught: a probe that
     /// cannot answer is a real fault, not a "not ready yet".
     /// </remarks>
+    /// <param name="timeProvider">
+    /// Clock for the deadline and the delay. Defaults to
+    /// <see cref="TimeProvider.System"/>; a test passes one whose readings it
+    /// controls, which is the only way to land on the deadline boundary on
+    /// purpose rather than by luck (ADR-0052).
+    /// </param>
     internal static async ValueTask<TimeSpan?> UntilAsync(
-        Func<bool> isReady, TimeSpan timeout, TimeSpan interval, CancellationToken ct)
+        Func<bool> isReady, TimeSpan timeout, TimeSpan interval, CancellationToken ct,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(isReady);
 
-        var elapsed = Stopwatch.StartNew();
+        var clock = timeProvider ?? TimeProvider.System;
+        var start = clock.GetTimestamp();
         while (true)
         {
             if (isReady())
-                return elapsed.Elapsed;
+                return clock.GetElapsedTime(start);
 
+            // One reading, used for both the deadline decision and the delay computed
+            // from it. Two readings raced each other: the guard could pass on a value
+            // just under the timeout, the clock cross the deadline before the
+            // subtraction, and Task.Delay then receive a negative TimeSpan and throw
+            // ArgumentOutOfRangeException — turning "not ready in time", which this
+            // method reports by returning null, into an argument exception naming an
+            // internal parameter, on the reset path where it is least welcome (#226).
+            // A loaded machine widens that window; any preemption between the two
+            // reads was enough to open it.
+            //
             // Checked after the predicate so the deadline can never reject a subject
             // that is already ready — otherwise a zero/expired timeout would report a
             // failure the caller could see is untrue.
-            if (elapsed.Elapsed >= timeout)
+            var remaining = timeout - clock.GetElapsedTime(start);
+            if (remaining <= TimeSpan.Zero)
                 return null;
 
             // Never overshoot the deadline just to complete a whole interval.
-            var remaining = timeout - elapsed.Elapsed;
-            await Task.Delay(remaining < interval ? remaining : interval, ct).ConfigureAwait(false);
+            await Task.Delay(remaining < interval ? remaining : interval, clock, ct).ConfigureAwait(false);
         }
     }
 }
