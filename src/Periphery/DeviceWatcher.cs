@@ -90,6 +90,13 @@ public sealed class DeviceWatcher : IAsyncDisposable
     // the fan-out relies on (#143 review).
     private readonly object _trackersLock = new();
 
+    // Set inside _trackersLock the moment disposal takes the registrations, which
+    // is earlier than _disposed. Registration checks it under the same lock, so a
+    // tracker cannot be bound to a watcher that has already walked its list —
+    // including from an Unbind subscriber running during that very disposal
+    // (#143 review).
+    private bool _trackersReleased;
+
     private readonly List<DeviceTracker> _trackers = [];
     private readonly List<MultiDeviceTracker> _multiTrackers = [];
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
@@ -627,8 +634,18 @@ public sealed class DeviceWatcher : IAsyncDisposable
     private void RegisterTracker(DeviceTracker tracker)
     {
         ArgumentNullException.ThrowIfNull(tracker);
-        tracker.Bind(this);
-        lock (_trackersLock) _trackers.Add(tracker);
+
+        // Bind and add under one lock. Split, disposal could run between them and
+        // walk a list the tracker had not reached yet, leaving it bound to a
+        // disposed watcher with nothing left to unbind it. Bind takes only the
+        // tracker's own lock and raises nothing, so it is safe to hold this one
+        // across it.
+        lock (_trackersLock)
+        {
+            ObjectDisposedException.ThrowIf(_trackersReleased, this);
+            tracker.Bind(this);
+            _trackers.Add(tracker);
+        }
     }
 
     /// <summary>
@@ -768,8 +785,13 @@ public sealed class DeviceWatcher : IAsyncDisposable
     private void RegisterMultiTracker(MultiDeviceTracker multiTracker)
     {
         ArgumentNullException.ThrowIfNull(multiTracker);
-        multiTracker.Bind(this);
-        lock (_trackersLock) _multiTrackers.Add(multiTracker);
+
+        lock (_trackersLock)
+        {
+            ObjectDisposedException.ThrowIf(_trackersReleased, this);
+            multiTracker.Bind(this);
+            _multiTrackers.Add(multiTracker);
+        }
     }
 
     // ── Events ─────────────────────────────────────────────────────────
@@ -1327,6 +1349,11 @@ public sealed class DeviceWatcher : IAsyncDisposable
                 groups = [.. _multiTrackers];
                 _trackers.Clear();
                 _multiTrackers.Clear();
+                // Latched here, not at the end of disposal: the unbind below runs
+                // consumer code, and a subscriber that registers a tracker then
+                // would add it to a list this method has already walked, leaving
+                // it bound forever. Registration is refused from this point.
+                _trackersReleased = true;
             }
 
             foreach (var tracker in trackers)

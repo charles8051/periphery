@@ -259,6 +259,46 @@ public class DeviceWatcherHandlerIsolationTests
             => throw new InvalidOperationException("the logging sink is down");
     }
 
+    // ── Registration cannot outlive disposal ────────────────────────────
+
+    [Fact]
+    public async Task RegisteringAfterDisposal_IsRefusedRatherThanLeavingATrackerBound()
+    {
+        var (watcher, _) = CreateWatcher();
+        await watcher.StartAsync();
+        await watcher.DisposeAsync();
+
+        // Adding after disposal would bind the tracker to a watcher that has
+        // already walked its list, so nothing would ever unbind it.
+        Assert.Throws<ObjectDisposedException>(
+            () => watcher.AddTracker(new DeviceTracker(new DeviceFilter(), "too late")));
+    }
+
+    [Fact]
+    public async Task ATrackerRegisteredByAnUnbindSubscriber_IsRefused()
+    {
+        // The tracker must hold a device, or Unbind is an Absent -> Absent no-op
+        // and raises nothing for the subscriber to run in.
+        var (watcher, _) = CreateWatcher(MakeDevice());
+        var registrar = new DeviceTracker(new DeviceFilter(), "registers during unbind");
+        watcher.AddTracker(registrar);
+
+        Exception? observed = null;
+        registrar.StateChanged += (_, _) =>
+        {
+            // Unbind runs consumer code during disposal. A tracker added here
+            // would land in a list disposal has already emptied and stay bound
+            // for the life of the process.
+            try { watcher.AddTracker(new DeviceTracker(new DeviceFilter(), "smuggled in")); }
+            catch (Exception ex) { observed ??= ex; }
+        };
+
+        await watcher.StartAsync();
+        await watcher.DisposeAsync();
+
+        Assert.IsType<ObjectDisposedException>(observed);
+    }
+
     // ── The watcher keeps working afterwards ────────────────────────────
 
     [Fact]
