@@ -22,7 +22,7 @@ namespace Periphery.Usb.Tests;
 #pragma warning disable CA1416
 public class TransferFaultClassificationTests
 {
-    private const string Device = @"\\?\usb#vid_10c4&pid_8a7e#a7ds6cd";
+    private const string Device = @"\\?\usb#vid_10c4&pid_8a7e#testser1";
 
     // ── Win32: the unambiguous removals ───────────────────────────────
 

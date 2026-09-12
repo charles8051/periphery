@@ -244,10 +244,10 @@ public class AutoflashServiceTests
             await svc.LoadFirmwareAsync(fw);
             await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
 
-            monitor.Plug(FakeDevices.Usb("BoardA7DS6CD"));
+            monitor.Plug(FakeDevices.Usb("BoardTESTSER3"));
             await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 1);
-            monitor.Unplug(FakeDevices.Usb("BoardA7DS6CD"));      // resets out of the bootloader...
-            monitor.Plug(FakeDevices.Usb("boarda7ds6cd"));        // ...returns with flipped case
+            monitor.Unplug(FakeDevices.Usb("BoardTESTSER3"));     // resets out of the bootloader...
+            monitor.Plug(FakeDevices.Usb("boardtestser3"));       // ...returns with flipped case
             await WaitUntil(svc, s => s.AutoflashTally.Skipped >= 1);
 
             Assert.Equal(1, svc.State.AutoflashTally.Flashed); // flashed exactly once despite the case flip
