@@ -24,7 +24,7 @@ public class TreehopperDeviceResetTests
 
     private static DeviceInfo Treehopper() => new()
     {
-        Id = @"\\?\usb#vid_10c4&pid_8a7e#JXNQA4BF#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
+        Id = @"\\?\usb#vid_10c4&pid_8a7e#TESTSER2#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
         Name = "UserInterface",
         VendorId = TreehopperBoard.Vid,
         ProductId = TreehopperBoard.Pid,
