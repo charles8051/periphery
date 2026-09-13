@@ -1,0 +1,153 @@
+#nullable enable
+Periphery.Bootloader.Efm8.Usb.Efm8BootFormatException
+Periphery.Bootloader.Efm8.Usb.Efm8BootFormatException.Efm8BootFormatException(string! message) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootFormatException.Efm8BootFormatException(string! message, System.Exception! innerException) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Bank.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Bank.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Efm8BootOptions(Periphery.Bootloader.Efm8.Usb.Efm8FlashMap Map = Periphery.Bootloader.Efm8.Usb.Efm8FlashMap.Default, int Bank = 0, Periphery.Bootloader.Efm8.Usb.Efm8EraseMode Erase = Periphery.Bootloader.Efm8.Usb.Efm8EraseMode.WithData, int Start = 0, int Top = 65535, System.Collections.Immutable.ImmutableArray<ushort> Ids = default(System.Collections.Immutable.ImmutableArray<ushort>), ushort? Lock = null, bool Wait = false) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Erase.get -> Periphery.Bootloader.Efm8.Usb.Efm8EraseMode
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Erase.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Ids.get -> System.Collections.Immutable.ImmutableArray<ushort>
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Ids.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.IdsOrEmpty.get -> System.Collections.Immutable.ImmutableArray<ushort>
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Lock.get -> ushort?
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Lock.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Map.get -> Periphery.Bootloader.Efm8.Usb.Efm8FlashMap
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Map.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Start.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Start.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Top.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Top.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Wait.get -> bool
+Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Wait.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecord
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecord.Command.get -> byte
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecord.DeclaredLength.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecord.Efm8BootRecord() -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecord.Frame.get -> System.ReadOnlyMemory<byte>
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecord.Index.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator
+Periphery.Bootloader.Efm8.Usb.Efm8BootloaderException
+Periphery.Bootloader.Efm8.Usb.Efm8BootloaderException.Efm8BootloaderException(string! message) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootloaderException.Efm8BootloaderException(string! message, System.Exception! innerException) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8BootloaderUploader
+Periphery.Bootloader.Efm8.Usb.Efm8EraseMode
+Periphery.Bootloader.Efm8.Usb.Efm8EraseMode.None = 0 -> Periphery.Bootloader.Efm8.Usb.Efm8EraseMode
+Periphery.Bootloader.Efm8.Usb.Efm8EraseMode.Separate = 1 -> Periphery.Bootloader.Efm8.Usb.Efm8EraseMode
+Periphery.Bootloader.Efm8.Usb.Efm8EraseMode.WithData = 2 -> Periphery.Bootloader.Efm8.Usb.Efm8EraseMode
+Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat
+Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat.BootRecords = 1 -> Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat
+Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat.IntelHex = 0 -> Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat
+Periphery.Bootloader.Efm8.Usb.Efm8FirmwareImage
+Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation
+Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation.ConfirmEraseAndReflash = 1 -> Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation
+Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation.Unconfirmed = 0 -> Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation
+Periphery.Bootloader.Efm8.Usb.Efm8FlashMap
+Periphery.Bootloader.Efm8.Usb.Efm8FlashMap.Bb2 = 1 -> Periphery.Bootloader.Efm8.Usb.Efm8FlashMap
+Periphery.Bootloader.Efm8.Usb.Efm8FlashMap.Default = 0 -> Periphery.Bootloader.Efm8.Usb.Efm8FlashMap
+Periphery.Bootloader.Efm8.Usb.Efm8FlashMap.Sb2 = 2 -> Periphery.Bootloader.Efm8.Usb.Efm8FlashMap
+Periphery.Bootloader.Efm8.Usb.Efm8FlashMap.Ub1 = 3 -> Periphery.Bootloader.Efm8.Usb.Efm8FlashMap
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.AcceptedFormats.get -> System.Collections.Immutable.ImmutableArray<Periphery.Firmware.FirmwareFormat>
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.Device.get -> Periphery.DeviceInfo!
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.FlashAsync(Periphery.Firmware.FirmwarePayload! payload, Periphery.Bootloader.FlashOptions! options, System.IProgress<Periphery.Bootloader.FlashProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.FlashResult!>!
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.IdentifyAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.DeviceIdentity!>!
+Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.LeaveAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.Efm8.Usb.Efm8IntelHexConverter
+Periphery.Bootloader.Efm8.Usb.Efm8IntelHexConverter.Convert(System.ReadOnlyMemory<byte> sourceContent) -> Periphery.Firmware.FirmwarePayload!
+Periphery.Bootloader.Efm8.Usb.Efm8IntelHexConverter.Efm8IntelHexConverter(Periphery.Bootloader.Efm8.Usb.Efm8BootOptions! options) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8IntelHexConverter.Source.get -> Periphery.Firmware.FirmwareFormat
+Periphery.Bootloader.Efm8.Usb.Efm8IntelHexConverter.Target.get -> Periphery.Firmware.FirmwareFormat
+Periphery.Bootloader.Efm8.Usb.Efm8Protocol
+Periphery.Bootloader.Efm8.Usb.Efm8Reply
+Periphery.Bootloader.Efm8.Usb.Efm8Reply.Efm8Reply() -> void
+Periphery.Bootloader.Efm8.Usb.Efm8Reply.Efm8Reply(byte Status, System.Collections.Immutable.ImmutableArray<byte> Report) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8Reply.Report.get -> System.Collections.Immutable.ImmutableArray<byte>
+Periphery.Bootloader.Efm8.Usb.Efm8Reply.Report.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8Reply.Status.get -> byte
+Periphery.Bootloader.Efm8.Usb.Efm8Reply.Status.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode.Acknowledge = 64 -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode.CrcError = 66 -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode.OtherError = 67 -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode.RangeError = 65 -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode.Unknown = 63 -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.BytesSent.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.BytesSent.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.Efm8UploadProgress() -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.Efm8UploadProgress(int RecordsSent, int TotalRecords, int BytesSent, int TotalBytes) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.Percent.get -> double
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.RecordsSent.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.RecordsSent.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.TotalBytes.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.TotalBytes.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.TotalRecords.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress.TotalRecords.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.Describe() -> string!
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.Efm8UploadResult(bool Success, int RecordsSent, int TotalRecords, int TotalBytes, int? FailedRecordIndex, byte? FailedCommand, Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode? FailedReply, byte? FailedReplyByte, bool TimedOut = false) -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedCommand.get -> byte?
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedCommand.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedRecordIndex.get -> int?
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedRecordIndex.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedReply.get -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode?
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedReply.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedReplyByte.get -> byte?
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedReplyByte.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedReplyBytes.get -> System.Collections.Immutable.ImmutableArray<byte>
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.FailedReplyBytes.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.RecordsSent.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.RecordsSent.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.Success.get -> bool
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.Success.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.TimedOut.get -> bool
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.TimedOut.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.TotalBytes.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.TotalBytes.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.TotalRecords.get -> int
+Periphery.Bootloader.Efm8.Usb.Efm8UploadResult.TotalRecords.init -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider
+Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.CanHandle(Periphery.DeviceInfo! device) -> bool
+Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.Efm8UsbBootloaderProvider() -> void
+Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.Identification.get -> Periphery.Bootloader.IdentificationMode
+Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.Name.get -> string!
+Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.OpenAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.IFirmwareProgrammer!>!
+Periphery.Bootloader.Efm8.Usb.Efm8VerifyOperation
+Periphery.Bootloader.Efm8.Usb.HidEfm8Transport
+Periphery.Bootloader.Efm8.Usb.HidEfm8Transport.HidEfm8Transport(Periphery.Hid.HidDevice! device) -> void
+Periphery.Bootloader.Efm8.Usb.HidEfm8Transport.ReadReplyAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<byte>!
+Periphery.Bootloader.Efm8.Usb.HidEfm8Transport.ReadReplyReportAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.Bootloader.Efm8.Usb.Efm8Reply>!
+Periphery.Bootloader.Efm8.Usb.HidEfm8Transport.WriteOutputReportAsync(System.ReadOnlyMemory<byte> reportChunk, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.Efm8.Usb.IEfm8Transport
+Periphery.Bootloader.Efm8.Usb.IEfm8Transport.ReadReplyAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<byte>!
+Periphery.Bootloader.Efm8.Usb.IEfm8Transport.ReadReplyReportAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.Bootloader.Efm8.Usb.Efm8Reply>!
+Periphery.Bootloader.Efm8.Usb.IEfm8Transport.WriteOutputReportAsync(System.ReadOnlyMemory<byte> reportChunk, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+const Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.SetupCommand = 49 -> byte
+const Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.VerifyCommand = 52 -> byte
+const Periphery.Bootloader.Efm8.Usb.Efm8Protocol.AckByte = 64 -> byte
+const Periphery.Bootloader.Efm8.Usb.Efm8Protocol.InputReportSize = 4 -> int
+const Periphery.Bootloader.Efm8.Usb.Efm8Protocol.OutputReportSize = 64 -> int
+const Periphery.Bootloader.Efm8.Usb.Efm8Protocol.StartByte = 36 -> byte
+static Periphery.Bootloader.Efm8.Usb.Efm8BootOptions.Ub1.get -> Periphery.Bootloader.Efm8.Usb.Efm8BootOptions!
+static Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.Crc16Xmodem(System.ReadOnlySpan<byte> data, ushort seed = 0) -> ushort
+static Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.FromImage(Periphery.Firmware.IntelHexImage! image, Periphery.Bootloader.Efm8.Usb.Efm8BootOptions! options) -> byte[]!
+static Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.FromIntelHex(string! hexText, Periphery.Bootloader.Efm8.Usb.Efm8BootOptions! options) -> byte[]!
+static Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.RunAppOnly() -> byte[]!
+static Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.VerifyOnly(Periphery.Firmware.IntelHexImage! image, Periphery.Bootloader.Efm8.Usb.Efm8BootOptions! options) -> byte[]!
+static Periphery.Bootloader.Efm8.Usb.Efm8BootRecordGenerator.VerifyOnlyFromBlob(System.ReadOnlyMemory<byte> flashBlob, Periphery.Bootloader.Efm8.Usb.Efm8BootOptions! options) -> byte[]!
+static Periphery.Bootloader.Efm8.Usb.Efm8BootloaderUploader.UploadAsync(Periphery.Bootloader.Efm8.Usb.IEfm8Transport! transport, System.ReadOnlyMemory<byte> bootRecords, Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation confirmation, System.IProgress<Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress>? progress = null, System.TimeSpan? replyTimeout = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.Efm8.Usb.Efm8UploadResult!>!
+static Periphery.Bootloader.Efm8.Usb.Efm8FirmwareImage.FormatFromFileName(string! fileName) -> Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat?
+static Periphery.Bootloader.Efm8.Usb.Efm8FirmwareImage.Sniff(System.ReadOnlySpan<byte> content) -> Periphery.Bootloader.Efm8.Usb.Efm8FirmwareFormat?
+static Periphery.Bootloader.Efm8.Usb.Efm8FirmwareImage.ToBootRecords(System.ReadOnlyMemory<byte> content, string! fileName, Periphery.Bootloader.Efm8.Usb.Efm8BootOptions! hexOptions) -> byte[]!
+static Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer.OpenAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.Efm8.Usb.Efm8HidProgrammer!>!
+static Periphery.Bootloader.Efm8.Usb.Efm8Protocol.ChunkFrame(System.ReadOnlyMemory<byte> frame, int reportSize = 64) -> System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>>!
+static Periphery.Bootloader.Efm8.Usb.Efm8Protocol.ClassifyReply(byte reply) -> Periphery.Bootloader.Efm8.Usb.Efm8ReplyCode
+static Periphery.Bootloader.Efm8.Usb.Efm8Protocol.ParseRecords(System.ReadOnlyMemory<byte> bootRecords) -> System.Collections.Immutable.ImmutableArray<Periphery.Bootloader.Efm8.Usb.Efm8BootRecord>
+static Periphery.Bootloader.Efm8.Usb.Efm8Reply.FromReport(System.ReadOnlySpan<byte> report, byte emptyStatus) -> Periphery.Bootloader.Efm8.Usb.Efm8Reply
+static Periphery.Bootloader.Efm8.Usb.Efm8VerifyOperation.RunAsync(Periphery.DeviceInfo! bootloaderDevice, byte[]! verifyRecords, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.Bootloader.Efm8.Usb.Efm8UploadResult!>!
+static readonly Periphery.Bootloader.Efm8.Usb.Efm8BootloaderUploader.DefaultReplyTimeout -> System.TimeSpan
+static readonly Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.ProductId -> Periphery.HardwareId
+static readonly Periphery.Bootloader.Efm8.Usb.Efm8UsbBootloaderProvider.VendorId -> Periphery.HardwareId

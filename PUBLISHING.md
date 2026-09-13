@@ -11,10 +11,14 @@ there is no manual path, and no API key stored anywhere.
 git add .
 git commit -m "feat: add network adapter enumeration"
 
-# 2. Tag the release (annotated, semver, `v` prefix — MinVer reads the tag)
+# 2. Move the recorded public API changes into PublicAPI.Shipped.txt
+scripts/ship-public-api.sh
+git commit -am "chore: ship the public API for v3.2.0"
+
+# 3. Tag the release (annotated, semver, `v` prefix — MinVer reads the tag)
 git tag -a v3.2.0 -m "v3.2.0"
 
-# 3. Push commits and tag
+# 4. Push commits and tag
 git push && git push --tags
 ```
 
@@ -59,16 +63,15 @@ and nothing in a `.csproj` needs editing.
 | Added public surface, backwards-compatibly | **MINOR** | 4.0.0 → 4.1.0 |
 | Fix, internal refactor, docs, dependency bump | **PATCH** | 4.0.0 → 4.0.1 |
 
-Two things this repo has been bitten by, worth checking before you tag:
+Before choosing, read every `PublicAPI.Unshipped.txt` (`scripts/ship-public-api.sh
+--check` lists the ones with content). A `*REMOVED*` line is a MAJOR bump. So is an
+added line for a member of a public interface or an abstract member, because every
+implementer breaks. Any other added line is MINOR. The files record interface members,
+which a grep for removed `public`/`protected` declarations cannot see.
 
-- **A behaviour change is breaking even when the signature is not.** If callers
-  can observe a different result from the same call, that is a MAJOR bump
-  regardless of what the compiler says.
-- **Interface members carry no access modifier**, so a grep for removed
-  `public`/`protected` declarations cannot see a changed interface member — the
-  single most breaking thing a library can ship, since every implementer breaks.
-  Diff the interface files by eye. (A sibling library shipped exactly this defect
-  as a patch.)
+**A behaviour change is breaking even when the signature is not.** If callers can
+observe a different result from the same call, that is a MAJOR bump, and no API file
+will show it.
 
 Read `CHANGELOG.md`'s `[Unreleased]` section before choosing: **it accumulates
 across changes**, so a MINOR addition released while an unreleased breaking

@@ -1,0 +1,122 @@
+#nullable enable
+Periphery.Treehopper.Libraries.Displays.Apa102Strip
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.Apa102Strip(Periphery.Treehopper.SpiLease! spi, int ledCount) -> void
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.ClearAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.Current.get -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.LedCount.get -> int
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.RunAsync(Periphery.Treehopper.Libraries.Displays.LedAnimation! animation, System.TimeSpan tickInterval, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.ShowAsync(Periphery.Treehopper.Libraries.Displays.LedFrame! frame, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Libraries.Displays.Apa102Strip.TickAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Libraries.Displays.LedAnimation
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Blink(Periphery.Treehopper.Libraries.Displays.Rgb Color, int Phase = 0, int OnTicks = 8, int OffTicks = 8) -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Color.get -> Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Color.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.OffTicks.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.OffTicks.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.OnTicks.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.OnTicks.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Phase.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Phase.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Breathe(Periphery.Treehopper.Libraries.Displays.Rgb Color, double Phase = 0, double PhaseStep = 0.15, double MinBrightness = 0.02) -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Color.get -> Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Color.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.MinBrightness.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.MinBrightness.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Phase.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Phase.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.PhaseStep.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.PhaseStep.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Chase(Periphery.Treehopper.Libraries.Displays.Rgb Color, int Position = 0) -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Color.get -> Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Color.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Position.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Position.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Color.get -> Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Color.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Comet(Periphery.Treehopper.Libraries.Displays.Rgb Color, int Position = 0, double FadeFactor = 0.6) -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.FadeFactor.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.FadeFactor.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Position.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Position.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Off
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Off.Off() -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.HueOffset.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.HueOffset.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.HueStep.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.HueStep.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Rainbow(double HueOffset = 0, double HueStep = 8, double Saturation = 1, double Value = 1) -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Saturation.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Saturation.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Value.get -> double
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Value.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Active.get -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Active.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Sequence(System.Collections.Immutable.ImmutableArray<(Periphery.Treehopper.Libraries.Displays.LedAnimation! Animation, int Ticks)> Steps, int StepIndex, int TicksRemaining, Periphery.Treehopper.Libraries.Displays.LedAnimation! Active) -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.StepIndex.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.StepIndex.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Steps.get -> System.Collections.Immutable.ImmutableArray<(Periphery.Treehopper.Libraries.Displays.LedAnimation! Animation, int Ticks)>
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Steps.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.TicksRemaining.get -> int
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.TicksRemaining.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Solid
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Solid.Color.get -> Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Solid.Color.init -> void
+Periphery.Treehopper.Libraries.Displays.LedAnimation.Solid.Solid(Periphery.Treehopper.Libraries.Displays.Rgb Color) -> void
+Periphery.Treehopper.Libraries.Displays.LedFrame
+Periphery.Treehopper.Libraries.Displays.LedFrame.Brightness.get -> byte
+Periphery.Treehopper.Libraries.Displays.LedFrame.Brightness.init -> void
+Periphery.Treehopper.Libraries.Displays.LedFrame.Count.get -> int
+Periphery.Treehopper.Libraries.Displays.LedFrame.LedFrame(System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.Libraries.Displays.Rgb> Pixels, byte Brightness = 31) -> void
+Periphery.Treehopper.Libraries.Displays.LedFrame.Pixels.get -> System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.Libraries.Displays.Rgb>
+Periphery.Treehopper.Libraries.Displays.LedFrame.Pixels.init -> void
+Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.Rgb.B.get -> byte
+Periphery.Treehopper.Libraries.Displays.Rgb.B.init -> void
+Periphery.Treehopper.Libraries.Displays.Rgb.G.get -> byte
+Periphery.Treehopper.Libraries.Displays.Rgb.G.init -> void
+Periphery.Treehopper.Libraries.Displays.Rgb.Lerp(Periphery.Treehopper.Libraries.Displays.Rgb target, double t) -> Periphery.Treehopper.Libraries.Displays.Rgb
+Periphery.Treehopper.Libraries.Displays.Rgb.R.get -> byte
+Periphery.Treehopper.Libraries.Displays.Rgb.R.init -> void
+Periphery.Treehopper.Libraries.Displays.Rgb.Rgb() -> void
+Periphery.Treehopper.Libraries.Displays.Rgb.Rgb(byte R, byte G, byte B) -> void
+Periphery.Treehopper.Libraries.Displays.Rgb.Scale(double factor) -> Periphery.Treehopper.Libraries.Displays.Rgb
+abstract Periphery.Treehopper.Libraries.Displays.LedAnimation.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+abstract Periphery.Treehopper.Libraries.Displays.LedAnimation.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Blink.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Breathe.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Chase.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Comet.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Off.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Off.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Rainbow.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Solid.Next() -> Periphery.Treehopper.Libraries.Displays.LedAnimation!
+override Periphery.Treehopper.Libraries.Displays.LedAnimation.Solid.Render(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+override Periphery.Treehopper.Libraries.Displays.Rgb.ToString() -> string!
+static Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence.Create(params (Periphery.Treehopper.Libraries.Displays.LedAnimation! Animation, int Ticks)[]! steps) -> Periphery.Treehopper.Libraries.Displays.LedAnimation.Sequence!
+static Periphery.Treehopper.Libraries.Displays.LedFrame.Off(int count) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+static Periphery.Treehopper.Libraries.Displays.LedFrame.Solid(int count, Periphery.Treehopper.Libraries.Displays.Rgb color, byte brightness = 31) -> Periphery.Treehopper.Libraries.Displays.LedFrame!
+static Periphery.Treehopper.Libraries.Displays.Rgb.FromHsv(double hue, double saturation, double value) -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Black -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Blue -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Cyan -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Green -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Magenta -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Orange -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Purple -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Red -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.White -> Periphery.Treehopper.Libraries.Displays.Rgb
+static readonly Periphery.Treehopper.Libraries.Displays.Rgb.Yellow -> Periphery.Treehopper.Libraries.Displays.Rgb

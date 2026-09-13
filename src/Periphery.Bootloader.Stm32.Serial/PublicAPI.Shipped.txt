@@ -1,0 +1,39 @@
+#nullable enable
+Periphery.Bootloader.Stm32.Serial.Stm32SerialBootloaderProvider
+Periphery.Bootloader.Stm32.Serial.Stm32SerialBootloaderProvider.CanHandle(Periphery.DeviceInfo! device) -> bool
+Periphery.Bootloader.Stm32.Serial.Stm32SerialBootloaderProvider.Identification.get -> Periphery.Bootloader.IdentificationMode
+Periphery.Bootloader.Stm32.Serial.Stm32SerialBootloaderProvider.Name.get -> string!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialBootloaderProvider.OpenAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.IFirmwareProgrammer!>!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialBootloaderProvider.Stm32SerialBootloaderProvider(Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions? options = null, Microsoft.Extensions.Logging.ILogger<CallAndResponse.Transceiver!>? logger = null) -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialException
+Periphery.Bootloader.Stm32.Serial.Stm32SerialException.Stm32SerialException(string! message) -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialException.Stm32SerialException(string! message, System.Exception! innerException) -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.BaudRate.get -> int
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.BaudRate.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.CommandTimeout.get -> System.TimeSpan
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.CommandTimeout.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.ErasePageSize.get -> int
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.ErasePageSize.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.EraseTimeout.get -> System.TimeSpan
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.EraseTimeout.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncSettle.get -> System.TimeSpan
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncSettle.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncSettleBudget.get -> System.TimeSpan
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncSettleBudget.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncTimeout.get -> System.TimeSpan
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncTimeout.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.WriteChunkSize.get -> int
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.WriteChunkSize.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.AcceptedFormats.get -> System.Collections.Immutable.ImmutableArray<Periphery.Firmware.FirmwareFormat>
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.Device.get -> Periphery.DeviceInfo!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.FlashAsync(Periphery.Firmware.FirmwarePayload! payload, Periphery.Bootloader.FlashOptions! options, System.IProgress<Periphery.Bootloader.FlashProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.FlashResult!>!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.IdentifyAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.DeviceIdentity!>!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.LeaveAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.Stm32SerialProgrammer(Periphery.DeviceInfo! device, System.IO.Pipelines.IDuplexPipe! pipe, Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions? options = null, Microsoft.Extensions.Logging.ILogger<CallAndResponse.Transceiver!>? logger = null) -> void
+const Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.MaxTransferSize = 256 -> int
+static Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.Default.get -> Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions!
+static Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.ConnectAsync(Periphery.DeviceInfo! device, System.IO.Pipelines.IDuplexPipe! pipe, Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions? options = null, Microsoft.Extensions.Logging.ILogger<CallAndResponse.Transceiver!>? logger = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), System.Action<int>? setBaudRate = null) -> System.Threading.Tasks.Task<Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer!>!
+static Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer.OpenAsync(Periphery.DeviceInfo! device, Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions? options = null, Microsoft.Extensions.Logging.ILogger<CallAndResponse.Transceiver!>? logger = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer!>!

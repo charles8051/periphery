@@ -1,0 +1,1037 @@
+#nullable enable
+Periphery.BatteryStatus
+Periphery.BatteryStatus.Charging = 1 -> Periphery.BatteryStatus
+Periphery.BatteryStatus.Discharging = 2 -> Periphery.BatteryStatus
+Periphery.BatteryStatus.Full = 3 -> Periphery.BatteryStatus
+Periphery.BatteryStatus.NotCharging = 4 -> Periphery.BatteryStatus
+Periphery.BatteryStatus.Unknown = 0 -> Periphery.BatteryStatus
+Periphery.BiometricEnricher
+Periphery.BiometricEnricher.BiometricEnricher() -> void
+Periphery.BiometricEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.BiometricEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.BiometricEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.BiometricEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.BusType
+Periphery.BusType.ACPI = 10 -> Periphery.BusType
+Periphery.BusType.Bluetooth = 3 -> Periphery.BusType
+Periphery.BusType.Display = 7 -> Periphery.BusType
+Periphery.BusType.HDAudio = 6 -> Periphery.BusType
+Periphery.BusType.HID = 4 -> Periphery.BusType
+Periphery.BusType.IDE = 9 -> Periphery.BusType
+Periphery.BusType.PCI = 2 -> Periphery.BusType
+Periphery.BusType.SCSI = 8 -> Periphery.BusType
+Periphery.BusType.Software = 5 -> Periphery.BusType
+Periphery.BusType.USB = 1 -> Periphery.BusType
+Periphery.BusType.Unknown = 0 -> Periphery.BusType
+Periphery.ConnectionState
+Periphery.ConnectionState.Connecting = 1 -> Periphery.ConnectionState
+Periphery.ConnectionState.Disconnected = 0 -> Periphery.ConnectionState
+Periphery.ConnectionState.GaveUp = 4 -> Periphery.ConnectionState
+Periphery.ConnectionState.Open = 2 -> Periphery.ConnectionState
+Periphery.ConnectionState.Resetting = 3 -> Periphery.ConnectionState
+Periphery.DeviceAbsent<TSession>
+Periphery.DeviceAbsent<TSession>.DeviceAbsent() -> void
+Periphery.DeviceActivityStatus
+Periphery.DeviceActivityStatus.Absent = 1 -> Periphery.DeviceActivityStatus
+Periphery.DeviceActivityStatus.Active = 3 -> Periphery.DeviceActivityStatus
+Periphery.DeviceActivityStatus.Present = 2 -> Periphery.DeviceActivityStatus
+Periphery.DeviceActivityStatus.Unknown = 0 -> Periphery.DeviceActivityStatus
+Periphery.DeviceCategory
+Periphery.DeviceCategory.All = 0 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Audio = 9 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Battery = 12 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Bluetooth = 2 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Camera = 13 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Display = 4 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Hid = 6 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Keyboard = 7 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Monitor = 5 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Mouse = 8 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Network = 3 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Ports = 11 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Storage = 10 -> Periphery.DeviceCategory
+Periphery.DeviceCategory.Usb = 1 -> Periphery.DeviceCategory
+Periphery.DeviceChangeEventArgs
+Periphery.DeviceChangeEventArgs.Device.get -> Periphery.DeviceInfo!
+Periphery.DeviceChangeEventArgs.DeviceChangeEventArgs(Periphery.DeviceInfo! device) -> void
+Periphery.DeviceEnrichers
+Periphery.DeviceEnumerationException
+Periphery.DeviceEnumerationException.DeviceEnumerationException() -> void
+Periphery.DeviceEnumerationException.DeviceEnumerationException(string! message) -> void
+Periphery.DeviceEnumerationException.DeviceEnumerationException(string! message, System.Exception! innerException) -> void
+Periphery.DeviceFaultClassifier
+Periphery.DeviceFilter
+Periphery.DeviceFilter.Active(bool active = true) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.Apply(Periphery.DeviceFilterSpec! spec) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.ByManufacturer(string! manufacturer, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.DeviceFilter() -> void
+Periphery.DeviceFilter.Matches(Periphery.DeviceInfo! device) -> bool
+Periphery.DeviceFilter.OfCategory(Periphery.DeviceCategory category) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.PhysicalOnly() -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.VirtualOnly() -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.Where(System.Func<Periphery.DeviceInfo!, bool>! predicate) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithAllTags(params string![]! tags) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithAnyTag(params string![]! tags) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithBatteryStatus(Periphery.BatteryStatus status) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithBusType(Periphery.BusType busType) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithContainerId(System.Guid containerId) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithDriveType(System.IO.DriveType driveType) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithDriver(string! text, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithId(string! id) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithIdStartsWith(string! prefix, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithMacAddress(System.Net.NetworkInformation.PhysicalAddress! macAddress) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithMinResolution(int minWidth, int minHeight) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithName(string! text, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithParent(string! parentId) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithPortName(Periphery.SerialPortName portName) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithPortName(string! portName) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithSerialNumber(string! serialNumber) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithStatus(Periphery.DeviceStatus status) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithTag(string! tag) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithUsbId(Periphery.HardwareId vendorId, Periphery.HardwareId? productId = null) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithUsbId(string! vendorId, string? productId = null) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithUsbSpeed(Periphery.UsbSpeed speed) -> Periphery.DeviceFilter!
+Periphery.DeviceFilterSpec
+Periphery.DeviceFilterSpec.Active.get -> bool?
+Periphery.DeviceFilterSpec.Active.init -> void
+Periphery.DeviceFilterSpec.AllTags.get -> string![]?
+Periphery.DeviceFilterSpec.AllTags.init -> void
+Periphery.DeviceFilterSpec.AnyTags.get -> string![]?
+Periphery.DeviceFilterSpec.AnyTags.init -> void
+Periphery.DeviceFilterSpec.BatteryStatus.get -> Periphery.BatteryStatus?
+Periphery.DeviceFilterSpec.BatteryStatus.init -> void
+Periphery.DeviceFilterSpec.BusType.get -> Periphery.BusType?
+Periphery.DeviceFilterSpec.BusType.init -> void
+Periphery.DeviceFilterSpec.Category.get -> Periphery.DeviceCategory?
+Periphery.DeviceFilterSpec.Category.init -> void
+Periphery.DeviceFilterSpec.ContainerId.get -> System.Guid?
+Periphery.DeviceFilterSpec.ContainerId.init -> void
+Periphery.DeviceFilterSpec.DeviceName.get -> string?
+Periphery.DeviceFilterSpec.DeviceName.init -> void
+Periphery.DeviceFilterSpec.DriveType.get -> System.IO.DriveType?
+Periphery.DeviceFilterSpec.DriveType.init -> void
+Periphery.DeviceFilterSpec.Driver.get -> string?
+Periphery.DeviceFilterSpec.Driver.init -> void
+Periphery.DeviceFilterSpec.Equals(Periphery.DeviceFilterSpec? other) -> bool
+Periphery.DeviceFilterSpec.HasAnyCriteria.get -> bool
+Periphery.DeviceFilterSpec.Id.get -> string?
+Periphery.DeviceFilterSpec.Id.init -> void
+Periphery.DeviceFilterSpec.IdStartsWith.get -> string?
+Periphery.DeviceFilterSpec.IdStartsWith.init -> void
+Periphery.DeviceFilterSpec.MacAddress.get -> string?
+Periphery.DeviceFilterSpec.MacAddress.init -> void
+Periphery.DeviceFilterSpec.Manufacturer.get -> string?
+Periphery.DeviceFilterSpec.Manufacturer.init -> void
+Periphery.DeviceFilterSpec.MinHeight.get -> int?
+Periphery.DeviceFilterSpec.MinHeight.init -> void
+Periphery.DeviceFilterSpec.MinWidth.get -> int?
+Periphery.DeviceFilterSpec.MinWidth.init -> void
+Periphery.DeviceFilterSpec.ParentId.get -> string?
+Periphery.DeviceFilterSpec.ParentId.init -> void
+Periphery.DeviceFilterSpec.Physicality.get -> Periphery.DevicePhysicality?
+Periphery.DeviceFilterSpec.Physicality.init -> void
+Periphery.DeviceFilterSpec.PortName.get -> string?
+Periphery.DeviceFilterSpec.PortName.init -> void
+Periphery.DeviceFilterSpec.ProductId.get -> string?
+Periphery.DeviceFilterSpec.ProductId.init -> void
+Periphery.DeviceFilterSpec.SerialNumber.get -> string?
+Periphery.DeviceFilterSpec.SerialNumber.init -> void
+Periphery.DeviceFilterSpec.Status.get -> Periphery.DeviceStatus?
+Periphery.DeviceFilterSpec.Status.init -> void
+Periphery.DeviceFilterSpec.UsbSpeed.get -> Periphery.UsbSpeed?
+Periphery.DeviceFilterSpec.UsbSpeed.init -> void
+Periphery.DeviceFilterSpec.VendorId.get -> string?
+Periphery.DeviceFilterSpec.VendorId.init -> void
+Periphery.DeviceFilterSpecJsonContext
+Periphery.DeviceFilterSpecJsonContext.DeviceFilterSpecJsonContext() -> void
+Periphery.DeviceFilterSpecJsonContext.DeviceFilterSpecJsonContext(System.Text.Json.JsonSerializerOptions! options) -> void
+Periphery.DeviceId
+Periphery.DeviceId.DeviceId() -> void
+Periphery.DeviceId.DeviceId(string! value) -> void
+Periphery.DeviceId.Equals(Periphery.DeviceId other) -> bool
+Periphery.DeviceId.Value.get -> string!
+Periphery.DeviceIdJsonConverter
+Periphery.DeviceIdJsonConverter.DeviceIdJsonConverter() -> void
+Periphery.DeviceInfo
+Periphery.DeviceInfo.BatteryChargePercent.get -> int?
+Periphery.DeviceInfo.BatteryChargePercent.init -> void
+Periphery.DeviceInfo.BatteryStatus.get -> Periphery.BatteryStatus?
+Periphery.DeviceInfo.BatteryStatus.init -> void
+Periphery.DeviceInfo.BusType.get -> Periphery.BusType
+Periphery.DeviceInfo.BusType.init -> void
+Periphery.DeviceInfo.Category.get -> Periphery.DeviceCategory
+Periphery.DeviceInfo.Category.init -> void
+Periphery.DeviceInfo.ClassGuid.get -> System.Guid?
+Periphery.DeviceInfo.ClassGuid.init -> void
+Periphery.DeviceInfo.ClassName.get -> string?
+Periphery.DeviceInfo.ClassName.init -> void
+Periphery.DeviceInfo.ContainerId.get -> System.Guid?
+Periphery.DeviceInfo.ContainerId.init -> void
+Periphery.DeviceInfo.DisplayBounds.get -> System.Drawing.Rectangle?
+Periphery.DeviceInfo.DisplayBounds.init -> void
+Periphery.DeviceInfo.DisplayConnectionKind.get -> Periphery.DisplayConnectionKind?
+Periphery.DeviceInfo.DisplayConnectionKind.init -> void
+Periphery.DeviceInfo.DisplayDpi.get -> System.Drawing.SizeF?
+Periphery.DeviceInfo.DisplayDpi.init -> void
+Periphery.DeviceInfo.DisplayMaxAvgLuminanceInNits.get -> float?
+Periphery.DeviceInfo.DisplayMaxAvgLuminanceInNits.init -> void
+Periphery.DeviceInfo.DisplayMaxLuminanceInNits.get -> float?
+Periphery.DeviceInfo.DisplayMaxLuminanceInNits.init -> void
+Periphery.DeviceInfo.DisplayMinLuminanceInNits.get -> float?
+Periphery.DeviceInfo.DisplayMinLuminanceInNits.init -> void
+Periphery.DeviceInfo.DisplayOrientation.get -> Periphery.DisplayOrientation?
+Periphery.DeviceInfo.DisplayOrientation.init -> void
+Periphery.DeviceInfo.DisplayPhysicalConnector.get -> Periphery.DisplayConnector?
+Periphery.DeviceInfo.DisplayPhysicalConnector.init -> void
+Periphery.DeviceInfo.DisplayPhysicalSizeInInches.get -> float?
+Periphery.DeviceInfo.DisplayPhysicalSizeInInches.init -> void
+Periphery.DeviceInfo.DisplayResolution.get -> System.Drawing.Size?
+Periphery.DeviceInfo.DisplayResolution.init -> void
+Periphery.DeviceInfo.DisplayUsageKind.get -> Periphery.DisplayUsageKind?
+Periphery.DeviceInfo.DisplayUsageKind.init -> void
+Periphery.DeviceInfo.DriveType.get -> System.IO.DriveType?
+Periphery.DeviceInfo.DriveType.init -> void
+Periphery.DeviceInfo.Driver.get -> string?
+Periphery.DeviceInfo.Driver.init -> void
+Periphery.DeviceInfo.DriverVersion.get -> System.Version?
+Periphery.DeviceInfo.DriverVersion.init -> void
+Periphery.DeviceInfo.HidMaxFeatureReportLength.get -> int?
+Periphery.DeviceInfo.HidMaxFeatureReportLength.init -> void
+Periphery.DeviceInfo.HidMaxInputReportLength.get -> int?
+Periphery.DeviceInfo.HidMaxInputReportLength.init -> void
+Periphery.DeviceInfo.HidMaxOutputReportLength.get -> int?
+Periphery.DeviceInfo.HidMaxOutputReportLength.init -> void
+Periphery.DeviceInfo.HidUsage.get -> ushort?
+Periphery.DeviceInfo.HidUsage.init -> void
+Periphery.DeviceInfo.HidUsagePage.get -> ushort?
+Periphery.DeviceInfo.HidUsagePage.init -> void
+Periphery.DeviceInfo.IOServiceClass.get -> string?
+Periphery.DeviceInfo.IOServiceClass.init -> void
+Periphery.DeviceInfo.IPAddresses.get -> System.Collections.Immutable.ImmutableArray<System.Net.IPAddress!>?
+Periphery.DeviceInfo.IPAddresses.init -> void
+Periphery.DeviceInfo.Id.get -> Periphery.DeviceId
+Periphery.DeviceInfo.Id.init -> void
+Periphery.DeviceInfo.IsActive.get -> bool
+Periphery.DeviceInfo.IsActive.init -> void
+Periphery.DeviceInfo.IsBatteryLow.get -> bool?
+Periphery.DeviceInfo.IsBatteryLow.init -> void
+Periphery.DeviceInfo.IsExternalPowerConnected.get -> bool?
+Periphery.DeviceInfo.IsExternalPowerConnected.init -> void
+Periphery.DeviceInfo.LocationPath.get -> string?
+Periphery.DeviceInfo.LocationPath.init -> void
+Periphery.DeviceInfo.MacAddress.get -> System.Net.NetworkInformation.PhysicalAddress?
+Periphery.DeviceInfo.MacAddress.init -> void
+Periphery.DeviceInfo.Manufacturer.get -> string?
+Periphery.DeviceInfo.Manufacturer.init -> void
+Periphery.DeviceInfo.MaxPowerMilliamps.get -> int?
+Periphery.DeviceInfo.MaxPowerMilliamps.init -> void
+Periphery.DeviceInfo.MonitorName.get -> string?
+Periphery.DeviceInfo.MonitorName.init -> void
+Periphery.DeviceInfo.Name.get -> string?
+Periphery.DeviceInfo.Name.init -> void
+Periphery.DeviceInfo.Network.get -> System.Net.IPNetwork?
+Periphery.DeviceInfo.Network.init -> void
+Periphery.DeviceInfo.ParentId.get -> Periphery.DeviceId?
+Periphery.DeviceInfo.ParentId.init -> void
+Periphery.DeviceInfo.PortName.get -> Periphery.SerialPortName?
+Periphery.DeviceInfo.PortName.init -> void
+Periphery.DeviceInfo.PortNumber.get -> int?
+Periphery.DeviceInfo.PortNumber.init -> void
+Periphery.DeviceInfo.ProductId.get -> Periphery.HardwareId?
+Periphery.DeviceInfo.ProductId.init -> void
+Periphery.DeviceInfo.Properties.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+Periphery.DeviceInfo.Properties.init -> void
+Periphery.DeviceInfo.SerialNumber.get -> string?
+Periphery.DeviceInfo.SerialNumber.init -> void
+Periphery.DeviceInfo.Status.get -> Periphery.DeviceStatus
+Periphery.DeviceInfo.Status.init -> void
+Periphery.DeviceInfo.Subsystem.get -> string?
+Periphery.DeviceInfo.Subsystem.init -> void
+Periphery.DeviceInfo.Tags.get -> System.Collections.Immutable.ImmutableHashSet<string!>!
+Periphery.DeviceInfo.Tags.init -> void
+Periphery.DeviceInfo.UsbClassCode.get -> Periphery.UsbClassCode?
+Periphery.DeviceInfo.UsbClassCode.init -> void
+Periphery.DeviceInfo.UsbSpeed.get -> Periphery.UsbSpeed?
+Periphery.DeviceInfo.UsbSpeed.init -> void
+Periphery.DeviceInfo.VendorId.get -> Periphery.HardwareId?
+Periphery.DeviceInfo.VendorId.init -> void
+Periphery.DeviceInfoJsonContext
+Periphery.DeviceInfoJsonContext.DeviceInfoJsonContext() -> void
+Periphery.DeviceInfoJsonContext.DeviceInfoJsonContext(System.Text.Json.JsonSerializerOptions! options) -> void
+Periphery.DeviceModificationEventArgs
+Periphery.DeviceModificationEventArgs.Current.get -> Periphery.DeviceInfo!
+Periphery.DeviceModificationEventArgs.DeviceModificationEventArgs(Periphery.DeviceInfo! previous, Periphery.DeviceInfo! current) -> void
+Periphery.DeviceModificationEventArgs.Previous.get -> Periphery.DeviceInfo!
+Periphery.DevicePhysicality
+Periphery.DevicePhysicality.Physical = 0 -> Periphery.DevicePhysicality
+Periphery.DevicePhysicality.Virtual = 1 -> Periphery.DevicePhysicality
+Periphery.DeviceProfile
+Periphery.DeviceProfile.DeviceProfile(System.Action<Periphery.DeviceFilter!>! configure, string? name = null) -> void
+Periphery.DeviceProfile.Name.get -> string?
+Periphery.DevicePropertyChangedEventArgs
+Periphery.DevicePropertyChangedEventArgs.ChangedProperties.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.DevicePropertyChangedEventArgs.Current.get -> Periphery.DeviceInfo!
+Periphery.DevicePropertyChangedEventArgs.Previous.get -> Periphery.DeviceInfo!
+Periphery.DeviceProviderException
+Periphery.DeviceProviderException.DeviceProviderException() -> void
+Periphery.DeviceProviderException.DeviceProviderException(string! message) -> void
+Periphery.DeviceProviderException.DeviceProviderException(string! message, System.Exception! innerException) -> void
+Periphery.DeviceProxy
+Periphery.DeviceProxy.Sentinel
+Periphery.DeviceProxy.Sentinel.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.DeviceProxy<TDevice>
+Periphery.DeviceProxyBase<TDevice, TException>
+Periphery.DeviceProxyBase<TDevice, TException>.CheckInitialState() -> void
+Periphery.DeviceProxyBase<TDevice, TException>.Device.get -> TDevice?
+Periphery.DeviceProxyBase<TDevice, TException>.DeviceClosed -> System.EventHandler?
+Periphery.DeviceProxyBase<TDevice, TException>.DeviceInfo.get -> Periphery.DeviceInfo?
+Periphery.DeviceProxyBase<TDevice, TException>.DeviceOpened -> System.EventHandler<TDevice!>?
+Periphery.DeviceProxyBase<TDevice, TException>.DeviceProxyBase(Periphery.DeviceTracker! tracker, Periphery.DeviceWatcher! ownedWatcher, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false) -> void
+Periphery.DeviceProxyBase<TDevice, TException>.DeviceProxyBase(Periphery.DeviceTracker! tracker, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false) -> void
+Periphery.DeviceProxyBase<TDevice, TException>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.DeviceProxyBase<TDevice, TException>.IsOpen.get -> bool
+Periphery.DeviceProxyBase<TDevice, TException>.LastOpenFault.get -> System.Exception?
+Periphery.DeviceProxyBase<TDevice, TException>.OpenFailed -> System.EventHandler<TException!>?
+Periphery.DeviceProxyBase<TDevice, TException>.PropertyChanged -> System.ComponentModel.PropertyChangedEventHandler?
+Periphery.DeviceProxyBase<TDevice, TException>.Recover(System.Exception! fault) -> void
+Periphery.DeviceProxyBase<TDevice, TException>.State.get -> Periphery.ConnectionState
+Periphery.DeviceQuery
+Periphery.DeviceQuery.Active(bool active = true) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.AnyAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Periphery.DeviceQuery.Apply(Periphery.DeviceFilterSpec! spec) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.ByManufacturer(string! manufacturer, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.CountAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Periphery.DeviceQuery.DeviceQuery(Periphery.IDeviceProvider! provider) -> void
+Periphery.DeviceQuery.FirstOrDefaultAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.DeviceInfo?>!
+Periphery.DeviceQuery.GetAsyncEnumerator(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerator<Periphery.DeviceInfo!>!
+Periphery.DeviceQuery.OfCategory(Periphery.DeviceCategory category) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.OrderBy<TKey>(System.Func<Periphery.DeviceInfo!, TKey>! keySelector, bool descending = false) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.PhysicalOnly() -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.Take(int count) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.ToListAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.DeviceInfo!>!>!
+Periphery.DeviceQuery.VirtualOnly() -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.Where(System.Func<Periphery.DeviceInfo!, bool>! predicate) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithAllTags(params string![]! tags) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithAnyTag(params string![]! tags) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithBatteryStatus(Periphery.BatteryStatus status) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithBusType(Periphery.BusType busType) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithContainerId(System.Guid containerId) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithDriveType(System.IO.DriveType driveType) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithDriver(string! text, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithId(string! id) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithIdStartsWith(string! prefix, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithMacAddress(System.Net.NetworkInformation.PhysicalAddress! macAddress) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithMinResolution(int minWidth, int minHeight) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithName(string! text, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithParent(string! parentId) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithPortName(Periphery.SerialPortName portName) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithPortName(string! portName) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithSerialNumber(string! serialNumber) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithStatus(Periphery.DeviceStatus status) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithTag(string! tag) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithUsbId(Periphery.HardwareId vendorId, Periphery.HardwareId? productId = null) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithUsbId(string! vendorId, string? productId = null) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithUsbSpeed(Periphery.UsbSpeed speed) -> Periphery.DeviceQuery!
+Periphery.DeviceReset
+Periphery.DeviceSessionHost<TSession>
+Periphery.DeviceSessionHost<TSession>.ConnectionState.get -> Periphery.ConnectionState
+Periphery.DeviceSessionHost<TSession>.CurrentSession.get -> TSession?
+Periphery.DeviceSessionHost<TSession>.DeviceInfo.get -> Periphery.DeviceInfo?
+Periphery.DeviceSessionHost<TSession>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.DeviceSessionHost<TSession>.GetRequiredSession() -> TSession!
+Periphery.DeviceSessionHost<TSession>.HasSession.get -> bool
+Periphery.DeviceSessionHost<TSession>.PropertyChanged -> System.ComponentModel.PropertyChangedEventHandler?
+Periphery.DeviceSessionHost<TSession>.Status.get -> Periphery.HostStatus<TSession!>!
+Periphery.DeviceSessionHost<TSession>.StatusChanged -> System.EventHandler<Periphery.HostStatus<TSession!>!>?
+Periphery.DeviceSessionHost<TSession>.StatusDescription.get -> string!
+Periphery.DeviceSessionHost<TSession>.TryGetCurrentSession(out TSession? session) -> bool
+Periphery.DeviceSessionHost<TSession>.WaitForSessionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TSession!>!
+Periphery.DeviceStatus
+Periphery.DeviceStatus.Disabled = 3 -> Periphery.DeviceStatus
+Periphery.DeviceStatus.Error = 2 -> Periphery.DeviceStatus
+Periphery.DeviceStatus.OK = 1 -> Periphery.DeviceStatus
+Periphery.DeviceStatus.Unknown = 0 -> Periphery.DeviceStatus
+Periphery.DeviceTags
+Periphery.DeviceTracker
+Periphery.DeviceTracker.Activated -> System.EventHandler<Periphery.DeviceTrackerTransition>?
+Periphery.DeviceTracker.ActiveProfile.get -> Periphery.DeviceProfile?
+Periphery.DeviceTracker.ActivityStatus.get -> Periphery.DeviceActivityStatus
+Periphery.DeviceTracker.Appeared -> System.EventHandler<Periphery.DeviceTrackerTransition>?
+Periphery.DeviceTracker.CurrentState.get -> Periphery.DeviceTrackerState!
+Periphery.DeviceTracker.Deactivated -> System.EventHandler<Periphery.DeviceTrackerTransition>?
+Periphery.DeviceTracker.Device.get -> Periphery.DeviceInfo?
+Periphery.DeviceTracker.DeviceTracker(System.Action<Periphery.DeviceFilter!>! configure, string? name = null) -> void
+Periphery.DeviceTracker.DeviceTracker(string? name, params Periphery.DeviceProfile![]! profiles) -> void
+Periphery.DeviceTracker.Disappeared -> System.EventHandler<Periphery.DeviceTrackerTransition>?
+Periphery.DeviceTracker.IsActive.get -> bool
+Periphery.DeviceTracker.IsPresent.get -> bool
+Periphery.DeviceTracker.Name.get -> string?
+Periphery.DeviceTracker.PropertyChanged -> System.EventHandler<Periphery.DevicePropertyChangedEventArgs!>?
+Periphery.DeviceTracker.Reconfigure(System.Action<Periphery.DeviceFilter!>! configure) -> void
+Periphery.DeviceTracker.ReplaceProfiles(params Periphery.DeviceProfile![]! profiles) -> void
+Periphery.DeviceTracker.StateChanged -> System.EventHandler<Periphery.DeviceTrackerState!>?
+Periphery.DeviceTracker.Subscribe(System.IObserver<Periphery.DeviceTrackerState!>! observer) -> System.IDisposable!
+Periphery.DeviceTrackerState
+Periphery.DeviceTrackerState.ActiveProfile.get -> Periphery.DeviceProfile?
+Periphery.DeviceTrackerState.ActiveProfile.init -> void
+Periphery.DeviceTrackerState.ActivityStatus.get -> Periphery.DeviceActivityStatus
+Periphery.DeviceTrackerState.ActivityStatus.init -> void
+Periphery.DeviceTrackerState.Device.get -> Periphery.DeviceInfo?
+Periphery.DeviceTrackerState.Device.init -> void
+Periphery.DeviceTrackerState.DeviceTrackerState(Periphery.DeviceInfo? Device, Periphery.DeviceActivityStatus ActivityStatus, Periphery.DeviceProfile? ActiveProfile) -> void
+Periphery.DeviceTrackerState.IsActive.get -> bool
+Periphery.DeviceTrackerState.IsPresent.get -> bool
+Periphery.DeviceTrackerTransition
+Periphery.DeviceTrackerTransition.After.get -> Periphery.DeviceTrackerState!
+Periphery.DeviceTrackerTransition.After.init -> void
+Periphery.DeviceTrackerTransition.Before.get -> Periphery.DeviceTrackerState!
+Periphery.DeviceTrackerTransition.Before.init -> void
+Periphery.DeviceTrackerTransition.DeviceTrackerTransition() -> void
+Periphery.DeviceTrackerTransition.DeviceTrackerTransition(Periphery.DeviceTrackerState! Before, Periphery.DeviceTrackerState! After) -> void
+Periphery.DeviceWatcher
+Periphery.DeviceWatcher.Activated -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.DeviceWatcher.AddMultiTracker(Periphery.MultiDeviceTracker! multiTracker) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.AddMultiTracker(System.Action<Periphery.DeviceFilter!>! configure, string? name = null) -> Periphery.MultiDeviceTracker!
+Periphery.DeviceWatcher.AddTracker(Periphery.DeviceTracker! tracker) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.AddTracker(System.Action<Periphery.DeviceFilter!>! configure, string? name = null) -> Periphery.DeviceTracker!
+Periphery.DeviceWatcher.AddTrackers(System.Collections.Generic.IEnumerable<Periphery.DeviceTracker!>! trackers) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.AddTrackers(params Periphery.DeviceTracker![]! trackers) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.Appeared -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.DeviceWatcher.ByManufacturer(string! manufacturer, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.Deactivated -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.DeviceWatcher.DeviceWatcher(Periphery.IDeviceProvider! provider, Periphery.IDeviceMonitorProvider! monitor) -> void
+Periphery.DeviceWatcher.DeviceWatcher(Periphery.IDeviceProvider! provider, System.Func<Periphery.IDeviceMonitorProvider!>! monitorFactory) -> void
+Periphery.DeviceWatcher.Disappeared -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.DeviceWatcher.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.DeviceWatcher.KnownDevices.get -> System.Collections.Generic.IReadOnlyList<Periphery.DeviceInfo!>!
+Periphery.DeviceWatcher.OfCategory(Periphery.DeviceCategory category) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.PhysicalOnly() -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.PropertyChanged -> System.EventHandler<Periphery.DevicePropertyChangedEventArgs!>?
+Periphery.DeviceWatcher.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.DeviceWatcher.VirtualOnly() -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.Where(System.Func<Periphery.DeviceInfo!, bool>! predicate) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithBatteryStatus(Periphery.BatteryStatus status) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithBusType(Periphery.BusType busType) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithContainerId(System.Guid containerId) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithDriveType(System.IO.DriveType driveType) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithDriver(string! text, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithId(string! id) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithIdStartsWith(string! prefix, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithMacAddress(System.Net.NetworkInformation.PhysicalAddress! macAddress) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithMinResolution(int minWidth, int minHeight) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithName(string! text, System.StringComparison comparison = System.StringComparison.OrdinalIgnoreCase) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithParent(string! parentId) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithPortName(Periphery.SerialPortName portName) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithPortName(string! portName) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithSerialNumber(string! serialNumber) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithStatus(Periphery.DeviceStatus status) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithUsbId(Periphery.HardwareId vendorId, Periphery.HardwareId? productId = null) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithUsbId(string! vendorId, string? productId = null) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithUsbSpeed(Periphery.UsbSpeed speed) -> Periphery.DeviceWatcher!
+Periphery.Devices
+Periphery.DisplayConnectionKind
+Periphery.DisplayConnectionKind.Indirect = 5 -> Periphery.DisplayConnectionKind
+Periphery.DisplayConnectionKind.Internal = 1 -> Periphery.DisplayConnectionKind
+Periphery.DisplayConnectionKind.Unknown = 0 -> Periphery.DisplayConnectionKind
+Periphery.DisplayConnectionKind.Virtual = 4 -> Periphery.DisplayConnectionKind
+Periphery.DisplayConnectionKind.Wired = 2 -> Periphery.DisplayConnectionKind
+Periphery.DisplayConnectionKind.Wireless = 3 -> Periphery.DisplayConnectionKind
+Periphery.DisplayConnector
+Periphery.DisplayConnector.AnalogTv = 6 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.DisplayPort = 2 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.Dvi = 3 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.Hdmi = 1 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.Internal = 5 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.Sdi = 7 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.Unknown = 0 -> Periphery.DisplayConnector
+Periphery.DisplayConnector.Vga = 4 -> Periphery.DisplayConnector
+Periphery.DisplayOrientation
+Periphery.DisplayOrientation.Landscape = 0 -> Periphery.DisplayOrientation
+Periphery.DisplayOrientation.LandscapeFlipped = 2 -> Periphery.DisplayOrientation
+Periphery.DisplayOrientation.Portrait = 1 -> Periphery.DisplayOrientation
+Periphery.DisplayOrientation.PortraitFlipped = 3 -> Periphery.DisplayOrientation
+Periphery.DisplayUsageKind
+Periphery.DisplayUsageKind.HeadMounted = 2 -> Periphery.DisplayUsageKind
+Periphery.DisplayUsageKind.SpecialPurpose = 3 -> Periphery.DisplayUsageKind
+Periphery.DisplayUsageKind.Standard = 1 -> Periphery.DisplayUsageKind
+Periphery.DisplayUsageKind.Unknown = 0 -> Periphery.DisplayUsageKind
+Periphery.EnricherScope
+Periphery.EnricherScope.EnricherScope(System.Collections.Generic.IReadOnlyList<string!>! WindowsClassGuids, System.Collections.Generic.IReadOnlyList<string!>! LinuxSubsystems, System.Collections.Generic.IReadOnlyList<string!>! MacOSClasses) -> void
+Periphery.EnricherScope.IsEmpty.get -> bool
+Periphery.EnricherScope.LinuxSubsystems.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Periphery.EnricherScope.LinuxSubsystems.init -> void
+Periphery.EnricherScope.MacOSClasses.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Periphery.EnricherScope.MacOSClasses.init -> void
+Periphery.EnricherScope.WindowsClassGuids.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Periphery.EnricherScope.WindowsClassGuids.init -> void
+Periphery.EscalatingResetRecoveryPolicy
+Periphery.EscalatingResetRecoveryPolicy.Decide(Periphery.RecoveryContext context) -> Periphery.RecoveryDirective!
+Periphery.EscalatingResetRecoveryPolicy.EscalatingResetRecoveryPolicy(int sanityRetries = 1, System.TimeSpan? retryDelay = null) -> void
+Periphery.EscalationDecision
+Periphery.EscalationDecision.ConcedeDecision
+Periphery.EscalationDecision.ExecuteDecision
+Periphery.EscalationDecision.ExecuteDecision.ExecuteDecision(Periphery.ResetStrategy Strategy) -> void
+Periphery.EscalationDecision.ExecuteDecision.Strategy.get -> Periphery.ResetStrategy
+Periphery.EscalationDecision.ExecuteDecision.Strategy.init -> void
+Periphery.ExponentialBackoffRecoveryPolicy
+Periphery.ExponentialBackoffRecoveryPolicy.Decide(Periphery.RecoveryContext context) -> Periphery.RecoveryDirective!
+Periphery.ExponentialBackoffRecoveryPolicy.ExponentialBackoffRecoveryPolicy(System.TimeSpan baseDelay, System.TimeSpan maxDelay, int? maxAttempts = null) -> void
+Periphery.HardwareId
+Periphery.HardwareId.HardwareId() -> void
+Periphery.HardwareId.HardwareId(ushort value) -> void
+Periphery.HardwareId.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+Periphery.HardwareId.Value.get -> ushort
+Periphery.HardwareIdJsonConverter
+Periphery.HardwareIdJsonConverter.HardwareIdJsonConverter() -> void
+Periphery.HostStatus<TSession>
+Periphery.IDeviceEnricher
+Periphery.IDeviceEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.IDeviceEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.IDeviceMonitorProvider
+Periphery.IDeviceMonitorProvider.DeviceActivated -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.IDeviceMonitorProvider.DeviceAppeared -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.IDeviceMonitorProvider.DeviceDeactivated -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.IDeviceMonitorProvider.DeviceDisappeared -> System.EventHandler<Periphery.DeviceChangeEventArgs!>?
+Periphery.IDeviceMonitorProvider.DevicePropertyChanged -> System.EventHandler<Periphery.DeviceModificationEventArgs!>?
+Periphery.IDeviceMonitorProvider.StartAsync(Periphery.DeviceFilter! filter, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.IDeviceProvider
+Periphery.IDeviceProvider.EnumerateAsync(Periphery.DeviceFilter! filter, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Periphery.DeviceInfo!>!
+Periphery.IDeviceReset
+Periphery.IDeviceReset.ResetAsync(Periphery.DeviceInfo! device, Periphery.ResetStrategy strategy, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Periphery.ResetOutcome>
+Periphery.IDeviceReset.StrategiesFor(Periphery.DeviceInfo! device) -> System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>!
+Periphery.IDeviceTracker
+Periphery.IDeviceTracker.ActivityStatus.get -> Periphery.DeviceActivityStatus
+Periphery.IDeviceTracker.CurrentState.get -> Periphery.DeviceTrackerState!
+Periphery.IDeviceTracker.Device.get -> Periphery.DeviceInfo?
+Periphery.IDeviceTracker.IsActive.get -> bool
+Periphery.IDeviceTracker.IsPresent.get -> bool
+Periphery.IDeviceTracker.Name.get -> string?
+Periphery.IDeviceTracker.StateChanged -> System.EventHandler<Periphery.DeviceTrackerState!>?
+Periphery.IPAddressArrayJsonConverter
+Periphery.IPAddressArrayJsonConverter.IPAddressArrayJsonConverter() -> void
+Periphery.IPAddressJsonConverter
+Periphery.IPAddressJsonConverter.IPAddressJsonConverter() -> void
+Periphery.IPNetworkJsonConverter
+Periphery.IPNetworkJsonConverter.IPNetworkJsonConverter() -> void
+Periphery.IRecoveryPolicy
+Periphery.IRecoveryPolicy.Decide(Periphery.RecoveryContext context) -> Periphery.RecoveryDirective!
+Periphery.IResetSafetyGate
+Periphery.IResetSafetyGate.CanResetAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<bool>
+Periphery.ITagEmittingEnricher
+Periphery.ITagEmittingEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.ITagEmittingEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.ImagingEnricher
+Periphery.ImagingEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.ImagingEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.ImagingEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.ImagingEnricher.ImagingEnricher() -> void
+Periphery.ImagingEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.MultiDeviceSessionHost<TSession>
+Periphery.MultiDeviceSessionHost<TSession>.Count.get -> int
+Periphery.MultiDeviceSessionHost<TSession>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.MultiDeviceSessionHost<TSession>.Hosts.get -> System.Collections.Generic.IReadOnlyDictionary<Periphery.DeviceId, Periphery.DeviceSessionHost<TSession!>!>!
+Periphery.MultiDeviceSessionHost<TSession>.MultiTracker.get -> Periphery.MultiDeviceTracker!
+Periphery.MultiDeviceSessionHost<TSession>.SessionHostAdded -> System.EventHandler<Periphery.DeviceSessionHost<TSession!>!>?
+Periphery.MultiDeviceTracker
+Periphery.MultiDeviceTracker.Count.get -> int
+Periphery.MultiDeviceTracker.DeviceAdded -> System.EventHandler<Periphery.DeviceTracker!>?
+Periphery.MultiDeviceTracker.HasAny.get -> bool
+Periphery.MultiDeviceTracker.MultiDeviceTracker(System.Action<Periphery.DeviceFilter!>! configure, string? name = null) -> void
+Periphery.MultiDeviceTracker.Name.get -> string?
+Periphery.MultiDeviceTracker.Subscribe(System.IObserver<Periphery.DeviceTrackerState!>! observer) -> System.IDisposable!
+Periphery.MultiDeviceTracker.Trackers.get -> System.Collections.Generic.IReadOnlyDictionary<Periphery.DeviceId, Periphery.DeviceTracker!>!
+Periphery.NullDeviceReset
+Periphery.NullDeviceReset.ResetAsync(Periphery.DeviceInfo! device, Periphery.ResetStrategy strategy, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Periphery.ResetOutcome>
+Periphery.NullDeviceReset.StrategiesFor(Periphery.DeviceInfo! device) -> System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>!
+Periphery.PeripheryLoggerFactory
+Periphery.PhysicalAddressJsonConverter
+Periphery.PhysicalAddressJsonConverter.PhysicalAddressJsonConverter() -> void
+Periphery.PortPath
+Periphery.PortPath.Equals(Periphery.PortPath other) -> bool
+Periphery.PortPath.IsDownstreamOf(in Periphery.PortPath other) -> Periphery.Tri
+Periphery.PortPath.IsSamePortAs(in Periphery.PortPath other) -> Periphery.Tri
+Periphery.PortPath.PortPath() -> void
+Periphery.PortPath.SharesControllerWith(in Periphery.PortPath other) -> Periphery.Tri
+Periphery.PortPath.SharesExternalHubWith(in Periphery.PortPath other) -> Periphery.Tri
+Periphery.PortPath.SharesRootPortWith(in Periphery.PortPath other) -> Periphery.Tri
+Periphery.PortPath.TryGetExternalHubCount(out int count) -> bool
+Periphery.PortPath.TryGetIsRootHub(out bool isRootHub) -> bool
+Periphery.PrinterEnricher
+Periphery.PrinterEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.PrinterEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.PrinterEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.PrinterEnricher.PrinterEnricher() -> void
+Periphery.PrinterEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.RecoveryContext
+Periphery.RecoveryContext.Attempt.get -> int
+Periphery.RecoveryContext.Attempt.init -> void
+Periphery.RecoveryContext.AvailableResets.get -> System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>!
+Periphery.RecoveryContext.AvailableResets.init -> void
+Periphery.RecoveryContext.Device.get -> Periphery.DeviceInfo!
+Periphery.RecoveryContext.Device.init -> void
+Periphery.RecoveryContext.LastFault.get -> System.Exception?
+Periphery.RecoveryContext.LastFault.init -> void
+Periphery.RecoveryContext.RecoveryContext() -> void
+Periphery.RecoveryContext.RecoveryContext(int Attempt, int ResetCount, System.Exception? LastFault, Periphery.DeviceInfo! Device, System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>! AvailableResets, Periphery.RecoveryTrigger Trigger = Periphery.RecoveryTrigger.OpenFailure) -> void
+Periphery.RecoveryContext.ResetCount.get -> int
+Periphery.RecoveryContext.ResetCount.init -> void
+Periphery.RecoveryContext.Trigger.get -> Periphery.RecoveryTrigger
+Periphery.RecoveryContext.Trigger.init -> void
+Periphery.RecoveryDirective
+Periphery.RecoveryDirective.GiveUp
+Periphery.RecoveryDirective.Reset
+Periphery.RecoveryDirective.Reset.Reset(Periphery.ResetStrategy Strategy) -> void
+Periphery.RecoveryDirective.Reset.Strategy.get -> Periphery.ResetStrategy
+Periphery.RecoveryDirective.Reset.Strategy.init -> void
+Periphery.RecoveryDirective.Retry
+Periphery.RecoveryDirective.Retry.Delay.get -> System.TimeSpan
+Periphery.RecoveryDirective.Retry.Delay.init -> void
+Periphery.RecoveryDirective.Retry.Retry(System.TimeSpan Delay) -> void
+Periphery.RecoveryTrigger
+Periphery.RecoveryTrigger.BootloaderEntryFailure = 2 -> Periphery.RecoveryTrigger
+Periphery.RecoveryTrigger.EnumeratedFault = 1 -> Periphery.RecoveryTrigger
+Periphery.RecoveryTrigger.OpenFailure = 0 -> Periphery.RecoveryTrigger
+Periphery.RectangleJsonConverter
+Periphery.RectangleJsonConverter.RectangleJsonConverter() -> void
+Periphery.ResetBlastRadius
+Periphery.ResetBlastRadius.Self = 0 -> Periphery.ResetBlastRadius
+Periphery.ResetBlastRadius.SharedHub = 1 -> Periphery.ResetBlastRadius
+Periphery.ResetEscalation
+Periphery.ResetKind
+Periphery.ResetKind.PnpDisableEnable = 3 -> Periphery.ResetKind
+Periphery.ResetKind.SoftProtocol = 0 -> Periphery.ResetKind
+Periphery.ResetKind.SoftProtocolOutOfBand = 1 -> Periphery.ResetKind
+Periphery.ResetKind.UsbPortCycle = 2 -> Periphery.ResetKind
+Periphery.ResetOutcome
+Periphery.ResetOutcome.Degraded = 1 -> Periphery.ResetOutcome
+Periphery.ResetOutcome.Failed = 2 -> Periphery.ResetOutcome
+Periphery.ResetOutcome.Issued = 0 -> Periphery.ResetOutcome
+Periphery.ResetOutcome.NotSupported = 3 -> Periphery.ResetOutcome
+Periphery.ResetSafetyGate
+Periphery.ResetStrategy
+Periphery.ResetStrategy.Kind.get -> Periphery.ResetKind
+Periphery.ResetStrategy.Kind.init -> void
+Periphery.ResetStrategy.Radius.get -> Periphery.ResetBlastRadius
+Periphery.ResetStrategy.Radius.init -> void
+Periphery.ResetStrategy.ReEnumerates.get -> bool
+Periphery.ResetStrategy.ReEnumerates.init -> void
+Periphery.ResetStrategy.ResetStrategy() -> void
+Periphery.ResetStrategy.ResetStrategy(Periphery.ResetKind Kind, Periphery.ResetBlastRadius Radius, bool ReEnumerates) -> void
+Periphery.ResetStrategyMap
+Periphery.SensorEnricher
+Periphery.SensorEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.SensorEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.SensorEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.SensorEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.SensorEnricher.SensorEnricher() -> void
+Periphery.SerialPortName
+Periphery.SerialPortName.SerialPortName() -> void
+Periphery.SerialPortName.SerialPortName(string! value) -> void
+Periphery.SerialPortName.Value.get -> string!
+Periphery.SerialPortNameJsonConverter
+Periphery.SerialPortNameJsonConverter.SerialPortNameJsonConverter() -> void
+Periphery.SessionActive<TSession>
+Periphery.SessionActive<TSession>.Device.get -> Periphery.DeviceInfo!
+Periphery.SessionActive<TSession>.Device.init -> void
+Periphery.SessionActive<TSession>.Session.get -> TSession!
+Periphery.SessionActive<TSession>.Session.init -> void
+Periphery.SessionActive<TSession>.SessionActive(TSession! Session, Periphery.DeviceInfo! Device) -> void
+Periphery.SessionGaveUp<TSession>
+Periphery.SessionGaveUp<TSession>.Attempt.get -> int
+Periphery.SessionGaveUp<TSession>.Attempt.init -> void
+Periphery.SessionGaveUp<TSession>.LastError.get -> System.Exception?
+Periphery.SessionGaveUp<TSession>.LastError.init -> void
+Periphery.SessionGaveUp<TSession>.SessionGaveUp(System.Exception? LastError, int Attempt) -> void
+Periphery.SessionStarting<TSession>
+Periphery.SessionStarting<TSession>.Device.get -> Periphery.DeviceInfo!
+Periphery.SessionStarting<TSession>.Device.init -> void
+Periphery.SessionStarting<TSession>.SessionStarting(Periphery.DeviceInfo! Device) -> void
+Periphery.SessionUnavailable<TSession>
+Periphery.SessionUnavailable<TSession>.Attempt.get -> int
+Periphery.SessionUnavailable<TSession>.Attempt.init -> void
+Periphery.SessionUnavailable<TSession>.Device.get -> Periphery.DeviceInfo!
+Periphery.SessionUnavailable<TSession>.Device.init -> void
+Periphery.SessionUnavailable<TSession>.LastError.get -> System.Exception?
+Periphery.SessionUnavailable<TSession>.LastError.init -> void
+Periphery.SessionUnavailable<TSession>.SessionUnavailable(Periphery.DeviceInfo! Device, System.Exception? LastError, int Attempt) -> void
+Periphery.SizeFJsonConverter
+Periphery.SizeFJsonConverter.SizeFJsonConverter() -> void
+Periphery.SizeJsonConverter
+Periphery.SizeJsonConverter.SizeJsonConverter() -> void
+Periphery.SmartCardEnricher
+Periphery.SmartCardEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.SmartCardEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.SmartCardEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.SmartCardEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.SmartCardEnricher.SmartCardEnricher() -> void
+Periphery.Tri
+Periphery.Tri.No = 1 -> Periphery.Tri
+Periphery.Tri.Unknown = 0 -> Periphery.Tri
+Periphery.Tri.Yes = 2 -> Periphery.Tri
+Periphery.UsbClassCode
+Periphery.UsbClassCode.ApplicationSpecificClass
+Periphery.UsbClassCode.AudioClass
+Periphery.UsbClassCode.AudioVideoClass
+Periphery.UsbClassCode.CdcControlClass
+Periphery.UsbClassCode.Class.get -> byte
+Periphery.UsbClassCode.DiagnosticClass
+Periphery.UsbClassCode.Equals(Periphery.UsbClassCode other) -> bool
+Periphery.UsbClassCode.HidClass
+Periphery.UsbClassCode.HubClass
+Periphery.UsbClassCode.ImageClass
+Periphery.UsbClassCode.IsClass(byte classCode) -> bool
+Periphery.UsbClassCode.IsClassAndSubclass(byte classCode, byte subclass) -> bool
+Periphery.UsbClassCode.MassStorageClass
+Periphery.UsbClassCode.MiscellaneousClass
+Periphery.UsbClassCode.PrinterClass
+Periphery.UsbClassCode.Protocol.get -> byte
+Periphery.UsbClassCode.Subclass.get -> byte
+Periphery.UsbClassCode.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+Periphery.UsbClassCode.UsbClassCode() -> void
+Periphery.UsbClassCode.UsbClassCode(byte class, byte subclass, byte protocol) -> void
+Periphery.UsbClassCode.VideoClass
+Periphery.UsbClassCode.WirelessControllerClass
+Periphery.UsbClassCodeJsonConverter
+Periphery.UsbClassCodeJsonConverter.UsbClassCodeJsonConverter() -> void
+Periphery.UsbSpeed
+Periphery.UsbSpeed.Full = 1 -> Periphery.UsbSpeed
+Periphery.UsbSpeed.High = 2 -> Periphery.UsbSpeed
+Periphery.UsbSpeed.Low = 0 -> Periphery.UsbSpeed
+Periphery.UsbSpeed.Super = 3 -> Periphery.UsbSpeed
+Periphery.UsbSpeed.SuperPlus = 4 -> Periphery.UsbSpeed
+Periphery.UsbSpeed.SuperPlusx2 = 5 -> Periphery.UsbSpeed
+Periphery.UsbSpeed.Usb4 = 6 -> Periphery.UsbSpeed
+Periphery.VersionJsonConverter
+Periphery.VersionJsonConverter.VersionJsonConverter() -> void
+Periphery.WellKnownProperties
+Periphery.Windows.DeviceClassGuids
+abstract Periphery.DeviceProxyBase<TDevice, TException>.OpenDeviceAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<TDevice!>!
+const Periphery.DeviceFaultClassifier.CmProbDeviceReportedProblem = 43 -> int
+const Periphery.DeviceFaultClassifier.CmProbDisabled = 22 -> int
+const Periphery.DeviceFaultClassifier.CmProbFailedDriverEntry = 31 -> int
+const Periphery.DeviceFaultClassifier.CmProbFailedPostStart = 21 -> int
+const Periphery.DeviceFaultClassifier.CmProbFailedStart = 10 -> int
+const Periphery.DeviceFaultClassifier.CmProbNone = 0 -> int
+const Periphery.DeviceTags.Audio = "Audio" -> string!
+const Periphery.DeviceTags.Battery = "Battery" -> string!
+const Periphery.DeviceTags.Biometric = "Biometric" -> string!
+const Periphery.DeviceTags.Hid = "Hid" -> string!
+const Periphery.DeviceTags.Imaging = "Imaging" -> string!
+const Periphery.DeviceTags.Printer = "Printer" -> string!
+const Periphery.DeviceTags.Sensor = "Sensor" -> string!
+const Periphery.DeviceTags.SmartCard = "SmartCard" -> string!
+const Periphery.WellKnownProperties.CompatibleIds = "CompatibleID" -> string!
+const Periphery.WellKnownProperties.HardwareIds = "HardwareID" -> string!
+const Periphery.WellKnownProperties.RawStatus = "RawStatus" -> string!
+const Periphery.Windows.DeviceClassGuids.Adapter = "{4d36e964-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.ApmSupport = "{d45b1c18-c8fa-11d1-9f77-0000f805f530}" -> string!
+const Periphery.Windows.DeviceClassGuids.Avc = "{c06ff265-ae09-48f0-812c-16753d7cba83}" -> string!
+const Periphery.Windows.DeviceClassGuids.Battery = "{72631e54-78a4-11d0-bcf7-00aa00b7b32a}" -> string!
+const Periphery.Windows.DeviceClassGuids.Biometric = "{53d29ef7-377c-4d14-864b-eb3a85769359}" -> string!
+const Periphery.Windows.DeviceClassGuids.Bluetooth = "{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}" -> string!
+const Periphery.Windows.DeviceClassGuids.Camera = "{ca3e7ab9-b4c3-4ae6-8251-579ef933890f}" -> string!
+const Periphery.Windows.DeviceClassGuids.CdRom = "{4d36e965-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.ComputeAccelerator = "{f01a9d53-3ff6-48d2-9f97-c8a7004be10c}" -> string!
+const Periphery.Windows.DeviceClassGuids.Computer = "{4d36e966-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Decoder = "{6bdd1fc2-810f-11d0-bec7-08002be2092f}" -> string!
+const Periphery.Windows.DeviceClassGuids.DiskDrive = "{4d36e967-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Display = "{4d36e968-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Dot4 = "{48721b56-6795-11d2-b1a8-0080c72e74a2}" -> string!
+const Periphery.Windows.DeviceClassGuids.Dot4Print = "{49ce6ac8-6f86-11d2-b1e5-0080c72e74a2}" -> string!
+const Periphery.Windows.DeviceClassGuids.EhStorageSilo = "{9da2b80f-f89f-4a49-a5c2-511b085b9e8a}" -> string!
+const Periphery.Windows.DeviceClassGuids.Enum1394 = "{c459df55-db08-11d1-b009-00a0c9081ff6}" -> string!
+const Periphery.Windows.DeviceClassGuids.Extension = "{e2f84ce7-8efa-411c-aa69-97454ca4cb57}" -> string!
+const Periphery.Windows.DeviceClassGuids.Fdc = "{4d36e969-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Firmware = "{f2e7dd72-6468-4e36-b6f1-6488f42c1b52}" -> string!
+const Periphery.Windows.DeviceClassGuids.FloppyDisk = "{4d36e980-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterActivityMonitor = "{b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterAntivirus = "{b1d1a169-c54f-4379-81db-bee7d88d7454}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterBottom = "{37765ea0-5958-4fc9-b04b-2fdfef97e59e}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterCfsMetadataServer = "{cdcf0939-b75b-4630-bf76-80f7ba655884}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterCompression = "{f3586baf-b5aa-49b5-8d6c-0569284c639f}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterContentScreener = "{3e3f0674-c83c-4558-bb26-9820e1eba5c5}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterContinuousBackup = "{71aa14f8-6fad-4622-ad77-92bb9d7e6947}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterCopyProtection = "{89786ff1-9c12-402f-9c9e-17753c7f4375}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterEncryption = "{a0a701c0-a511-42ff-aa6c-06dc0395576f}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterHsm = "{d546500a-2aeb-45f6-9482-f4b1799c3177}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterInfrastructure = "{e55fa6f9-128c-4d04-abab-630c74b1453a}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterOpenFileBackup = "{f8ecafa6-66d1-41a5-899b-66585d7216b7}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterPhysicalQuotaManagement = "{6a0a8e78-bba6-4fc4-a709-1e33cd09d67e}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterQuotaManagement = "{8503c911-a6c7-4919-8f79-5028f5866b0c}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterReplication = "{48d3ebc4-4cf8-48ff-b869-9c68ad42eb9f}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterSecurityEnhancer = "{d02bc3da-0c8e-4945-9bd5-f1883c226c8c}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterSystem = "{5d1b9aaa-01e2-46af-849f-272b3f324c46}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterSystemRecovery = "{2db15374-706e-4131-a0c7-d7c78eb0289a}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterTop = "{b369baf4-5568-4e82-a87e-a93eb16bca87}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterUndelete = "{fe8f1572-c67a-48c0-bbac-0b5c6d66cafb}" -> string!
+const Periphery.Windows.DeviceClassGuids.FsFilterVirtualization = "{f75a86c0-10d8-4c3a-b233-ed60e4cdfaac}" -> string!
+const Periphery.Windows.DeviceClassGuids.Generic = "{ff494df1-c4ed-4fac-9b3f-3786f6e91e7e}" -> string!
+const Periphery.Windows.DeviceClassGuids.Gps = "{6bdd1fc3-810f-11d0-bec7-08002be2092f}" -> string!
+const Periphery.Windows.DeviceClassGuids.Hdc = "{4d36e96a-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.HidClass = "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}" -> string!
+const Periphery.Windows.DeviceClassGuids.Holographic = "{d612553d-06b1-49ca-8938-e39ef80eb16f}" -> string!
+const Periphery.Windows.DeviceClassGuids.IEC61883 = "{7ebefbc0-3200-11d2-b4c2-00a0c9697d07}" -> string!
+const Periphery.Windows.DeviceClassGuids.IEEE1394 = "{6bdd1fc1-810f-11d0-bec7-08002be2092f}" -> string!
+const Periphery.Windows.DeviceClassGuids.IEEE1394Debug = "{66f250d6-7801-4a64-b139-eea80a450b24}" -> string!
+const Periphery.Windows.DeviceClassGuids.Image = "{6bdd1fc6-810f-11d0-bec7-08002be2092f}" -> string!
+const Periphery.Windows.DeviceClassGuids.InfiniBand = "{30ef7132-d858-4a0c-ac24-b9028a5cca3f}" -> string!
+const Periphery.Windows.DeviceClassGuids.Infrared = "{6bdd1fc5-810f-11d0-bec7-08002be2092f}" -> string!
+const Periphery.Windows.DeviceClassGuids.Keyboard = "{4d36e96b-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.LegacyDriver = "{8ecc055d-047f-11d1-a537-0000f8753ed1}" -> string!
+const Periphery.Windows.DeviceClassGuids.Media = "{4d36e96c-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.MediumChanger = "{ce5939ae-ebde-11d0-b181-0000f8753ec4}" -> string!
+const Periphery.Windows.DeviceClassGuids.Memory = "{5099944a-f6b9-4057-a056-8c550228544c}" -> string!
+const Periphery.Windows.DeviceClassGuids.Modem = "{4d36e96d-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Monitor = "{4d36e96e-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Mouse = "{4d36e96f-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Mtd = "{4d36e970-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Multifunction = "{4d36e971-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.MultiportSerial = "{50906cb8-ba12-11d1-bf5d-0000f805f530}" -> string!
+const Periphery.Windows.DeviceClassGuids.Net = "{4d36e972-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.NetClient = "{4d36e973-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.NetDriver = "{87ef9ad1-8f70-49ee-b215-ab1fcadcbe3c}" -> string!
+const Periphery.Windows.DeviceClassGuids.NetService = "{4d36e974-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.NetTrans = "{4d36e975-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.NetUio = "{78912bc1-cb8e-4b28-a329-f322ebadbe0f}" -> string!
+const Periphery.Windows.DeviceClassGuids.NoDriver = "{4d36e976-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Pcmcia = "{4d36e977-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.PnpPrinters = "{4658ee7e-f050-11d1-b6bd-00c04fa372a7}" -> string!
+const Periphery.Windows.DeviceClassGuids.Ports = "{4d36e978-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Primitive = "{242681d1-eed3-41d2-a1ef-1468fc843106}" -> string!
+const Periphery.Windows.DeviceClassGuids.PrintQueue = "{1ed2bbf9-11f0-4084-b21f-ad83a8e6dcdc}" -> string!
+const Periphery.Windows.DeviceClassGuids.Printer = "{4d36e979-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.PrinterUpgrade = "{4d36e97a-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Processor = "{50127dc3-0f36-415e-a6cc-4cb3be910b65}" -> string!
+const Periphery.Windows.DeviceClassGuids.Sbp2 = "{d48179be-ec20-11d1-b6b8-00c04fa372a7}" -> string!
+const Periphery.Windows.DeviceClassGuids.ScmDisk = "{53966cb1-4d46-4166-bf23-c522403cd495}" -> string!
+const Periphery.Windows.DeviceClassGuids.ScmVolume = "{53ccb149-e543-4c84-b6e0-bce4f6b7e806}" -> string!
+const Periphery.Windows.DeviceClassGuids.ScsiAdapter = "{4d36e97b-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.SecurityAccelerator = "{268c95a1-edfe-11d3-95c3-0010dc4050a5}" -> string!
+const Periphery.Windows.DeviceClassGuids.Sensor = "{5175d334-c371-4806-b3ba-71fd53c9258d}" -> string!
+const Periphery.Windows.DeviceClassGuids.SideShow = "{997b5d8d-c442-4f2e-baf3-9c8e671e9e21}" -> string!
+const Periphery.Windows.DeviceClassGuids.SmartCardReader = "{50dd5230-ba8a-11d1-bf5d-0000f805f530}" -> string!
+const Periphery.Windows.DeviceClassGuids.SmrDisk = "{53487c23-680f-4585-acc3-1f10d6777e82}" -> string!
+const Periphery.Windows.DeviceClassGuids.SmrVolume = "{53b3cf03-8f5a-4788-91b6-d19ed9fcccbf}" -> string!
+const Periphery.Windows.DeviceClassGuids.SoftwareComponent = "{5c4c3332-344d-483c-8739-259e934c9cc8}" -> string!
+const Periphery.Windows.DeviceClassGuids.Sound = "{4d36e97c-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.System = "{4d36e97d-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.TapeDrive = "{6d807884-7d21-11cf-801c-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Ucm = "{e6f1aa1c-7f3b-4473-b2e8-c97d8ac71d53}" -> string!
+const Periphery.Windows.DeviceClassGuids.Unknown = "{4d36e97e-e325-11ce-bfc1-08002be10318}" -> string!
+const Periphery.Windows.DeviceClassGuids.Usb = "{36fc9e60-c465-11cf-8056-444553540000}" -> string!
+const Periphery.Windows.DeviceClassGuids.Volume = "{71a27cdd-812a-11d0-bec7-08002be2092f}" -> string!
+const Periphery.Windows.DeviceClassGuids.VolumeSnapshot = "{533c5b84-ec70-11d2-9505-00c04f79deaf}" -> string!
+const Periphery.Windows.DeviceClassGuids.WceUsbs = "{25dbce51-6c8f-4a72-8a6d-b54c2b4fc835}" -> string!
+const Periphery.Windows.DeviceClassGuids.Wpd = "{eec5ad98-8080-425f-922a-dabf3de3f69a}" -> string!
+override Periphery.DeviceFilterSpec.GetHashCode() -> int
+override Periphery.DeviceFilterSpec.ToString() -> string!
+override Periphery.DeviceFilterSpecJsonContext.GeneratedSerializerOptions.get -> System.Text.Json.JsonSerializerOptions?
+override Periphery.DeviceFilterSpecJsonContext.GetTypeInfo(System.Type! type) -> System.Text.Json.Serialization.Metadata.JsonTypeInfo?
+override Periphery.DeviceId.GetHashCode() -> int
+override Periphery.DeviceId.ToString() -> string!
+override Periphery.DeviceIdJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Periphery.DeviceId
+override Periphery.DeviceIdJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Periphery.DeviceId value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.DeviceInfo.ToString() -> string!
+override Periphery.DeviceInfoJsonContext.GeneratedSerializerOptions.get -> System.Text.Json.JsonSerializerOptions?
+override Periphery.DeviceInfoJsonContext.GetTypeInfo(System.Type! type) -> System.Text.Json.Serialization.Metadata.JsonTypeInfo?
+override Periphery.HardwareId.ToString() -> string!
+override Periphery.HardwareIdJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Periphery.HardwareId
+override Periphery.HardwareIdJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Periphery.HardwareId value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.IPAddressArrayJsonConverter.HandleNull.get -> bool
+override Periphery.IPAddressArrayJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Collections.Immutable.ImmutableArray<System.Net.IPAddress!>?
+override Periphery.IPAddressArrayJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Collections.Immutable.ImmutableArray<System.Net.IPAddress!>? value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.IPAddressJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Net.IPAddress?
+override Periphery.IPAddressJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Net.IPAddress! value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.IPNetworkJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Net.IPNetwork
+override Periphery.IPNetworkJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Net.IPNetwork value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.PhysicalAddressJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Net.NetworkInformation.PhysicalAddress?
+override Periphery.PhysicalAddressJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Net.NetworkInformation.PhysicalAddress! value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.PortPath.Equals(object? obj) -> bool
+override Periphery.PortPath.GetHashCode() -> int
+override Periphery.PortPath.ToString() -> string!
+override Periphery.RectangleJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Drawing.Rectangle
+override Periphery.RectangleJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Drawing.Rectangle value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.SerialPortName.ToString() -> string!
+override Periphery.SerialPortNameJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Periphery.SerialPortName
+override Periphery.SerialPortNameJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Periphery.SerialPortName value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.SizeFJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Drawing.SizeF
+override Periphery.SizeFJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Drawing.SizeF value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.SizeJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Drawing.Size
+override Periphery.SizeJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Drawing.Size value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.UsbClassCode.Equals(object? obj) -> bool
+override Periphery.UsbClassCode.GetHashCode() -> int
+override Periphery.UsbClassCode.ToString() -> string!
+override Periphery.UsbClassCodeJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Periphery.UsbClassCode
+override Periphery.UsbClassCodeJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Periphery.UsbClassCode value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Periphery.VersionJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Version?
+override Periphery.VersionJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Version! value, System.Text.Json.JsonSerializerOptions! options) -> void
+static Periphery.BiometricEnricher.Instance.get -> Periphery.BiometricEnricher!
+static Periphery.DeviceEnrichers.Register(Periphery.IDeviceEnricher! enricher) -> void
+static Periphery.DeviceEnrichers.ScopeForTags(System.Collections.Generic.IReadOnlySet<string!>! tags) -> Periphery.EnricherScope!
+static Periphery.DeviceEnrichers.Snapshot() -> System.Collections.Immutable.ImmutableArray<Periphery.IDeviceEnricher!>
+static Periphery.DeviceEnrichers.Unregister(Periphery.IDeviceEnricher! enricher) -> bool
+static Periphery.DeviceFaultClassifier.IsResettableFault(Periphery.DeviceInfo! device) -> bool
+static Periphery.DeviceFaultClassifier.IsResettableFault(Periphery.DeviceStatus status, int? problemCode) -> bool
+static Periphery.DeviceFaultClassifier.ReadProblemCode(Periphery.DeviceInfo! device) -> int?
+static Periphery.DeviceFilterSpecJsonContext.Default.get -> Periphery.DeviceFilterSpecJsonContext!
+static Periphery.DeviceId.Parse(string! s) -> Periphery.DeviceId
+static Periphery.DeviceId.TryParse(string? s, out Periphery.DeviceId result) -> bool
+static Periphery.DeviceId.implicit operator Periphery.DeviceId(string! value) -> Periphery.DeviceId
+static Periphery.DeviceId.implicit operator string!(Periphery.DeviceId id) -> string!
+static Periphery.DeviceInfoJsonContext.Default.get -> Periphery.DeviceInfoJsonContext!
+static Periphery.DeviceProfile.ForDevice(Periphery.DeviceInfo! device) -> Periphery.DeviceProfile!
+static Periphery.DeviceProfile.FromSpec(Periphery.DeviceFilterSpec! spec, string? name = null) -> Periphery.DeviceProfile!
+static Periphery.DeviceProxy.Create(Periphery.DeviceTracker! tracker, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? onActivated = null, System.Func<Periphery.DeviceInfo!, System.Threading.Tasks.Task!>? onDeactivated = null, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileOpen = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false) -> Periphery.DeviceProxy!
+static Periphery.DeviceProxy.OpenAsync(Periphery.DeviceProfile! profile, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? onActivated = null, System.Func<Periphery.DeviceInfo!, System.Threading.Tasks.Task!>? onDeactivated = null, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileOpen = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.DeviceProxy!>!
+static Periphery.DeviceProxy<TDevice>.Create(Periphery.DeviceTracker! tracker, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TDevice!>!>! openDevice, System.Func<TDevice!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? onActivated = null, System.Func<TDevice!, System.Threading.Tasks.Task!>? onDeactivated = null, System.Func<TDevice!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileOpen = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false) -> Periphery.DeviceProxy<TDevice!>!
+static Periphery.DeviceProxy<TDevice>.OpenAsync(Periphery.DeviceProfile! profile, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TDevice!>!>! openDevice, System.Func<TDevice!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? onActivated = null, System.Func<TDevice!, System.Threading.Tasks.Task!>? onDeactivated = null, System.Func<TDevice!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileOpen = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.DeviceProxy<TDevice!>!>!
+static Periphery.DeviceProxyBase<TDevice, TException>.CreateWithBorrowedTracker<TProxy>(Periphery.DeviceTracker! tracker, System.Func<Periphery.DeviceTracker!, TProxy!>! create) -> TProxy!
+static Periphery.DeviceProxyBase<TDevice, TException>.OpenWithOwnedWatcherAsync<TProxy>(Periphery.DeviceProfile! profile, System.Func<Periphery.DeviceTracker!, Periphery.DeviceWatcher!, TProxy!>! create, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<TProxy!>!
+static Periphery.DeviceReset.PlatformDefault.get -> Periphery.IDeviceReset!
+static Periphery.DeviceSessionHost<TSession>.Create(Periphery.DeviceTracker! tracker, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TSession!>!>! createSession, System.Func<TSession!, System.Threading.Tasks.Task!>? onSessionEnded = null, System.Func<TSession!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileSessionActive = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false) -> Periphery.DeviceSessionHost<TSession!>!
+static Periphery.DeviceSessionHost<TSession>.ForDeviceAsync(Periphery.DeviceInfo! device, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TSession!>!>! createSession, System.Func<TSession!, System.Threading.Tasks.Task!>? onSessionEnded = null, System.Func<TSession!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileSessionActive = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.DeviceSessionHost<TSession!>!>!
+static Periphery.DeviceSessionHost<TSession>.StartAsync(Periphery.DeviceProfile! profile, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TSession!>!>! createSession, System.Func<TSession!, System.Threading.Tasks.Task!>? onSessionEnded = null, System.Func<TSession!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileSessionActive = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.DeviceSessionHost<TSession!>!>!
+static Periphery.DeviceTags.Carries(Periphery.DeviceInfo! device, string! tag) -> bool
+static Periphery.Devices.Enumerate() -> Periphery.DeviceQuery!
+static Periphery.Devices.Watch() -> Periphery.DeviceWatcher!
+static Periphery.EscalationDecision.Execute(Periphery.ResetStrategy strategy) -> Periphery.EscalationDecision!
+static Periphery.HardwareId.Parse(string! s) -> Periphery.HardwareId
+static Periphery.HardwareId.TryParse(string? s, out Periphery.HardwareId result) -> bool
+static Periphery.HardwareId.explicit operator Periphery.HardwareId(ushort value) -> Periphery.HardwareId
+static Periphery.HardwareId.implicit operator ushort(Periphery.HardwareId id) -> ushort
+static Periphery.ImagingEnricher.Instance.get -> Periphery.ImagingEnricher!
+static Periphery.MultiDeviceSessionHost<TSession>.Create(Periphery.MultiDeviceTracker! multiTracker, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TSession!>!>! createSession, System.Func<TSession!, System.Threading.Tasks.Task!>? onSessionEnded = null, System.Func<TSession!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileSessionActive = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false) -> Periphery.MultiDeviceSessionHost<TSession!>!
+static Periphery.MultiDeviceSessionHost<TSession>.StartAsync(System.Action<Periphery.DeviceFilter!>! configure, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TSession!>!>! createSession, System.Func<TSession!, System.Threading.Tasks.Task!>? onSessionEnded = null, System.Func<TSession!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>? whileSessionActive = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, Periphery.IDeviceReset? deviceReset = null, Periphery.IResetSafetyGate? resetSafetyGate = null, bool faultedNodeRecovery = false, string? name = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.MultiDeviceSessionHost<TSession!>!>!
+static Periphery.PeripheryLoggerFactory.SetLoggerFactory(Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory) -> void
+static Periphery.PortPath.TryParse(string? locationPath, out Periphery.PortPath path) -> bool
+static Periphery.PrinterEnricher.Instance.get -> Periphery.PrinterEnricher!
+static Periphery.ResetEscalation.Decide(Periphery.RecoveryContext context, Periphery.RecoveryDirective.Reset! requested) -> Periphery.EscalationDecision!
+static Periphery.ResetSafetyGate.All(params Periphery.IResetSafetyGate?[]? gates) -> Periphery.IResetSafetyGate?
+static Periphery.ResetStrategyMap.ForTransport(Periphery.DeviceInfo! device) -> System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>!
+static Periphery.ResetStrategyMap.IsUsbBacked(Periphery.DeviceInfo! device) -> bool
+static Periphery.ResetStrategyMap.UsbStrategies.get -> System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>!
+static Periphery.SensorEnricher.Instance.get -> Periphery.SensorEnricher!
+static Periphery.SerialPortName.Parse(string! s) -> Periphery.SerialPortName
+static Periphery.SerialPortName.TryParse(string? s, out Periphery.SerialPortName result) -> bool
+static Periphery.SmartCardEnricher.Instance.get -> Periphery.SmartCardEnricher!
+static Periphery.UsbClassCode.Parse(string! s) -> Periphery.UsbClassCode
+static Periphery.UsbClassCode.TryParse(string? s, out Periphery.UsbClassCode result) -> bool
+static Periphery.UsbClassCode.operator !=(Periphery.UsbClassCode left, Periphery.UsbClassCode right) -> bool
+static Periphery.UsbClassCode.operator ==(Periphery.UsbClassCode left, Periphery.UsbClassCode right) -> bool
+static Periphery.Windows.DeviceClassGuids.GetClassNameOrDefault(string? classGuid) -> string!
+static Periphery.Windows.DeviceClassGuids.TryGetClassName(string! classGuid, out string! className) -> bool
+static readonly Periphery.EnricherScope.None -> Periphery.EnricherScope!
+static readonly Periphery.EscalatingResetRecoveryPolicy.Default -> Periphery.IRecoveryPolicy!
+static readonly Periphery.EscalationDecision.Concede -> Periphery.EscalationDecision!
+static readonly Periphery.ExponentialBackoffRecoveryPolicy.Default -> Periphery.IRecoveryPolicy!
+static readonly Periphery.NullDeviceReset.Instance -> Periphery.NullDeviceReset!
+static readonly Periphery.UsbClassCode.ApplicationSpecific -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.ApplicationSpecificClass.DeviceFirmwareUpgrade -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.ApplicationSpecificClass.IrdaBridge -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.ApplicationSpecificClass.TestAndMeasurement -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.ApplicationSpecificClass.TestAndMeasurementUsb488 -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Audio -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioClass.Control -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioClass.MidiStreaming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioClass.Streaming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioVideo -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioVideoClass.AudioStreaming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioVideoClass.Control -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.AudioVideoClass.VideoStreaming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Billboard -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.BulkDisplay -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControl -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.AbstractControl -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.AbstractControlAtCommands -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.AtmNetworking -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.Capi -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.DeviceManagement -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.DirectLine -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.EthernetEmulation -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.EthernetNetworking -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.MobileDirectLine -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.MultiChannel -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.NetworkControl -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.Obex -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.Telephone -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcControlClass.WirelessHandset -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.CdcData -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.ContentSecurity -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Diagnostic -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.DiagnosticClass.DebugGnu -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.DiagnosticClass.DebugTarget -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.DiagnosticClass.Usb2Compliance -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Hid -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HidClass.BootInterface -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HidClass.BootKeyboard -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HidClass.BootMouse -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HidClass.NoSubclass -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Hub -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HubClass.FullSpeed -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HubClass.HiSpeedMultipleTt -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HubClass.HiSpeedSingleTt -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.HubClass.SuperSpeed -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.I3C -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Image -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.ImageClass.StillImagePtp -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorage -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.Atapi -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.Rbc -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.ScsiBot -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.ScsiCbi -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.ScsiNotReported -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.ScsiTransparent -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.Uas -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MassStorageClass.Ufi -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Mctp -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Miscellaneous -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.ActiveSync -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.CableBasedAssociation -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.CommandVerifier -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.InterfaceAssociation -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.PalmSync -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisEthernet -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisGprs -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisIpv4 -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisIpv6 -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisWifi -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisWimax -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.RndisWwan -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.Step -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.StepRaw -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.Usb3VisionControl -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.Usb3VisionEvent -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.Usb3VisionStreaming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.MiscellaneousClass.WireAdapterMultifunction -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.PersonalHealthcare -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Physical -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Printer -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.PrinterClass.Bidirectional -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.PrinterClass.Ieee1284 -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.PrinterClass.IppOverUsb -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.PrinterClass.Unidirectional -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.SmartCard -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.TypeCBridge -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.UseInterfaceDescriptor -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.VendorSpecific -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.Video -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.VideoClass.Control -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.VideoClass.InterfaceCollection -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.VideoClass.Streaming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessController -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.BluetoothAmp -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.BluetoothProgramming -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.DeviceWireAdapter -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.DeviceWireAdapterIsoc -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.HostWireAdapter -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.RemoteNdis -> Periphery.UsbClassCode
+static readonly Periphery.UsbClassCode.WirelessControllerClass.UwbRadioControl -> Periphery.UsbClassCode
+static readonly Periphery.Windows.DeviceClassGuids.All -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+virtual Periphery.DeviceProxyBase<TDevice, TException>.FaultedNodeSettleWindow.get -> System.TimeSpan
+virtual Periphery.DeviceProxyBase<TDevice, TException>.HasWorker.get -> bool
+virtual Periphery.DeviceProxyBase<TDevice, TException>.OnActivatedAsync(TDevice! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+virtual Periphery.DeviceProxyBase<TDevice, TException>.OnDeactivatedAsync(TDevice! device) -> System.Threading.Tasks.Task!
+virtual Periphery.DeviceProxyBase<TDevice, TException>.ResetReopenPollInterval.get -> System.TimeSpan
+virtual Periphery.DeviceProxyBase<TDevice, TException>.ResetReopenTimeout.get -> System.TimeSpan
+virtual Periphery.DeviceProxyBase<TDevice, TException>.StableOpenDwell.get -> System.TimeSpan
+virtual Periphery.DeviceProxyBase<TDevice, TException>.WhileOpenAsync(TDevice! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!

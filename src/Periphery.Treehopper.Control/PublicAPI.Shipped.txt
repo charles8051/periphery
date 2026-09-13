@@ -1,0 +1,220 @@
+#nullable enable
+Periphery.Treehopper.Control.AppEvent
+Periphery.Treehopper.Control.AppEvent.BoardDiscovered
+Periphery.Treehopper.Control.AppEvent.BoardDiscovered.Board.get -> Periphery.Treehopper.Control.BoardIdentity!
+Periphery.Treehopper.Control.AppEvent.BoardDiscovered.Board.init -> void
+Periphery.Treehopper.Control.AppEvent.BoardDiscovered.BoardDiscovered(Periphery.Treehopper.Control.BoardIdentity! Board) -> void
+Periphery.Treehopper.Control.AppEvent.BoardRemoved
+Periphery.Treehopper.Control.AppEvent.BoardRemoved.BoardRemoved(Periphery.DeviceId Id) -> void
+Periphery.Treehopper.Control.AppEvent.BoardRemoved.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.BoardRemoved.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.BoardVersionRead
+Periphery.Treehopper.Control.AppEvent.BoardVersionRead.BoardVersionRead(Periphery.DeviceId Id, int Version) -> void
+Periphery.Treehopper.Control.AppEvent.BoardVersionRead.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.BoardVersionRead.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.BoardVersionRead.Version.get -> int
+Periphery.Treehopper.Control.AppEvent.BoardVersionRead.Version.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.FirmwareProgressed(Periphery.DeviceId Id, int RecordsSent, int TotalRecords) -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.RecordsSent.get -> int
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.RecordsSent.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.TotalRecords.get -> int
+Periphery.Treehopper.Control.AppEvent.FirmwareProgressed.TotalRecords.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareTargetSet
+Periphery.Treehopper.Control.AppEvent.FirmwareTargetSet.FirmwareTargetSet(int? Target) -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareTargetSet.Target.get -> int?
+Periphery.Treehopper.Control.AppEvent.FirmwareTargetSet.Target.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.FirmwareUpdateFinished(Periphery.DeviceId Id, bool Success, int? NewVersion = null, string? Message = null) -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.Message.get -> string?
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.Message.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.NewVersion.get -> int?
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.NewVersion.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.Success.get -> bool
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateFinished.Success.init -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateStarted
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateStarted.FirmwareUpdateStarted(Periphery.DeviceId Id) -> void
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateStarted.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.FirmwareUpdateStarted.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.I2cScanFinished
+Periphery.Treehopper.Control.AppEvent.I2cScanFinished.I2cScanFinished(Periphery.DeviceId Id, System.Collections.Immutable.ImmutableArray<byte> Responders) -> void
+Periphery.Treehopper.Control.AppEvent.I2cScanFinished.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.I2cScanFinished.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.I2cScanFinished.Responders.get -> System.Collections.Immutable.ImmutableArray<byte>
+Periphery.Treehopper.Control.AppEvent.I2cScanFinished.Responders.init -> void
+Periphery.Treehopper.Control.AppEvent.I2cScanStarted
+Periphery.Treehopper.Control.AppEvent.I2cScanStarted.I2cScanStarted(Periphery.DeviceId Id) -> void
+Periphery.Treehopper.Control.AppEvent.I2cScanStarted.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.I2cScanStarted.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.OperationFailed
+Periphery.Treehopper.Control.AppEvent.OperationFailed.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.OperationFailed.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.OperationFailed.Message.get -> string!
+Periphery.Treehopper.Control.AppEvent.OperationFailed.Message.init -> void
+Periphery.Treehopper.Control.AppEvent.OperationFailed.OperationFailed(Periphery.DeviceId Id, string! Message) -> void
+Periphery.Treehopper.Control.AppEvent.OutputDriven
+Periphery.Treehopper.Control.AppEvent.OutputDriven.High.get -> bool
+Periphery.Treehopper.Control.AppEvent.OutputDriven.High.init -> void
+Periphery.Treehopper.Control.AppEvent.OutputDriven.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.OutputDriven.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.OutputDriven.OutputDriven(Periphery.DeviceId Id, int Pin, bool High) -> void
+Periphery.Treehopper.Control.AppEvent.OutputDriven.Pin.get -> int
+Periphery.Treehopper.Control.AppEvent.OutputDriven.Pin.init -> void
+Periphery.Treehopper.Control.AppEvent.PinModeChanged
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.Mode.get -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.Mode.init -> void
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.Pin.get -> int
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.Pin.init -> void
+Periphery.Treehopper.Control.AppEvent.PinModeChanged.PinModeChanged(Periphery.DeviceId Id, int Pin, Periphery.Treehopper.PinMode Mode) -> void
+Periphery.Treehopper.Control.AppEvent.ReportReceived
+Periphery.Treehopper.Control.AppEvent.ReportReceived.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppEvent.ReportReceived.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.ReportReceived.Report.get -> Periphery.Treehopper.BoardReport!
+Periphery.Treehopper.Control.AppEvent.ReportReceived.Report.init -> void
+Periphery.Treehopper.Control.AppEvent.ReportReceived.ReportReceived(Periphery.DeviceId Id, Periphery.Treehopper.BoardReport! Report) -> void
+Periphery.Treehopper.Control.AppEvent.SelectionChanged
+Periphery.Treehopper.Control.AppEvent.SelectionChanged.Id.get -> Periphery.DeviceId?
+Periphery.Treehopper.Control.AppEvent.SelectionChanged.Id.init -> void
+Periphery.Treehopper.Control.AppEvent.SelectionChanged.SelectionChanged(Periphery.DeviceId? Id) -> void
+Periphery.Treehopper.Control.AppIntent
+Periphery.Treehopper.Control.AppIntent.DriveOutput
+Periphery.Treehopper.Control.AppIntent.DriveOutput.DriveOutput(Periphery.DeviceId Id, int Pin, bool High) -> void
+Periphery.Treehopper.Control.AppIntent.DriveOutput.High.get -> bool
+Periphery.Treehopper.Control.AppIntent.DriveOutput.High.init -> void
+Periphery.Treehopper.Control.AppIntent.DriveOutput.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppIntent.DriveOutput.Id.init -> void
+Periphery.Treehopper.Control.AppIntent.DriveOutput.Pin.get -> int
+Periphery.Treehopper.Control.AppIntent.DriveOutput.Pin.init -> void
+Periphery.Treehopper.Control.AppIntent.RefreshBoards
+Periphery.Treehopper.Control.AppIntent.ScanI2c
+Periphery.Treehopper.Control.AppIntent.ScanI2c.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppIntent.ScanI2c.Id.init -> void
+Periphery.Treehopper.Control.AppIntent.ScanI2c.ScanI2c(Periphery.DeviceId Id) -> void
+Periphery.Treehopper.Control.AppIntent.SelectBoard
+Periphery.Treehopper.Control.AppIntent.SelectBoard.Id.get -> Periphery.DeviceId?
+Periphery.Treehopper.Control.AppIntent.SelectBoard.Id.init -> void
+Periphery.Treehopper.Control.AppIntent.SelectBoard.SelectBoard(Periphery.DeviceId? Id) -> void
+Periphery.Treehopper.Control.AppIntent.SetPinMode
+Periphery.Treehopper.Control.AppIntent.SetPinMode.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppIntent.SetPinMode.Id.init -> void
+Periphery.Treehopper.Control.AppIntent.SetPinMode.Mode.get -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.Control.AppIntent.SetPinMode.Mode.init -> void
+Periphery.Treehopper.Control.AppIntent.SetPinMode.Pin.get -> int
+Periphery.Treehopper.Control.AppIntent.SetPinMode.Pin.init -> void
+Periphery.Treehopper.Control.AppIntent.SetPinMode.SetPinMode(Periphery.DeviceId Id, int Pin, Periphery.Treehopper.PinMode Mode) -> void
+Periphery.Treehopper.Control.AppIntent.ToggleOutput
+Periphery.Treehopper.Control.AppIntent.ToggleOutput.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppIntent.ToggleOutput.Id.init -> void
+Periphery.Treehopper.Control.AppIntent.ToggleOutput.Pin.get -> int
+Periphery.Treehopper.Control.AppIntent.ToggleOutput.Pin.init -> void
+Periphery.Treehopper.Control.AppIntent.ToggleOutput.ToggleOutput(Periphery.DeviceId Id, int Pin) -> void
+Periphery.Treehopper.Control.AppIntent.UpdateFirmware
+Periphery.Treehopper.Control.AppIntent.UpdateFirmware.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.AppIntent.UpdateFirmware.Id.init -> void
+Periphery.Treehopper.Control.AppIntent.UpdateFirmware.UpdateFirmware(Periphery.DeviceId Id) -> void
+Periphery.Treehopper.Control.AppReducer
+Periphery.Treehopper.Control.AppState
+Periphery.Treehopper.Control.AppState.AppState(System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.Control.BoardView!> Boards, Periphery.DeviceId? SelectedBoardId = null, int? FirmwareTarget = null) -> void
+Periphery.Treehopper.Control.AppState.Boards.get -> System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.Control.BoardView!>
+Periphery.Treehopper.Control.AppState.Boards.init -> void
+Periphery.Treehopper.Control.AppState.Find(Periphery.DeviceId id) -> Periphery.Treehopper.Control.BoardView?
+Periphery.Treehopper.Control.AppState.FirmwareTarget.get -> int?
+Periphery.Treehopper.Control.AppState.FirmwareTarget.init -> void
+Periphery.Treehopper.Control.AppState.Selected.get -> Periphery.Treehopper.Control.BoardView?
+Periphery.Treehopper.Control.AppState.SelectedBoardId.get -> Periphery.DeviceId?
+Periphery.Treehopper.Control.AppState.SelectedBoardId.init -> void
+Periphery.Treehopper.Control.BoardConnection
+Periphery.Treehopper.Control.BoardConnection.Application = 0 -> Periphery.Treehopper.Control.BoardConnection
+Periphery.Treehopper.Control.BoardConnection.Bootloader = 1 -> Periphery.Treehopper.Control.BoardConnection
+Periphery.Treehopper.Control.BoardIdentity
+Periphery.Treehopper.Control.BoardIdentity.BoardIdentity(Periphery.DeviceId Id, string? Serial = null, string? Name = null, int? Version = null, Periphery.Treehopper.Control.BoardConnection Connection = Periphery.Treehopper.Control.BoardConnection.Application) -> void
+Periphery.Treehopper.Control.BoardIdentity.Connection.get -> Periphery.Treehopper.Control.BoardConnection
+Periphery.Treehopper.Control.BoardIdentity.Connection.init -> void
+Periphery.Treehopper.Control.BoardIdentity.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.BoardIdentity.Id.init -> void
+Periphery.Treehopper.Control.BoardIdentity.Name.get -> string?
+Periphery.Treehopper.Control.BoardIdentity.Name.init -> void
+Periphery.Treehopper.Control.BoardIdentity.Serial.get -> string?
+Periphery.Treehopper.Control.BoardIdentity.Serial.init -> void
+Periphery.Treehopper.Control.BoardIdentity.Version.get -> int?
+Periphery.Treehopper.Control.BoardIdentity.Version.init -> void
+Periphery.Treehopper.Control.BoardView
+Periphery.Treehopper.Control.BoardView.BoardView(Periphery.DeviceId Id, string? Serial, string? Name, int? Version, Periphery.Treehopper.Control.BoardConnection Connection, System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.Control.PinView!> Pins, Periphery.Treehopper.Control.FirmwareView! Firmware, System.Collections.Immutable.ImmutableArray<byte>? I2cResponders = null, bool I2cScanning = false, string? LastError = null) -> void
+Periphery.Treehopper.Control.BoardView.Connection.get -> Periphery.Treehopper.Control.BoardConnection
+Periphery.Treehopper.Control.BoardView.Connection.init -> void
+Periphery.Treehopper.Control.BoardView.Firmware.get -> Periphery.Treehopper.Control.FirmwareView!
+Periphery.Treehopper.Control.BoardView.Firmware.init -> void
+Periphery.Treehopper.Control.BoardView.I2cResponders.get -> System.Collections.Immutable.ImmutableArray<byte>?
+Periphery.Treehopper.Control.BoardView.I2cResponders.init -> void
+Periphery.Treehopper.Control.BoardView.I2cScanning.get -> bool
+Periphery.Treehopper.Control.BoardView.I2cScanning.init -> void
+Periphery.Treehopper.Control.BoardView.Id.get -> Periphery.DeviceId
+Periphery.Treehopper.Control.BoardView.Id.init -> void
+Periphery.Treehopper.Control.BoardView.Label.get -> string!
+Periphery.Treehopper.Control.BoardView.LastError.get -> string?
+Periphery.Treehopper.Control.BoardView.LastError.init -> void
+Periphery.Treehopper.Control.BoardView.Name.get -> string?
+Periphery.Treehopper.Control.BoardView.Name.init -> void
+Periphery.Treehopper.Control.BoardView.Pins.get -> System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.Control.PinView!>
+Periphery.Treehopper.Control.BoardView.Pins.init -> void
+Periphery.Treehopper.Control.BoardView.Serial.get -> string?
+Periphery.Treehopper.Control.BoardView.Serial.init -> void
+Periphery.Treehopper.Control.BoardView.Version.get -> int?
+Periphery.Treehopper.Control.BoardView.Version.init -> void
+Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareStatus.Failed = 5 -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareStatus.Unknown = 0 -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareStatus.UpToDate = 1 -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareStatus.UpdateAvailable = 2 -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareStatus.Updated = 4 -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareStatus.Updating = 3 -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareVersion
+Periphery.Treehopper.Control.FirmwareView
+Periphery.Treehopper.Control.FirmwareView.FirmwareView(Periphery.Treehopper.Control.FirmwareStatus Status = Periphery.Treehopper.Control.FirmwareStatus.Unknown, int? Percent = null, string? Message = null) -> void
+Periphery.Treehopper.Control.FirmwareView.Message.get -> string?
+Periphery.Treehopper.Control.FirmwareView.Message.init -> void
+Periphery.Treehopper.Control.FirmwareView.Percent.get -> int?
+Periphery.Treehopper.Control.FirmwareView.Percent.init -> void
+Periphery.Treehopper.Control.FirmwareView.Status.get -> Periphery.Treehopper.Control.FirmwareStatus
+Periphery.Treehopper.Control.FirmwareView.Status.init -> void
+Periphery.Treehopper.Control.PinView
+Periphery.Treehopper.Control.PinView.Adc.get -> int
+Periphery.Treehopper.Control.PinView.Adc.init -> void
+Periphery.Treehopper.Control.PinView.High.get -> bool
+Periphery.Treehopper.Control.PinView.High.init -> void
+Periphery.Treehopper.Control.PinView.Mode.get -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.Control.PinView.Mode.init -> void
+Periphery.Treehopper.Control.PinView.Number.get -> int
+Periphery.Treehopper.Control.PinView.Number.init -> void
+Periphery.Treehopper.Control.PinView.PinView(int Number, Periphery.Treehopper.PinMode Mode, bool High, int Adc) -> void
+Periphery.Treehopper.Control.TreehopperControlOptions
+Periphery.Treehopper.Control.TreehopperControlOptions.FirmwareImage.get -> byte[]?
+Periphery.Treehopper.Control.TreehopperControlOptions.FirmwareImage.init -> void
+Periphery.Treehopper.Control.TreehopperControlOptions.FirmwareTargetVersion.get -> int?
+Periphery.Treehopper.Control.TreehopperControlOptions.FirmwareTargetVersion.init -> void
+Periphery.Treehopper.Control.TreehopperControlOptions.VersionReadTimeout.get -> System.TimeSpan
+Periphery.Treehopper.Control.TreehopperControlOptions.VersionReadTimeout.init -> void
+Periphery.Treehopper.Control.TreehopperControlService
+Periphery.Treehopper.Control.TreehopperControlService.DispatchAsync(Periphery.Treehopper.Control.AppIntent! intent, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Control.TreehopperControlService.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.Control.TreehopperControlService.FlashAsync(Periphery.DeviceId id, byte[]! firmware, string! sourceName, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Control.TreehopperControlService.SetLiveStreamingAsync(bool enabled, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Control.TreehopperControlService.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Control.TreehopperControlService.State.get -> Periphery.Treehopper.Control.AppState!
+Periphery.Treehopper.Control.TreehopperControlService.StateChanged -> System.EventHandler<Periphery.Treehopper.Control.AppState!>?
+Periphery.Treehopper.Control.TreehopperControlService.TreehopperControlService(Periphery.Treehopper.Control.TreehopperControlOptions? options = null) -> void
+const Periphery.Treehopper.Control.BoardView.PinCount = 20 -> int
+static Periphery.Treehopper.Control.AppReducer.Reduce(Periphery.Treehopper.Control.AppState! state, Periphery.Treehopper.Control.AppEvent! e) -> Periphery.Treehopper.Control.AppState!
+static Periphery.Treehopper.Control.AppReducer.ReduceAll(Periphery.Treehopper.Control.AppState! state, params Periphery.Treehopper.Control.AppEvent![]! events) -> Periphery.Treehopper.Control.AppState!
+static Periphery.Treehopper.Control.BoardView.FromIdentity(Periphery.Treehopper.Control.BoardIdentity! id) -> Periphery.Treehopper.Control.BoardView!
+static Periphery.Treehopper.Control.FirmwareVersion.Describe(int code) -> string!
+static Periphery.Treehopper.Control.FirmwareVersion.TryParse(string? text, out int version) -> bool
+static Periphery.Treehopper.Control.FirmwareView.DeriveIdle(int? version, int? target) -> Periphery.Treehopper.Control.FirmwareStatus
+static readonly Periphery.Treehopper.Control.AppState.Empty -> Periphery.Treehopper.Control.AppState!
+static readonly Periphery.Treehopper.Control.FirmwareView.Initial -> Periphery.Treehopper.Control.FirmwareView!

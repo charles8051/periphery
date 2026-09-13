@@ -1,0 +1,82 @@
+#nullable enable
+Periphery.Camera.Testing.CameraFramePatterns
+Periphery.Camera.Testing.CameraFramePlaneSpec
+Periphery.Camera.Testing.CameraFramePlaneSpec.CameraFramePlaneSpec() -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.CameraFramePlaneSpec(int Offset, int Length, int Stride, int RowBytes, int Width, int Height) -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.Height.get -> int
+Periphery.Camera.Testing.CameraFramePlaneSpec.Height.init -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.Length.get -> int
+Periphery.Camera.Testing.CameraFramePlaneSpec.Length.init -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.Offset.get -> int
+Periphery.Camera.Testing.CameraFramePlaneSpec.Offset.init -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.RowBytes.get -> int
+Periphery.Camera.Testing.CameraFramePlaneSpec.RowBytes.init -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.Stride.get -> int
+Periphery.Camera.Testing.CameraFramePlaneSpec.Stride.init -> void
+Periphery.Camera.Testing.CameraFramePlaneSpec.Width.get -> int
+Periphery.Camera.Testing.CameraFramePlaneSpec.Width.init -> void
+Periphery.Camera.Testing.CameraFrameSpec
+Periphery.Camera.Testing.CameraFrameSpec.CameraFrameSpec() -> void
+Periphery.Camera.Testing.CameraFrameSpec.CameraFrameSpec(Periphery.Camera.CameraPixelFormat PixelFormat, int Width, int Height, int Stride, int FrameIndex) -> void
+Periphery.Camera.Testing.CameraFrameSpec.FrameIndex.get -> int
+Periphery.Camera.Testing.CameraFrameSpec.FrameIndex.init -> void
+Periphery.Camera.Testing.CameraFrameSpec.FrameSize.get -> int
+Periphery.Camera.Testing.CameraFrameSpec.GetPlanes() -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.Testing.CameraFramePlaneSpec>!
+Periphery.Camera.Testing.CameraFrameSpec.Height.get -> int
+Periphery.Camera.Testing.CameraFrameSpec.Height.init -> void
+Periphery.Camera.Testing.CameraFrameSpec.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.Testing.CameraFrameSpec.PixelFormat.init -> void
+Periphery.Camera.Testing.CameraFrameSpec.PlaneCount.get -> int
+Periphery.Camera.Testing.CameraFrameSpec.Stride.get -> int
+Periphery.Camera.Testing.CameraFrameSpec.Stride.init -> void
+Periphery.Camera.Testing.CameraFrameSpec.Width.get -> int
+Periphery.Camera.Testing.CameraFrameSpec.Width.init -> void
+Periphery.Camera.Testing.CameraTestFormats
+Periphery.Camera.Testing.CameraTestHarness
+Periphery.Camera.Testing.CameraTestScope
+Periphery.Camera.Testing.CameraTestScope.Dispose() -> void
+Periphery.Camera.Testing.InMemoryCameraBackend
+Periphery.Camera.Testing.InMemoryCameraBackend.AppliedConfiguration.get -> Periphery.Camera.CameraConfiguration?
+Periphery.Camera.Testing.InMemoryCameraBackend.BlockDisposeUntil.get -> System.Threading.Tasks.Task?
+Periphery.Camera.Testing.InMemoryCameraBackend.BlockDisposeUntil.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.BlockStopUntil.get -> System.Threading.Tasks.Task?
+Periphery.Camera.Testing.InMemoryCameraBackend.BlockStopUntil.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Camera.Testing.InMemoryCameraBackend.FaultOnNextRead.get -> System.Exception?
+Periphery.Camera.Testing.InMemoryCameraBackend.FaultOnNextRead.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.FaultOnOpen.get -> System.Exception?
+Periphery.Camera.Testing.InMemoryCameraBackend.FaultOnOpen.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.FrameCounter.get -> int
+Periphery.Camera.Testing.InMemoryCameraBackend.FrameDelay.get -> System.TimeSpan
+Periphery.Camera.Testing.InMemoryCameraBackend.FrameDelay.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.FrameFactory.get -> System.Func<Periphery.Camera.Testing.CameraFrameSpec, byte[]!>?
+Periphery.Camera.Testing.InMemoryCameraBackend.FrameFactory.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.GetControlValue(Periphery.Camera.CameraControlKind kind) -> double?
+Periphery.Camera.Testing.InMemoryCameraBackend.HangOnRead.get -> bool
+Periphery.Camera.Testing.InMemoryCameraBackend.HangOnRead.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.InMemoryCameraBackend(string! nativeEndpointId = "test://camera0", System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>? formats = null, System.Collections.Generic.IEnumerable<Periphery.Camera.CameraControlInfo!>? controls = null) -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.IsCapturing.get -> bool
+Periphery.Camera.Testing.InMemoryCameraBackend.IsDisposed.get -> bool
+Periphery.Camera.Testing.InMemoryCameraBackend.IsOpen.get -> bool
+Periphery.Camera.Testing.InMemoryCameraBackend.MaxFrames.get -> int
+Periphery.Camera.Testing.InMemoryCameraBackend.MaxFrames.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.OverridePixelFormat.get -> Periphery.Camera.CameraPixelFormat?
+Periphery.Camera.Testing.InMemoryCameraBackend.OverridePixelFormat.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.OverrideStride.get -> int?
+Periphery.Camera.Testing.InMemoryCameraBackend.OverrideStride.set -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.ReadHangReached.get -> System.Threading.Tasks.Task!
+Periphery.Camera.Testing.InMemoryCameraBackend.RefuseControlRead(Periphery.Camera.CameraControlKind control) -> void
+Periphery.Camera.Testing.InMemoryCameraBackend.SetControlState(Periphery.Camera.CameraControlKind control, double value, Periphery.Camera.CameraControlMode mode) -> void
+static Periphery.Camera.Testing.CameraFramePatterns.FrameIndexConstant(Periphery.Camera.Testing.CameraFrameSpec spec) -> byte[]!
+static Periphery.Camera.Testing.CameraFramePatterns.HorizontalGradient(Periphery.Camera.Testing.CameraFrameSpec spec) -> byte[]!
+static Periphery.Camera.Testing.CameraFramePatterns.PlaneConstant(params byte[]! planeValues) -> System.Func<Periphery.Camera.Testing.CameraFrameSpec, byte[]!>!
+static Periphery.Camera.Testing.CameraFramePatterns.RowIndex(Periphery.Camera.Testing.CameraFrameSpec spec) -> byte[]!
+static Periphery.Camera.Testing.CameraTestFormats.CreateDeviceInfo(string! id = "TEST\\CAM\\0001", string! name = "Test Camera") -> Periphery.DeviceInfo!
+static Periphery.Camera.Testing.CameraTestFormats.Default.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.Testing.CameraTestFormats.DefaultControls.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraControlInfo!>!
+static Periphery.Camera.Testing.CameraTestFormats.Hd1080.get -> Periphery.Camera.CameraFormat!
+static Periphery.Camera.Testing.CameraTestFormats.Vga.get -> Periphery.Camera.CameraFormat!
+static Periphery.Camera.Testing.CameraTestHarness.OpenDeviceAsync(Periphery.Camera.Testing.InMemoryCameraBackend! backend, Periphery.DeviceInfo? device = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraDevice!>!
+static Periphery.Camera.Testing.CameraTestHarness.OpenSessionAsync(Periphery.Camera.Testing.InMemoryCameraBackend! backend, Periphery.Camera.CameraConfiguration? configuration = null, Periphery.DeviceInfo? device = null, Periphery.Camera.CameraSessionOptions? options = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraSession!>!
+static Periphery.Camera.Testing.CameraTestScope.Install(Periphery.Camera.Testing.InMemoryCameraBackend! backend) -> Periphery.Camera.Testing.CameraTestScope!
+static Periphery.Camera.Testing.CameraTestScope.Install(System.Func<Periphery.DeviceInfo!, Periphery.Camera.Testing.InMemoryCameraBackend!>! factory) -> Periphery.Camera.Testing.CameraTestScope!
