@@ -56,8 +56,10 @@ use Task.Delay(TimeSpan, TimeProvider) with a FakeTimeProvider. See ADR-0089.
 ```
 
 Inject a `TimeProvider` and pass `FakeTimeProvider`, which every test project already
-references. [ADR-0089](docs/adr/0089-tests-do-not-depend-on-elapsed-time.md) has the
-reasoning. The analyzer cannot check these, so review does:
+references. When the code under test arms a timer before it waits, use
+`TimerSignalingFakeTimeProvider` from `tests/Shared` and advance once the timer is armed.
+[ADR-0089](docs/adr/0089-tests-do-not-depend-on-elapsed-time.md) has the reasoning. The
+analyzer cannot check these, so review does:
 
 1. **Wait on a signal, not a duration.** When the code under test works on another
    task, await something it completes: a `TaskCompletionSource` in a fake, an event it

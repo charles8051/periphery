@@ -49,4 +49,12 @@ public sealed record BootloaderEntryOptions
     /// </para>
     /// </summary>
     public BootloaderEntryRecovery? Recovery { get; init; }
+
+    /// <summary>
+    /// The clock every timed step of the run is armed on: the bootloader and application wait
+    /// deadlines, the recovery return wait, the post-reset settle, and a recovery policy's retry
+    /// delay. Default <see cref="System.TimeProvider.System"/>. Tests pass a fake provider to drive
+    /// those steps without waiting in real time.
+    /// </summary>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }

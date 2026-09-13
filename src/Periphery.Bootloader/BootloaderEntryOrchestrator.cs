@@ -134,6 +134,7 @@ public static partial class BootloaderEntryOrchestrator
                     entry.ExpectedBootloader,
                     DeviceWaitState.Collecting(options.Correlation, debouncePreExisting: true, expectedSerial, expectedLocationPath),
                     options.BootloaderTimeout,
+                    options.TimeProvider,
                     afterArm: async token =>
                     {
                         try
@@ -196,7 +197,7 @@ public static partial class BootloaderEntryOrchestrator
             {
                 case RecoveryDirective.Retry retry:
                     if (retry.Delay > TimeSpan.Zero)
-                        await Task.Delay(retry.Delay, ct).ConfigureAwait(false);
+                        await Task.Delay(retry.Delay, options.TimeProvider, ct).ConfigureAwait(false);
                     continue;
 
                 case RecoveryDirective.Reset requested:
@@ -254,7 +255,7 @@ public static partial class BootloaderEntryOrchestrator
                     // The settle-then-look shape depends on neither.
                     outcome = await recovery.Reset
                         .ResetAsync(applicationDevice, exec.Strategy, ct).ConfigureAwait(false);
-                    await Task.Delay(SettleAfterReset, ct).ConfigureAwait(false);
+                    await Task.Delay(SettleAfterReset, options.TimeProvider, ct).ConfigureAwait(false);
 
                     if (exec.Strategy.ReEnumerates && identity is { } identityFilter)
                     {
@@ -269,6 +270,7 @@ public static partial class BootloaderEntryOrchestrator
                                 DeviceCorrelationMode.FirstAppearance,
                                 debouncePreExisting: false),
                             recovery.EffectiveReturnTimeout,
+                            options.TimeProvider,
                             afterArm: null,
                             ct).ConfigureAwait(false);
 
@@ -320,6 +322,7 @@ public static partial class BootloaderEntryOrchestrator
                 options.ApplicationFilter!,
                 DeviceWaitState.Collecting(DeviceCorrelationMode.FirstAppearance, debouncePreExisting: false),
                 options.ApplicationTimeout,
+                options.TimeProvider,
                 afterArm: null,
                 ct).ConfigureAwait(false);
             applicationReturned = appDevice is not null;
@@ -340,6 +343,7 @@ public static partial class BootloaderEntryOrchestrator
         DeviceFilter filter,
         DeviceWaitState initial,
         TimeSpan timeout,
+        TimeProvider timeProvider,
         Func<CancellationToken, Task>? afterArm,
         CancellationToken ct)
     {
@@ -375,13 +379,15 @@ public static partial class BootloaderEntryOrchestrator
         if (afterArm is not null)
             await afterArm(ct).ConfigureAwait(false);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(timeout);
+        // Armed on the options' clock rather than with CancelAfter, which always uses the system
+        // timer whatever provider the run was given.
+        using var deadline = new CancellationTokenSource(timeout, timeProvider);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         try
         {
             return await done.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             Advance(s => s.OnTimeout());
             return null;

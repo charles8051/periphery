@@ -7,6 +7,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+### Added
+- **`BootloaderEntryOptions.TimeProvider`.** The clock `BootloaderEntryOrchestrator` arms every timed step on: the bootloader and application wait deadlines, the recovery return wait, the post-reset settle, and a recovery policy's retry delay. Defaults to `TimeProvider.System`, so a run behaves as before unless a caller sets it. The wait deadlines used `CancelAfter`, which always runs on the system timer, so until now there was no way to drive a run's timing from a test (ADR-0089).
+
 ### Fixed
 - **`TreehopperControlService.DisposeAsync` could fault the work it was shutting down** (#257). It disposed its operation gate and its cancellation source while a queued hotplug handler, or an operation that had not yet observed the cancellation, could still release the gate or read the token. That surfaced as an `ObjectDisposedException` inside a task nobody awaits. Both are now left undisposed, as `DeviceProxyBase` already does: neither holds a handle that needs releasing.
 - **`EscalatingResetRecoveryPolicy` never escalated on a proxy** (issue #241). The policy picks its step from `RecoveryContext.Attempt`, and `DeviceProxyBase` kept that count in a loop local that restarted at 1 whenever a reopen succeeded. ADR-0060 Decision 10's stable-open dwell preserved `ResetCount` across a reopen that refaulted inside the dwell, but not `Attempt`, so an attempt-indexed policy started over every cycle.

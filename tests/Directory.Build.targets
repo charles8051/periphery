@@ -39,5 +39,11 @@
   -->
   <ItemGroup Condition="'$(IsTestProject)' == 'true'">
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+    <!--
+      TimerSignalingFakeTimeProvider: FakeTimeProvider plus a signal when the code under test arms
+      a timer, so a test advances only once something is waiting (ADR-0089 D1). Compiled into each
+      test assembly as an internal type; no test project references another.
+    -->
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/TimerSignalingFakeTimeProvider.cs" Link="Shared/TimerSignalingFakeTimeProvider.cs" />
   </ItemGroup>
 </Project>
