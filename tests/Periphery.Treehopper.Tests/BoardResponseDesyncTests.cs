@@ -70,7 +70,7 @@ public class BoardResponseDesyncTests
         var parked = new TaskCompletionSource();
         var b = new FakeUsbBackend
         {
-            OnBulkRead = ct => { parked.TrySetResult(); return Task.Delay(Timeout.Infinite, ct); },
+            OnBulkRead = ct => { parked.TrySetResult(); return new TaskCompletionSource().Task.WaitAsync(ct); },
         };
         await using var board = BoardOver(b);
         await using var i2c = await board.UseI2cAsync();
