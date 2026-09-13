@@ -3,6 +3,7 @@ using Microsoft.Extensions.Time.Testing;
 using Periphery.Camera.Internal;
 using Periphery.Camera.Testing;
 using Periphery.Camera.Tests.Fakes;
+using Periphery.Testing;
 
 namespace Periphery.Camera.Tests;
 
@@ -32,7 +33,7 @@ public sealed class AbandonedTeardownTests : IDisposable
         using var listener = StartListener<long>(
             "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingFakeTimeProvider();
         var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         // The backend's StopCaptureAsync parks on the gate forever — a driver
@@ -46,7 +47,7 @@ public sealed class AbandonedTeardownTests : IDisposable
             using (var frame = await session.ReadFrameAsync()) { }
 
             // Dispose races the abandoned stop; advancing past the 2s budget trips it.
-            await DisposeWithClockAdvanceAsync(session, time);
+            await DisposeAbandoningAsync(session, time, BoundedTeardown.StopCaptureBudget);
 
             Assert.Equal(1, Interlocked.Read(ref abandoned));
 
@@ -66,7 +67,7 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task ReopenSucceedsOnceTheAbandonedWorkCompletes()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingFakeTimeProvider();
         var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\RECOVERS");
         var backend = new InMemoryCameraBackend { BlockStopUntil = stopGate.Task };
@@ -74,7 +75,7 @@ public sealed class AbandonedTeardownTests : IDisposable
         var session = await TestHelpers.CreateSessionWithBackend(backend, device: device, timeProvider: time);
         await session.StartCaptureAsync();
         using (var frame = await session.ReadFrameAsync()) { }
-        await DisposeWithClockAdvanceAsync(session, time);
+        await DisposeAbandoningAsync(session, time, BoundedTeardown.StopCaptureBudget);
 
         // Refused while the stop is still parked.
         var pending = await Assert.ThrowsAsync<CameraTeardownPendingException>(
@@ -96,7 +97,7 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task ADifferentDeviceIsNotRefused()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingFakeTimeProvider();
         var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var wedged = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         var healthy = TestHelpers.CreateDeviceInfo("TEST\\CAM\\HEALTHY");
@@ -107,7 +108,7 @@ public sealed class AbandonedTeardownTests : IDisposable
             var session = await TestHelpers.CreateSessionWithBackend(backend, device: wedged, timeProvider: time);
             await session.StartCaptureAsync();
             using (var frame = await session.ReadFrameAsync()) { }
-            await DisposeWithClockAdvanceAsync(session, time);
+            await DisposeAbandoningAsync(session, time, BoundedTeardown.StopCaptureBudget);
 
             Assert.NotNull(PendingTeardowns.Find(wedged.Id));
 
@@ -152,7 +153,7 @@ public sealed class AbandonedTeardownTests : IDisposable
         using var listener = StartListener<long>(
             "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingFakeTimeProvider();
         var disposeGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\DISPOSEWEDGE");
         // Stop returns fine; the backend's own disposal (Shutdown/close) is what wedges.
@@ -163,7 +164,7 @@ public sealed class AbandonedTeardownTests : IDisposable
             var session = await TestHelpers.CreateSessionWithBackend(backend, device: device, timeProvider: time);
             await session.StartCaptureAsync();
             using (var frame = await session.ReadFrameAsync()) { }
-            await DisposeWithClockAdvanceAsync(session, time);
+            await DisposeAbandoningAsync(session, time, BoundedTeardown.BackendDisposeBudget);
 
             Assert.Equal(1, Interlocked.Read(ref abandoned));
             var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
@@ -183,8 +184,11 @@ public sealed class AbandonedTeardownTests : IDisposable
     {
         var clock = new FakeTimeProvider();
         var id = "TEST\\CAM\\OVERLAP";
-        var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var producerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Continuations run inline: completed from Task.Run, where there is no
+        // SynchronizationContext, a gate returns from SetResult only after the registry and the
+        // exception's Completion have both reacted to it.
+        var stopGate = new TaskCompletionSource();
+        var producerGate = new TaskCompletionSource();
 
         // First step abandons; the exception is built from that snapshot.
         PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, stopGate.Task, clock);
@@ -194,13 +198,13 @@ public sealed class AbandonedTeardownTests : IDisposable
         PendingTeardowns.Register(id, BoundedTeardown.Steps.ProducerExit, producerGate.Task, clock);
 
         // Completing only the first step must not clear the signal.
-        stopGate.SetResult();
-        await Task.Delay(50);
+        await Task.Run(() => stopGate.SetResult());
         Assert.False(ex.Completion.IsCompleted);
 
-        // The signal clears only once the later step completes too.
-        producerGate.SetResult();
-        await ex.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        // The signal clears only once the later step completes too. Asserted the same way, so it
+        // also shows the assertion above ran after the continuations did.
+        await Task.Run(() => producerGate.SetResult());
+        Assert.True(ex.Completion.IsCompleted, "Completion did not react inline to the last step completing");
         Assert.Null(PendingTeardowns.Find(id));
     }
 
@@ -251,22 +255,21 @@ public sealed class AbandonedTeardownTests : IDisposable
         Assert.Null(PendingTeardowns.Find(device.Id));
     }
 
-    // Runs DisposeAsync on a background task and advances the fake clock past the
-    // teardown budgets until it completes, mirroring the pattern in
-    // CameraSessionClockTests: virtual time drives the abandon, real yields let
-    // the continuations run.
-    private static async Task DisposeWithClockAdvanceAsync(CameraSession session, FakeTimeProvider time)
+    // Disposes the session and expires exactly one budget: the wedged step's. Teardown steps run
+    // one after another, so when that step's budget timer is armed it is the only budget pending,
+    // and advancing by that budget cannot expire a later step's. The previous helper advanced past
+    // every budget each 10 ms of real time, which abandoned a later step that was merely slow
+    // (#256).
+    private static async Task DisposeAbandoningAsync(
+        CameraSession session, TimerSignalingFakeTimeProvider time, TimeSpan wedgedBudget)
     {
-        var dispose = Task.Run(async () => await session.DisposeAsync());
-        var beyondBudget = BoundedTeardown.BackendDisposeBudget + TimeSpan.FromSeconds(1);
+        int armedBefore = time.ArmedDueTimes.Count;
+        var dispose = session.DisposeAsync().AsTask();
 
-        for (int i = 0; i < 500 && !dispose.IsCompleted; i++)
-        {
-            time.Advance(beyondBudget);
-            await Task.Delay(10);
-        }
+        await TestHelpers.TimerArmedAsync(time, wedgedBudget, armedBefore);
+        time.Advance(wedgedBudget);
 
-        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
+        await dispose.WaitAsync(TestHelpers.Patience);
     }
 
     private static MeterListener StartListener<T>(string instrumentName, Action<T> onMeasurement)

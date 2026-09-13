@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Periphery.Camera.Testing;
+using Periphery.Camera.Tests.Fakes;
 
 namespace Periphery.Camera.Tests;
 
@@ -91,19 +92,29 @@ public sealed class BufferExhaustionTests
     [Fact]
     public async Task StallProducer_HandsASlowConsumerTheOldestFrame_AndParksInstead()
     {
+        var clock = new TimestampReportingFakeTimeProvider();
+        using var stallListener = clock.ProducerParked(out var parked);
+        using var durationListener = TestHelpers.FirstMeasurement<double>(
+            "periphery.camera.producer_stall_ms", out var stallEnded);
+        var stalledFor = TimeSpan.FromMilliseconds(250);
+
         await using var backend = new InMemoryCameraBackend { MaxFrames = 5 };
         await using var session = await CameraTestHarness.OpenSessionAsync(
             backend,
             options: new CameraSessionOptions(
                 BufferCount: 3, QueueDepth: 1,
-                ExhaustionPolicy: BufferExhaustionPolicy.StallProducer));
+                ExhaustionPolicy: BufferExhaustionPolicy.StallProducer),
+            timeProvider: clock);
 
         await session.StartCaptureAsync();
 
         // Frame 1 goes into the queue of one; frame 2 finds it full. The count
         // is recorded on entry to the stall, so it is observable while parked.
-        await WaitUntil(() => session.Metrics.ProducerStalls >= 1,
-            "the producer to park on a full queue");
+        await parked.WaitAsync(Patience);
+        Assert.Equal(1, session.Metrics.ProducerStalls);
+
+        // The stall's length is however far the clock moves while it is parked.
+        clock.Advance(stalledFor);
 
         using var frame = await session.ReadFrameAsync();
 
@@ -111,9 +122,9 @@ public sealed class BufferExhaustionTests
         Assert.Equal(0, session.Metrics.FramesDropped);
 
         // Reading frame 1 frees the slot, so the stall ends and its duration
-        // lands. The producer stalled on real wall-clock, so this is > zero.
-        await WaitUntil(() => session.Metrics.ProducerStallTime > TimeSpan.Zero,
-            "the parked stall to end and report its duration");
+        // lands: exactly the time that passed while the producer was parked.
+        await stallEnded.WaitAsync(Patience);
+        Assert.Equal(stalledFor, session.Metrics.ProducerStallTime);
 
         await session.StopCaptureAsync();
     }
@@ -214,13 +225,21 @@ public sealed class BufferExhaustionTests
     [Fact]
     public async Task LatestWins_KeepsTheNewestFrame_WhileTheConsumerHoldsItsWholeAllowance()
     {
-        // Paced so the consumer takes its two leases well before the producer
-        // runs out: 30 frames at 5 ms is ~150 ms, and the two reads take
-        // microseconds. The assertions do not depend on the rate.
+        // Gated one permit per frame, as in the refusal test below, so the
+        // consumer takes its two leases before any later frame exists. Pacing the
+        // producer with a delay only made that ordering likely.
+        using var frameGate = new SemaphoreSlim(0);
         await using var backend = new InMemoryCameraBackend
         {
             MaxFrames = 30,
-            FrameDelay = TimeSpan.FromMilliseconds(5),
+            FrameFactory = spec =>
+            {
+                if (!frameGate.Wait(Patience))
+                    throw new TimeoutException(
+                        $"The producer waited {Patience.TotalSeconds:F0}s for the test to release "
+                            + $"frame {spec.FrameIndex}.");
+                return CameraFramePatterns.FrameIndexConstant(spec);
+            },
         };
         await using var session = await CameraTestHarness.OpenSessionAsync(
             backend,
@@ -231,11 +250,14 @@ public sealed class BufferExhaustionTests
         await session.StartCaptureAsync();
 
         // Take and keep the consumer's whole allowance of two.
+        frameGate.Release();
         using var firstHeld = await session.ReadFrameAsync();
+        frameGate.Release();
         using var secondHeld = await session.ReadFrameAsync();
 
         // Let the producer run to the end against that. It parks after frame 30,
         // so there is a settled state to read rather than a race.
+        frameGate.Release(28);
         await backend.ReadHangReached.WaitAsync(Patience);
         Assert.Equal(30, backend.FrameCounter);
 
@@ -392,23 +414,6 @@ public sealed class BufferExhaustionTests
                 Assert.Fail(
                     $"Expected frame {frameIndex} (every byte 0x{expected:X2}), but byte {i} of "
                         + $"{span.Length} is 0x{span[i]:X2}.");
-        }
-    }
-
-    /// <summary>
-    /// <summary>
-    /// Polls a producer-thread observation until it holds. The producer runs
-    /// concurrently with the test, so there is no synchronous moment to read
-    /// these at; a fixed delay would either be slow or flaky.
-    /// </summary>
-    private static async Task WaitUntil(Func<bool> condition, string what)
-    {
-        var deadline = DateTime.UtcNow + Patience;
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                Assert.Fail($"Timed out after {Patience.TotalSeconds:F0}s waiting for {what}.");
-            await Task.Delay(10);
         }
     }
 }

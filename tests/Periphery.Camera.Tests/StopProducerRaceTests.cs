@@ -1,5 +1,7 @@
+using Periphery.Camera.Internal;
 using Periphery.Camera.Testing;
 using Periphery.Camera.Tests.Fakes;
+using Periphery.Testing;
 
 namespace Periphery.Camera.Tests;
 
@@ -17,8 +19,13 @@ public sealed class StopProducerRaceTests
     [Fact]
     public async Task ConcurrentDispose_DuringDeviceLost_DoesNotNullRef()
     {
-        var backend = new InMemoryCameraBackend();
-        var session = await TestHelpers.CreateSessionWithBackend(backend);
+        // The backend's stop is held at a gate, so whichever path stops the
+        // producer first is parked inside StopProducerAsync until the test lets
+        // it go. The session's clock only shows the test when that happens.
+        var time = new TimerSignalingFakeTimeProvider();
+        var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backend = new InMemoryCameraBackend { BlockStopUntil = stopGate.Task };
+        var session = await TestHelpers.CreateSessionWithBackend(backend, timeProvider: time);
 
         // Start the capture in a task so we can race a Dispose against
         // CaptureAsync's own finally-driven stop. The CaptureAsync task
@@ -42,19 +49,21 @@ public sealed class StopProducerRaceTests
             catch (CameraDeviceLostException) { /* expected */ }
         });
 
-        // Wait until the producer has actually started faulting so the
-        // dispose lands while CaptureAsync's finally is also trying to
-        // stop the producer. A small delay is sufficient — the fault
-        // injection above hits within microseconds at the in-process
-        // synthetic-backend frame rate.
-        await Task.Delay(TimeSpan.FromMilliseconds(100));
+        // The device loss ends the capture, and CaptureAsync's finally stops the
+        // producer. Its backend stop is held at the gate, so it arms the stop
+        // budget on the session's clock: at that point the finally is inside
+        // StopProducerAsync, holding the stop lock.
+        await TestHelpers.TimerArmedAsync(time, BoundedTeardown.StopCaptureBudget);
 
-        // The race: external dispose while CaptureAsync's finally is
-        // (likely) running. Without the single-flight guard in
-        // StopProducerAsync, one of the two paths NREs on whichever
-        // nullable field the other path just nulled. With the fix, both
-        // return cleanly.
-        await session.DisposeAsync();
+        // The race: external dispose while CaptureAsync's finally is running.
+        // DisposeAsync reaches StopProducerAsync before its first await, so it
+        // is already queued behind the finally when the gate opens. Without the
+        // single-flight guard in StopProducerAsync, one of the two paths NREs on
+        // whichever nullable field the other path just nulled. With the fix,
+        // both return cleanly.
+        var dispose = session.DisposeAsync().AsTask();
+        stopGate.SetResult();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(5));
 
         // The capture task must also complete cleanly (caught its own
         // expected device-lost exception). A failure here would surface

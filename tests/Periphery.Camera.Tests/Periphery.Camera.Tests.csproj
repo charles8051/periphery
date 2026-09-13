@@ -6,14 +6,6 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!--
-      Opted out of the wall-clock ratchet in tests/Directory.Build.targets (ADR-0089).
-      Temporary, tracked in #244; comes off when the last violation is gone.
-      Pump loops advance a FakeTimeProvider and then Task.Delay(10) for the session to
-      react, and several tests poll on DateTime.UtcNow deadlines (#125). CameraDeviceProxy
-      inherits DeviceProxyBase's real-time recovery loop.
-    -->
-    <PeripheryBanWallClockInTests>false</PeripheryBanWallClockInTests>
     <!-- The device tests issue raw V4L2 ioctls as an INDEPENDENT ORACLE: they read the
          kernel's own control values through V4l2Interop rather than through the mapping
          under test, so a self-consistent but wrong mapping cannot satisfy them (#274).

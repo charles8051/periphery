@@ -1,4 +1,6 @@
+using System.Diagnostics.Metrics;
 using Periphery.Camera.Testing;
+using Periphery.Testing;
 
 namespace Periphery.Camera.Tests.Fakes;
 
@@ -74,4 +76,53 @@ internal static class TestHelpers
             device,
             options,
             timeProvider);
+
+    /// <summary>Bounds a wait so a session that never gets there fails instead of hanging (ADR-0089 D5).</summary>
+    internal static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Completes once the session has armed a timer due <paramref name="due"/> after arming on
+    /// <paramref name="time"/>, counting only timers armed after the first
+    /// <paramref name="armedBefore"/>. The session's waits have distinct lengths (a 5 s frame
+    /// timeout; 2 s stop and producer-exit budgets; a 3 s backend-dispose budget), so the length
+    /// says which wait it has reached.
+    /// </summary>
+    internal static async Task TimerArmedAsync(
+        TimerSignalingFakeTimeProvider time, TimeSpan due, int armedBefore = 0)
+    {
+        // Every timer is recorded before it is signalled, so re-reading the record after each
+        // signal cannot miss one.
+        while (!time.ArmedDueTimes.Skip(armedBefore).Contains(due))
+            await time.NextTimerArmedAsync().AsTask().WaitAsync(Patience);
+    }
+
+    /// <summary>
+    /// Listens to one <c>Periphery.Camera</c> instrument and completes the returned task on its
+    /// first measurement. The session updates its own metrics before it records to the
+    /// instrument, so the task completing means the matching <c>session.Metrics</c> value has
+    /// already moved.
+    /// </summary>
+    /// <remarks>
+    /// The listener sees every session in this test process. Use it only for an instrument no
+    /// concurrently running test can move: the stall instruments move only under
+    /// <see cref="BufferExhaustionPolicy.StallProducer"/>, which only tests in the serial
+    /// <c>Camera</c> collection use.
+    /// </remarks>
+    internal static MeterListener FirstMeasurement<T>(string instrumentName, out Task<T> firstTask)
+        where T : struct
+    {
+        var first = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        firstTask = first.Task;
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == "Periphery.Camera" && instrument.Name == instrumentName)
+                    l.EnableMeasurementEvents(instrument);
+            },
+        };
+        listener.SetMeasurementEventCallback<T>((_, value, _, _) => first.TrySetResult(value));
+        listener.Start();
+        return listener;
+    }
 }
