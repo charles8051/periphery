@@ -137,15 +137,13 @@ public class LinuxHidIntegrationTests
         await using var hid = await HidDevice.OpenAsync(info);
 
         // No command sent — the device is silent, so the read blocks in
-        // poll(2) until the eventfd wake. Cancel after 250 ms and require
-        // prompt observation (well under the 5 s failure budget).
+        // poll(2) until the eventfd wake. Cancel after 250 ms.
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => hid.ReadReportAsync(cts.Token));
-        sw.Stop();
 
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
-            $"cancellation took {sw.Elapsed} — the poll wake-up path is broken");
+        // A broken wake path leaves poll(2) blocked for good, so the bound turns that hang into
+        // a failure: a TimeoutException is not an OperationCanceledException. It only bounds a
+        // failure (ADR-0089 D5), so it is not a measure of how prompt the wake was.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => hid.ReadReportAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(5)));
     }
 }
