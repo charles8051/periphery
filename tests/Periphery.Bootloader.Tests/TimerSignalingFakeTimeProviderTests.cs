@@ -32,6 +32,34 @@ public class TimerSignalingFakeTimeProviderTests
         Assert.Equal(start + TimeSpan.FromMilliseconds(750), firedAt);
     }
 
+    /// <summary>
+    /// A timer due now is not pending, because FakeTimeProvider fires it inside CreateTimer. The
+    /// helper relies on that, and this test fails if a FakeTimeProvider version stops doing it.
+    /// </summary>
+    [Fact]
+    public async Task AZeroDueTimer_FiresAsItIsArmed_SoTheRunIsNotLeftWaitingOnIt()
+    {
+        var time = new TimerSignalingFakeTimeProvider();
+        var fired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await time.RunAdvancingAsync(
+            async () =>
+            {
+                using var timer = time.CreateTimer(
+                    _ => fired.TrySetResult(),
+                    null,
+                    TimeSpan.Zero,
+                    Timeout.InfiniteTimeSpan
+                );
+                await fired.Task;
+            },
+            bound: TimeSpan.FromSeconds(5)
+        );
+
+        using var deadline = new CancellationTokenSource(TimeSpan.Zero, time);
+        Assert.True(deadline.IsCancellationRequested);
+    }
+
     [Fact]
     public async Task TwoTimersPendingAtOnce_Throws_RatherThanChoosingAnOrder()
     {
