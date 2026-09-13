@@ -650,8 +650,18 @@ public sealed class TreehopperControlService : IAsyncDisposable
         }
 
         await CloseSessionAsync().ConfigureAwait(false);
-        _gate.Dispose();
-        _cts.Dispose();
+
+        // Deliberately NOT disposing _gate or _cts, for the reason DeviceProxyBase.DisposeAsync gives.
+        //
+        // Gated work can still be running here: a hotplug handler queued before the watcher was
+        // unsubscribed, or an operation that has not yet observed the cancellation above. When it
+        // finishes, RunExclusiveAsync releases _gate, and a queued handler reads _cts.Token.
+        // Disposing either underneath it turns an ordinary teardown into an
+        // ObjectDisposedException inside a task nobody awaits.
+        //
+        // Neither dispose buys anything. SemaphoreSlim.Dispose is only needed once
+        // AvailableWaitHandle has been touched, which nothing here does, and _cts is already
+        // cancelled and has no timer.
     }
 
     private sealed class Session(DeviceId id, TreehopperBoard board, CancellationTokenSource cts)

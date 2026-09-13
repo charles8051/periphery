@@ -55,6 +55,22 @@ public class AppReducerTests
         Assert.Equal(PinMode.PushPullOutput, b.Pins[3].Mode); // pin state preserved
     }
 
+    /// <summary>
+    /// The hotplug handlers run behind a gate that is not FIFO, so an activation's version read
+    /// can land before the presence edge's announcement, which carries no version. The later
+    /// announcement must not erase the version the earlier read established.
+    /// </summary>
+    [Fact]
+    public void BoardDiscovered_AfterTheVersionWasRead_KeepsTheVersion()
+    {
+        var s = With(
+            new AppEvent.BoardDiscovered(Id("A")),
+            new AppEvent.BoardVersionRead("A", 274),
+            new AppEvent.BoardDiscovered(Id("A", version: null)));
+
+        Assert.Equal(274, s.Find("A")!.Version);
+    }
+
     // ── Removal ──────────────────────────────────────────────────────────
 
     [Fact]
