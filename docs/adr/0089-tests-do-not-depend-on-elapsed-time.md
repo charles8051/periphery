@@ -147,9 +147,13 @@ duration bounds a failure or is the assertion:
 
 > Would the test still be correct if this timeout were ten times longer?
 
-If yes, it stays. If no, it is a sleep with different spelling and falls under D2 to D4. The common
-case is proving a negative through a timeout, such as expecting `TimeoutException` from
-`task.WaitAsync(100 ms)`.
+If yes, it stays. If no, it is a sleep with different spelling and falls under D2 to D4.
+
+Proving a negative through a timeout is not allowed. `Assert.ThrowsAsync<TimeoutException>(() =>
+task.WaitAsync(100 ms))` is `Task.Delay(100)` followed by `Assert.False(task.IsCompleted)`. Against a
+regression that wrongly completes the task at 150 ms, it passes at 100 ms and fails at 1000 ms. Wait for
+the worker to park and assert `task.IsCompleted` is false synchronously (D2), or advance a
+`FakeTimeProvider` to just short of the deadline and assert the same.
 
 `LinuxUsbIntegrationTests` has one of each. `QemuHid_InterruptRead_CancelsPromptly` times a cancelled
 read with a `Stopwatch` and asserts under 5 s. A broken wake-up path never returns, so `WaitAsync(5 s)`
