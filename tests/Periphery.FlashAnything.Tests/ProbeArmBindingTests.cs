@@ -37,11 +37,8 @@ public class ProbeArmBindingTests
         return path;
     }
 
-    private static async Task WaitUntil(FlashAnythingService svc, Func<AppState, bool> until)
-    {
-        for (int i = 0; i < 200 && !until(svc.State); i++) await Task.Delay(10);
-        Assert.True(until(svc.State), "condition not reached");
-    }
+    private static Task WaitUntil(FlashAnythingService svc, Func<AppState, bool> until) =>
+        ServiceWait.UntilAsync(svc, until);
 
     [Fact]
     public async Task Discovery_attaches_the_bridge_a_probe_target_sits_behind()

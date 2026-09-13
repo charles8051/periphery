@@ -78,7 +78,10 @@ public class AutoflashServiceTests
     {
         var monitor = new FakeMonitor();
         var opens = new ConcurrentQueue<string>();
-        await using var svc = new FlashAnythingService(Registry(onOpen: opens.Enqueue), FakeDevices.Watcher(monitor));
+        // One worker, so the queue is drained strictly in order and a later entry is a barrier for
+        // an earlier one.
+        await using var svc = new FlashAnythingService(
+            Registry(onOpen: opens.Enqueue), FakeDevices.Watcher(monitor), maxFlashConcurrency: 1);
         await svc.RefreshAsync();
         var fw = await TempBinAsync();
         try
@@ -87,15 +90,19 @@ public class AutoflashServiceTests
             await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
 
             monitor.Appear(FakeDevices.Usb("dfu"));
-            await WaitUntil(svc, s => s.Find("dfu") is not null);
-            await Task.Delay(200);
-            Assert.Empty(opens);
-            Assert.Equal(0, svc.State.AutoflashTally.Total);
+            Assert.NotNull(svc.State.Find("dfu"));   // detection is synchronous
+
+            // Anything the presence tick queued is ahead of this board, so the worker reaches it
+            // first. When the barrier's flash is the first outcome, nothing was queued for dfu.
+            monitor.Plug(FakeDevices.Usb("barrier"));
+            await WaitUntil(svc, s => s.AutoflashTally.Total >= 1);
+            Assert.Equal(new[] { "barrier" }, opens.ToArray());
+            Assert.Equal(1, svc.State.AutoflashTally.Total);
 
             monitor.Activate(FakeDevices.Usb("dfu"));
-            await WaitUntil(svc, s => s.AutoflashTally.Total >= 1);
+            await WaitUntil(svc, s => s.AutoflashTally.Total >= 2);
 
-            Assert.Equal(new[] { "dfu" }, opens.ToArray());
+            Assert.Equal(new[] { "barrier", "dfu" }, opens.ToArray());
             Assert.Equal(FlashStage.Flashed, svc.State.Find("dfu")!.Stage);
         }
         finally { File.Delete(fw); }
@@ -110,20 +117,25 @@ public class AutoflashServiceTests
     {
         var monitor = new FakeMonitor();
         var opens = new ConcurrentQueue<string>();
-        await using var svc = new FlashAnythingService(Registry(onOpen: opens.Enqueue), FakeDevices.Watcher(monitor, FakeDevices.Usb("dfu")));
+        // One worker, so a board queued after the arm is a barrier for anything the arm queued.
+        await using var svc = new FlashAnythingService(
+            Registry(onOpen: opens.Enqueue), FakeDevices.Watcher(monitor, FakeDevices.Usb("dfu")), maxFlashConcurrency: 1);
         await svc.RefreshAsync();
         var fw = await TempBinAsync();
         try
         {
             await svc.LoadFirmwareAsync(fw);
             await svc.DispatchAsync(new AppIntent.ArmAutoflash(Family, FlashOptions.Default));
-            await Task.Delay(200);
-            Assert.Empty(opens);
+
+            monitor.Plug(FakeDevices.Usb("barrier"));
+            await WaitUntil(svc, s => s.AutoflashTally.Total >= 1);
+            Assert.Equal(new[] { "barrier" }, opens.ToArray());
+            Assert.Equal(1, svc.State.AutoflashTally.Total);
 
             monitor.Activate(FakeDevices.Usb("dfu"));
-            await WaitUntil(svc, s => s.AutoflashTally.Total >= 1);
+            await WaitUntil(svc, s => s.AutoflashTally.Total >= 2);
 
-            Assert.Equal(new[] { "dfu" }, opens.ToArray());
+            Assert.Equal(new[] { "barrier", "dfu" }, opens.ToArray());
         }
         finally { File.Delete(fw); }
     }
@@ -170,10 +182,10 @@ public class AutoflashServiceTests
             monitor.Deactivate(FakeDevices.Usb("b"));              // B's driver stops, B stays present
 
             releaseA.TrySetResult();                               // A finishes; worker turns to B and skips it
-            await WaitUntil(svc, s => s.Find("a")!.Stage == FlashStage.Flashed);
-            await Task.Delay(200);
+            await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 1 && s.AutoflashTally.Skipped >= 1);
 
             Assert.Equal(new[] { "a" }, opens.ToArray());          // B was never opened
+            Assert.Contains("went inactive", Assert.Single(svc.State.AutoflashTally.Audit, line => line.StartsWith("skipped")));
             Assert.NotEqual(FlashStage.Flashed, svc.State.Find("b")!.Stage);
         }
         finally { releaseA.TrySetResult(); File.Delete(fw); }
@@ -274,8 +286,8 @@ public class AutoflashServiceTests
             Assert.Null(svc.State.Autoflash);
             Assert.Contains("without naming a port", svc.State.FirmwareError);
 
+            // Detection is synchronous, and with nothing armed it cannot queue anything.
             monitor.Plug(FakeDevices.Usb("serial"));
-            await Task.Delay(50);
 
             Assert.Equal(0, svc.State.AutoflashTally.Flashed);
         }

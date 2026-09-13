@@ -129,8 +129,8 @@ public sealed class FlashAnythingService : IAsyncDisposable
     /// <summary>Interval once a row has stalled — a fixture that has been sitting empty.</summary>
     internal TimeSpan StalledProbeCadence { get; init; } = TimeSpan.FromSeconds(10);
 
-    /// <summary>How the probe loops wait. Injected so tests drive the cadence without sleeping.</summary>
-    internal Func<TimeSpan, CancellationToken, Task> ProbeDelay { get; init; } = (d, ct) => Task.Delay(d, ct);
+    /// <summary>The clock the probe loops wait on between cycles. Tests pass a fake they advance (ADR-0089).</summary>
+    internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
     private readonly Task[] _autoflashWorkers;
 
     private FirmwarePayload? _payload;  // the parsed firmware payload, loaded once and flashed many; guarded by _gate
@@ -914,7 +914,7 @@ public sealed class FlashAnythingService : IAsyncDisposable
             var loop = new SerialProbeLoop(
                 bridge, ResolveBoundBridge, provider,
                 action => OnProbeAction(bridge, generation, action),
-                ProbeDelay, ProbeCadence, StalledProbeCadence)
+                (delay, token) => Task.Delay(delay, TimeProvider, token), ProbeCadence, StalledProbeCadence)
             {
                 Gate = gate,
             };

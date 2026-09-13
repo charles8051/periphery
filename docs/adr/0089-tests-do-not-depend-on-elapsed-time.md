@@ -1,7 +1,7 @@
 ---
 title: "ADR-0089: Tests do not depend on elapsed time"
 status: "Accepted"
-status_note: "The ban ships with the 11 test projects that had violations opted out. Taking them off is tracked in #244."
+status_note: "The ban shipped with the 11 test projects that had violations opted out. All 11 have since come off (#244); no project is opted out."
 date: "2026-09-13"
 authors: "@charles8051"
 tags: ["testing", "decision", "time", "ci", "standards", "adr-0052"]
@@ -21,6 +21,8 @@ depends_on: ["0052-periphery-treehopper-pure-core.md", "0057-linux-extension-bac
 
 **Accepted.** The ban is on for every test project. The 11 projects that had violations when it landed
 are opted out and come off one at a time (#244).
+
+*Updated 2026-09-13.* All 11 are off. No test project is opted out.
 
 The rule set is the one frame-flow adopted in its
 [ADR-0072](https://github.com/charles8051/frame-flow/blob/main/docs/adr/ADR-0072-tests-do-not-depend-on-elapsed-time.md),
@@ -123,7 +125,8 @@ inline: pipes built with `PipeScheduler.Inline`, run on a thread with no `Synchr
 where .NET does inline an awaiting continuation. A call into the code then returns only once
 everything it started is waiting or done. The STM32 serial sync tests work this way. So does the held
 reset-safety gate in `DeviceProxyBaseTests`, whose verdict is a `TaskCompletionSource` completed from
-`Task.Run`.
+`Task.Run`, and `FlashAnything`'s probe-and-flash exclusion test, which advances the probe loop's clock
+from `Task.Run` so the loop runs until it reaches the port or the gate in front of it.
 
 This reaches production. A conversion that finds a component waiting on the machine's clock gives it a
 `TimeProvider` in the same unit of work. For `DeviceProxyBase` that replaces the timing mechanism
@@ -159,6 +162,14 @@ fire does not pass by default.
 When behaviour follows from a choice the code makes, assert the choice. `ReadinessPollTests` times a
 real give-up with a `Stopwatch`; with a `FakeTimeProvider` the test advances past the budget and asserts
 the result.
+
+*Added 2026-09-13.* Some negatives have no happens-before that a test can reach. "A second flash worker
+did not start" has none: a worker waiting on a gate or never created reports nothing, so a test could
+only hold the first flash and hope a second would have joined by then. When the choice is state the
+component keeps privately, and nothing public reports it, a test may read that state by reflection
+instead of provoking the race. `FlashAnythingService`'s worker count, per-family serialization gate and
+probe-loop count are read this way (`ServiceInternals`). A renamed member then fails the test by name.
+Prefer a public signal where one exists, and an extracted pure decision where the rule deserves one.
 
 ### D4: Health gates assert counts and conservation
 

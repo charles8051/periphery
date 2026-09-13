@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+using Periphery.Testing;
 
 namespace Periphery.FlashAnything.Tests;
 
@@ -6,6 +6,11 @@ namespace Periphery.FlashAnything.Tests;
 /// The fixture loop (adr.md Decision 10): one flash per bound bridge per armed session by default,
 /// with a succession of boards opt-in behind <c>--repeat</c>.
 /// </summary>
+/// <remarks>
+/// The probe loop runs on a fake clock and is stepped one cycle at a time, so "the board leaves" is
+/// exactly <see cref="ProbeRowPolicy.SilencesBeforeRemoved"/> silent cycles rather than a guess at how
+/// many a real cadence fits into a delay.
+/// </remarks>
 public class ProbeRepeatTests
 {
     private const string Family = "STM32 UART (AN3155)";
@@ -25,52 +30,18 @@ public class ProbeRepeatTests
     private sealed class SwitchableProvider : IBootloaderProvider
     {
         public volatile bool Answers;
-        public int ConcurrentFlashes;
-        public int MaxConcurrentFlashes;
         public string Name => Family;
         public IdentificationMode Identification => IdentificationMode.Probe;
         public bool CanHandle(DeviceInfo device) => device.PortName is not null;
 
         public Task<IFirmwareProgrammer> OpenAsync(DeviceInfo device, CancellationToken ct = default) =>
             Answers
-                ? Task.FromResult<IFirmwareProgrammer>(new CountingProgrammer(device, this))
+                ? Task.FromResult<IFirmwareProgrammer>(new FakeFirmwareProgrammer(device))
                 : throw new BootloaderException("nothing answered the sync byte");
     }
 
-    /// <summary>Records overlapping flashes, so a double-enqueue cannot pass unnoticed.</summary>
-    private sealed class CountingProgrammer(DeviceInfo device, SwitchableProvider owner) : IFirmwareProgrammer
-    {
-        public DeviceInfo Device { get; } = device;
-        public ImmutableArray<FirmwareFormat> AcceptedFormats { get; } =
-            ImmutableArray.Create(FirmwareFormat.IntelHex, FirmwareFormat.RawBinary, FirmwareFormat.Elf);
-
-        public Task<DeviceIdentity> IdentifyAsync(CancellationToken ct = default) =>
-            Task.FromResult(DeviceIdentity.Unknown("STM32"));
-
-        public async Task<FlashResult> FlashAsync(
-            FirmwarePayload payload, FlashOptions options, IProgress<FlashProgress>? progress = null,
-            CancellationToken ct = default)
-        {
-            int now = Interlocked.Increment(ref owner.ConcurrentFlashes);
-            int seen = Volatile.Read(ref owner.MaxConcurrentFlashes);
-            while (now > seen)
-            {
-                int prior = Interlocked.CompareExchange(ref owner.MaxConcurrentFlashes, now, seen);
-                if (prior == seen) break;
-                seen = prior;
-            }
-
-            try
-            {
-                await Task.Delay(20, ct);
-                return FlashResult.Ok(payload.ByteLength, verified: true);
-            }
-            finally { Interlocked.Decrement(ref owner.ConcurrentFlashes); }
-        }
-
-        public Task LeaveAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
+    private sealed record Rig(
+        FlashAnythingService Svc, SwitchableProvider Provider, FakeMonitor Monitor, ProbeStepper Probes);
 
     private static async Task<string> TempBinAsync()
     {
@@ -79,37 +50,43 @@ public class ProbeRepeatTests
         return path;
     }
 
-    private static async Task WaitUntil(Func<bool> until, string what)
-    {
-        for (int i = 0; i < 500 && !until(); i++) await Task.Delay(10);
-        Assert.True(until(), what);
-    }
-
-    private static (FlashAnythingService Svc, SwitchableProvider Provider, FakeMonitor Monitor) Build()
+    private static Rig Build()
     {
         var provider = new SwitchableProvider();
         var registry = new BootloaderRegistry();
         registry.Register(provider);
         var monitor = new FakeMonitor();
-        var svc = new FlashAnythingService(registry, FakeDevices.Watcher(monitor))
-        {
-            ProbeCadence = TimeSpan.FromMilliseconds(1),
-            StalledProbeCadence = TimeSpan.FromMilliseconds(1),
-        };
-        return (svc, provider, monitor);
+        var time = new TimerSignalingFakeTimeProvider();
+        var svc = new FlashAnythingService(registry, FakeDevices.Watcher(monitor)) { TimeProvider = time };
+        return new Rig(svc, provider, monitor, new ProbeStepper(time));
     }
 
-    private static async Task<FlashAnythingService> ArmedAsync(
-        (FlashAnythingService Svc, SwitchableProvider Provider, FakeMonitor Monitor) rig,
-        string firmware, RepeatMode repeat)
+    // Arms on COM7 and waits for the loop's first probe, which finds nothing.
+    private static async Task ArmedAsync(Rig rig, string firmware, RepeatMode repeat)
     {
         await rig.Svc.RefreshAsync();
         rig.Monitor.Plug(Bridge());
-        await WaitUntil(() => rig.Svc.State.Targets.Length == 1, "bridge surfaced");
+        await ServiceWait.UntilAsync(rig.Svc, s => s.Targets.Length == 1);
         await rig.Svc.LoadFirmwareAsync(firmware);
         await rig.Svc.DispatchAsync(new AppIntent.ArmAutoflash(
             Family, FlashOptions.Default, [new SerialPortName("COM7")], repeat));
-        return rig.Svc;
+        await rig.Probes.ParkedAsync();
+    }
+
+    // A board arrives and is flashed.
+    private static async Task FlashFirstBoardAsync(Rig rig)
+    {
+        rig.Provider.Answers = true;
+        await rig.Probes.StepAsync();
+        await ServiceWait.UntilAsync(rig.Svc, s => s.AutoflashTally.Flashed >= 1);
+    }
+
+    // The board leaves: the loop stays silent until the row is retracted.
+    private static async Task BoardLeavesAsync(Rig rig)
+    {
+        rig.Provider.Answers = false;
+        await rig.Probes.StepAsync(ProbeRowPolicy.SilencesBeforeRemoved);
+        Assert.Empty(rig.Svc.State.Targets);
     }
 
     [Fact]
@@ -123,16 +100,15 @@ public class ProbeRepeatTests
         try
         {
             await ArmedAsync(rig, fw, RepeatMode.None);
+            await FlashFirstBoardAsync(rig);
+            await BoardLeavesAsync(rig);
 
+            // Another board arrives. The cycle that detects it also decides whether to flash it,
+            // before it waits for the next cycle.
             rig.Provider.Answers = true;
-            await WaitUntil(() => svc.State.AutoflashTally.Flashed >= 1, "first board flashed");
+            await rig.Probes.StepAsync();
 
-            // The board leaves and another arrives.
-            rig.Provider.Answers = false;
-            await Task.Delay(60);
-            rig.Provider.Answers = true;
-            await Task.Delay(120);
-
+            Assert.Equal(1, svc.State.AutoflashTally.Skipped);
             Assert.Equal(1, svc.State.AutoflashTally.Flashed);
         }
         finally { File.Delete(fw); }
@@ -147,15 +123,14 @@ public class ProbeRepeatTests
         try
         {
             await ArmedAsync(rig, fw, RepeatMode.Silence);
+            await FlashFirstBoardAsync(rig);
+            await BoardLeavesAsync(rig);
 
             rig.Provider.Answers = true;
-            await WaitUntil(() => svc.State.AutoflashTally.Flashed >= 1, "first board flashed");
+            await rig.Probes.StepAsync();
+            Assert.Equal(0, svc.State.AutoflashTally.Skipped);   // queued, not refused
 
-            rig.Provider.Answers = false;
-            await Task.Delay(80);            // long enough to retract the row
-            rig.Provider.Answers = true;
-
-            await WaitUntil(() => svc.State.AutoflashTally.Flashed >= 2, "second board flashed");
+            await ServiceWait.UntilAsync(svc, s => s.AutoflashTally.Flashed >= 2);
         }
         finally { File.Delete(fw); }
     }
@@ -171,11 +146,15 @@ public class ProbeRepeatTests
         try
         {
             await ArmedAsync(rig, fw, RepeatMode.Silence);
+            await FlashFirstBoardAsync(rig);
 
-            rig.Provider.Answers = true;
-            await WaitUntil(() => svc.State.AutoflashTally.Flashed >= 1, "board flashed");
-            await Task.Delay(150);
+            // Every way to a second flash starts with the service reporting something. Each cycle
+            // reports before it waits, so over these cycles it reported nothing at all.
+            int reported = 0;
+            svc.StateChanged += _ => Interlocked.Increment(ref reported);
+            await rig.Probes.StepAsync(ProbeRowPolicy.SilencesBeforeRemoved + 2);
 
+            Assert.Equal(0, Volatile.Read(ref reported));
             Assert.Equal(1, svc.State.AutoflashTally.Flashed);
         }
         finally { File.Delete(fw); }
@@ -207,42 +186,6 @@ public class ProbeRepeatTests
         {
             await ArmedAsync(rig, fw, RepeatMode.None);
             Assert.True(svc.State.AutoflashTally.CountsDistinctBoards);
-        }
-        finally { File.Delete(fw); }
-    }
-
-    [Fact]
-    public async Task Repeat_never_leaves_two_flashes_outstanding_on_one_fixture()
-    {
-        // A successful flash causes the silence that retracts the row: LeaveAfterFlash jumps the
-        // part and it stops answering. So a Removed routinely arrives while that flash is still
-        // running, and reopening then would let the next Detected enqueue the same row again — a
-        // second outstanding flash on a fixture that reports one DeviceId for every board.
-        var rig = Build();
-        await using var svc = rig.Svc;
-        string fw = await TempBinAsync();
-        try
-        {
-            await ArmedAsync(rig, fw, RepeatMode.Silence);
-
-            // Get one flash on the board first, so the assertion below cannot pass by nothing
-            // having happened — that made it flaky, because the flapping alone does not guarantee
-            // a flash starts.
-            rig.Provider.Answers = true;
-            await WaitUntil(() => Volatile.Read(ref rig.Provider.MaxConcurrentFlashes) >= 1, "a flash started");
-
-            // Then flap the fixture hard: every answer can start another, every silence can retract.
-            for (int i = 0; i < 40; i++)
-            {
-                rig.Provider.Answers = i % 2 == 0;
-                await Task.Delay(5);
-            }
-            rig.Provider.Answers = false;
-            await Task.Delay(100);
-
-            // The invariant: however many flashes the flapping produced, no two ever overlapped on
-            // this fixture. Counting audit lines would prove nothing — that is a tautology.
-            Assert.Equal(1, Volatile.Read(ref rig.Provider.MaxConcurrentFlashes));
         }
         finally { File.Delete(fw); }
     }
