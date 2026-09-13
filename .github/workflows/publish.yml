@@ -157,9 +157,12 @@ jobs:
             echo "::warning::${tag} is a lightweight tag and carries no message; Release body left empty."
             body=""
           else
-            # %(contents:body) skips the subject line, which is the version again.
+            # A subject that is only the tag name repeats the Release title, so it
+            # is dropped. Any other subject is part of the notes and is kept.
             # Drop a PGP trailer if the tag is signed.
-            body="$(git tag -l --format='%(contents:body)' "$tag" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
+            subject="$(git tag -l --format='%(contents:subject)' "$tag")"
+            if [ "$subject" = "$tag" ]; then part='contents:body'; else part='contents'; fi
+            body="$(git tag -l --format="%(${part})" "$tag" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
           fi
           # A fixed delimiter would end the value early at a matching line in the
           # message, so each run draws one the message cannot contain.

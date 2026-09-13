@@ -21,8 +21,8 @@ git tag -a v3.2.0 -F release-notes.txt
 git push && git push origin v3.2.0
 ```
 
-The tag message's first line is the version. Everything after it becomes the body of
-the GitHub Release, so write it for someone deciding whether to upgrade: what the
+The tag message becomes the body of the GitHub Release, less its first line when that
+line is only the tag name. Write it for someone deciding whether to upgrade: what the
 release is for, the breaking changes, and the fixes. `git show v4.2.0-alpha.1` is an
 example. A lightweight tag, or `-m` with only the version, publishes a Release with an
 empty body.
