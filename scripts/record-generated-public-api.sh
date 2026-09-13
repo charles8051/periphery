@@ -44,14 +44,15 @@ for t in $TFMS; do
   done
   cp "$P/PublicAPI/$t/PublicAPI.Unshipped.txt" "$W/tfm-$t"
 done
-for c in "${CTX[@]}"; do cp "$c" "$W/$(basename "$c").orig"; done
+# Indexed, not by basename: two contexts may share a file name.
+for i in "${!CTX[@]}"; do cp "${CTX[$i]}" "$W/ctx-$i.orig"; done
 
 restore() {
   rm -rf "$P/_pa_gen"
   cp "$W/csproj" "$P/$N.csproj"
   cp "$W/shared" "$P/PublicAPI.Unshipped.txt"
   for t in $TFMS; do cp "$W/tfm-$t" "$P/PublicAPI/$t/PublicAPI.Unshipped.txt"; done
-  for c in "${CTX[@]}"; do cp "$W/$(basename "$c").orig" "$c"; done
+  for i in "${!CTX[@]}"; do cp "$W/ctx-$i.orig" "${CTX[$i]}"; done
 }
 trap 'restore; rm -rf "$W"' EXIT
 
@@ -85,7 +86,11 @@ for t in $TFMS; do
   sed -i -E "s#<TargetFrameworks>[^<]+</TargetFrameworks>#<TargetFrameworks>$t</TargetFrameworks>#" "$P/$N.csproj"
   cp "$W/shared" "$P/PublicAPI.Unshipped.txt"
   cp "$W/tfm-$t" "$P/PublicAPI/$t/PublicAPI.Unshipped.txt"
-  dotnet format analyzers "$P/$N.csproj" --diagnostics RS0016 -v q > "$W/format-$t.log" 2>&1 || true
+  if ! dotnet format analyzers "$P/$N.csproj" --diagnostics RS0016 -v q > "$W/format-$t.log" 2>&1; then
+    echo "dotnet format failed on $t:" >&2
+    tail -20 "$W/format-$t.log" >&2
+    exit 1
+  fi
   # The analyzer sees two Unshipped files and may write to either.
   { grep -vxFf "$W/shared" "$P/PublicAPI.Unshipped.txt" || true
     grep -vxFf "$W/tfm-$t" "$P/PublicAPI/$t/PublicAPI.Unshipped.txt" || true; } | sort -u > "$W/new-$t"
@@ -105,3 +110,13 @@ for t in $TFMS; do
 done
 trap 'rm -rf "$W"' EXIT
 echo "$N: $(wc -l < "$W/common") line(s) shared by both frameworks"
+
+# A format run can exit 0 and record nothing, so the result is checked by the
+# analyzer itself: a build with tracking on must report no RS0016 or RS0017.
+if ! dotnet build "$P/$N.csproj" -c Release -p:PeripheryLocalFeedDisable=true -nologo -v q > "$W/verify.log" 2>&1 ||
+  grep -qE 'error RS00(16|17)' "$W/verify.log"; then
+  echo "The API files were written, but the verification build still fails:" >&2
+  grep -E ' error ' "$W/verify.log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -20 >&2
+  exit 1
+fi
+echo "$N: verified, no unrecorded public API"
