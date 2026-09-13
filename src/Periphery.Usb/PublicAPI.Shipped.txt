@@ -1,0 +1,100 @@
+#nullable enable
+Periphery.Usb.UsbAccessDeniedException
+Periphery.Usb.UsbAccessDeniedException.UsbAccessDeniedException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Usb.UsbConfigurationDescriptor
+Periphery.Usb.UsbConfigurationDescriptor.ConfigurationValue.get -> byte
+Periphery.Usb.UsbConfigurationDescriptor.ConfigurationValue.init -> void
+Periphery.Usb.UsbConfigurationDescriptor.Interfaces.get -> System.Collections.Immutable.ImmutableArray<Periphery.Usb.UsbInterfaceDescriptor!>
+Periphery.Usb.UsbConfigurationDescriptor.Interfaces.init -> void
+Periphery.Usb.UsbConfigurationDescriptor.MaxPowerMilliamps.get -> int
+Periphery.Usb.UsbConfigurationDescriptor.MaxPowerMilliamps.init -> void
+Periphery.Usb.UsbControlSetup
+Periphery.Usb.UsbControlSetup.Direction.get -> Periphery.Usb.UsbTransferDirection
+Periphery.Usb.UsbControlSetup.Index.get -> ushort
+Periphery.Usb.UsbControlSetup.Index.init -> void
+Periphery.Usb.UsbControlSetup.Request.get -> byte
+Periphery.Usb.UsbControlSetup.Request.init -> void
+Periphery.Usb.UsbControlSetup.RequestType.get -> byte
+Periphery.Usb.UsbControlSetup.RequestType.init -> void
+Periphery.Usb.UsbControlSetup.UsbControlSetup() -> void
+Periphery.Usb.UsbControlSetup.Value.get -> ushort
+Periphery.Usb.UsbControlSetup.Value.init -> void
+Periphery.Usb.UsbDevice
+Periphery.Usb.UsbDevice.BulkReadAsync(byte endpointAddress, int count, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Usb.UsbDevice.BulkWriteAsync(byte endpointAddress, System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), System.Action? onIssued = null) -> System.Threading.Tasks.Task<int>!
+Periphery.Usb.UsbDevice.ClaimInterface(byte interfaceNumber) -> void
+Periphery.Usb.UsbDevice.Configuration.get -> Periphery.Usb.UsbConfigurationDescriptor!
+Periphery.Usb.UsbDevice.ControlTransferAsync(Periphery.Usb.UsbControlSetup setup, System.Memory<byte> buffer, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Periphery.Usb.UsbDevice.Descriptor.get -> Periphery.Usb.UsbDeviceDescriptor!
+Periphery.Usb.UsbDevice.DeviceInfo.get -> Periphery.DeviceInfo!
+Periphery.Usb.UsbDevice.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Usb.UsbDevice.ReadBulkStreamAsync(byte endpointAddress, int packetSize, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<System.ReadOnlyMemory<byte>>!
+Periphery.Usb.UsbDevice.ReleaseInterface(byte interfaceNumber) -> void
+Periphery.Usb.UsbDeviceDescriptor
+Periphery.Usb.UsbDeviceDescriptor.ConfigurationCount.get -> byte
+Periphery.Usb.UsbDeviceDescriptor.ConfigurationCount.init -> void
+Periphery.Usb.UsbDeviceDescriptor.DeviceClass.get -> byte
+Periphery.Usb.UsbDeviceDescriptor.DeviceClass.init -> void
+Periphery.Usb.UsbDeviceDescriptor.DeviceProtocol.get -> byte
+Periphery.Usb.UsbDeviceDescriptor.DeviceProtocol.init -> void
+Periphery.Usb.UsbDeviceDescriptor.DeviceSubClass.get -> byte
+Periphery.Usb.UsbDeviceDescriptor.DeviceSubClass.init -> void
+Periphery.Usb.UsbDeviceDescriptor.DeviceVersion.get -> ushort
+Periphery.Usb.UsbDeviceDescriptor.DeviceVersion.init -> void
+Periphery.Usb.UsbDeviceDescriptor.MaxPacketSize0.get -> byte
+Periphery.Usb.UsbDeviceDescriptor.MaxPacketSize0.init -> void
+Periphery.Usb.UsbDeviceDescriptor.ProductId.get -> Periphery.HardwareId
+Periphery.Usb.UsbDeviceDescriptor.ProductId.init -> void
+Periphery.Usb.UsbDeviceDescriptor.UsbVersion.get -> ushort
+Periphery.Usb.UsbDeviceDescriptor.UsbVersion.init -> void
+Periphery.Usb.UsbDeviceDescriptor.VendorId.get -> Periphery.HardwareId
+Periphery.Usb.UsbDeviceDescriptor.VendorId.init -> void
+Periphery.Usb.UsbDeviceNotFoundException
+Periphery.Usb.UsbDeviceNotFoundException.UsbDeviceNotFoundException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Usb.UsbDeviceProxy
+Periphery.Usb.UsbDeviceRemovedException
+Periphery.Usb.UsbDeviceRemovedException.UsbDeviceRemovedException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Usb.UsbEndpointDescriptor
+Periphery.Usb.UsbEndpointDescriptor.Direction.get -> Periphery.Usb.UsbTransferDirection
+Periphery.Usb.UsbEndpointDescriptor.EndpointAddress.get -> byte
+Periphery.Usb.UsbEndpointDescriptor.EndpointAddress.init -> void
+Periphery.Usb.UsbEndpointDescriptor.Interval.get -> byte
+Periphery.Usb.UsbEndpointDescriptor.Interval.init -> void
+Periphery.Usb.UsbEndpointDescriptor.MaxPacketSize.get -> int
+Periphery.Usb.UsbEndpointDescriptor.MaxPacketSize.init -> void
+Periphery.Usb.UsbEndpointDescriptor.TransferType.get -> Periphery.Usb.UsbTransferType
+Periphery.Usb.UsbEndpointDescriptor.TransferType.init -> void
+Periphery.Usb.UsbException
+Periphery.Usb.UsbException.DeviceId.get -> string?
+Periphery.Usb.UsbException.UsbException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Usb.UsbException.UsbException(string! message, string? deviceId = null) -> void
+Periphery.Usb.UsbInterfaceDescriptor
+Periphery.Usb.UsbInterfaceDescriptor.AlternateSetting.get -> byte
+Periphery.Usb.UsbInterfaceDescriptor.AlternateSetting.init -> void
+Periphery.Usb.UsbInterfaceDescriptor.Endpoints.get -> System.Collections.Immutable.ImmutableArray<Periphery.Usb.UsbEndpointDescriptor!>
+Periphery.Usb.UsbInterfaceDescriptor.Endpoints.init -> void
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceClass.get -> byte
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceClass.init -> void
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceNumber.get -> byte
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceNumber.init -> void
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceProtocol.get -> byte
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceProtocol.init -> void
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceSubClass.get -> byte
+Periphery.Usb.UsbInterfaceDescriptor.InterfaceSubClass.init -> void
+Periphery.Usb.UsbTimeoutException
+Periphery.Usb.UsbTimeoutException.Timeout.get -> System.TimeSpan
+Periphery.Usb.UsbTimeoutException.UsbTimeoutException(string! message, string? deviceId, System.TimeSpan timeout) -> void
+Periphery.Usb.UsbTransferDirection
+Periphery.Usb.UsbTransferDirection.DeviceToHost = 1 -> Periphery.Usb.UsbTransferDirection
+Periphery.Usb.UsbTransferDirection.HostToDevice = 0 -> Periphery.Usb.UsbTransferDirection
+Periphery.Usb.UsbTransferException
+Periphery.Usb.UsbTransferException.UsbTransferException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Usb.UsbTransferType
+Periphery.Usb.UsbTransferType.Bulk = 2 -> Periphery.Usb.UsbTransferType
+Periphery.Usb.UsbTransferType.Control = 0 -> Periphery.Usb.UsbTransferType
+Periphery.Usb.UsbTransferType.Interrupt = 3 -> Periphery.Usb.UsbTransferType
+Periphery.Usb.UsbTransferType.Isochronous = 1 -> Periphery.Usb.UsbTransferType
+static Periphery.Usb.UsbDevice.OpenAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Usb.UsbDevice!>!
+static Periphery.Usb.UsbDevice.OpenAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct, System.TimeSpan? transferTimeout, Microsoft.Extensions.Logging.ILogger<Periphery.Usb.UsbDevice!>? logger) -> System.Threading.Tasks.Task<Periphery.Usb.UsbDevice!>!
+static Periphery.Usb.UsbDeviceProxy.Create(Periphery.DeviceTracker! tracker, Periphery.IRecoveryPolicy? recoveryPolicy = null) -> Periphery.Usb.UsbDeviceProxy!
+static Periphery.Usb.UsbDeviceProxy.OpenAsync(Periphery.DeviceProfile! profile, Periphery.IRecoveryPolicy? recoveryPolicy = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Usb.UsbDeviceProxy!>!

@@ -55,6 +55,49 @@ dotnet csharpier format <the files you changed>
 CSharpier would rewrite most of it; a repo-wide pass is a deliberate change of its
 own. Format the files you touch and leave the rest alone.
 
+## Public API
+
+Every public type and member of a published library is recorded in
+`PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt` beside its project. A public
+symbol missing from both fails the build:
+
+```
+error RS0016: Symbol 'DefaultReadTick' is not part of the declared public API
+```
+
+Record it with the analyzer's code fix rather than typing the line, then read the
+diff:
+
+```bash
+dotnet format analyzers src/Periphery.Serial/Periphery.Serial.csproj --diagnostics RS0016
+```
+
+`Shipped` is the surface of the last release. Everything since goes in `Unshipped`,
+and a pull request never edits `Shipped`. Removing or changing a shipped symbol
+fails as `RS0017`, and the code fix does not handle that case. Copy the old line
+from `Shipped` into `Unshipped` with a `*REMOVED*` prefix:
+
+```
+*REMOVED*static readonly Periphery.Serial.BclSerialDuplexPipe.DefaultReadTick -> System.TimeSpan
+```
+
+A `*REMOVED*` line is a breaking change and needs a major version; see
+[PUBLISHING.md](PUBLISHING.md#version-scheme). A changed signature is a `*REMOVED*`
+line for the old form plus the RS0016 entry for the new one.
+
+Two cases the code fix cannot write:
+
+- **A `[JsonSerializable]` type added to a public `JsonSerializerContext`.** The
+  generated members are public surface, and the net8.0 and net10.0 generators
+  record them differently. Run `scripts/record-generated-public-api.sh` with the
+  project and the context file; it writes both frameworks' lines, some under
+  `PublicAPI/<tfm>/`.
+- **A release.** `scripts/ship-public-api.sh` moves `Unshipped` into `Shipped`; see
+  PUBLISHING.md.
+
+Executables, `PackAsTool` projects and projects with `IsPackable=false` are not
+tracked. The wiring and its reasons are in `src/Directory.Build.targets`.
+
 ## Architecture decisions
 
 Anything that changes a public contract, a platform behaviour, or a design
