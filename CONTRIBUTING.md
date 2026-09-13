@@ -42,6 +42,46 @@ Treehopper board, a Linux device rig — and are excluded from CI because hosted
 runners have none. You are not expected to run them, and a PR will not be judged
 on them.
 
+### Tests do not depend on elapsed time
+
+**A test that sleeps, delays, or reads the wall clock fails the build.** Every project
+under `tests/` runs a banned-API analyzer over `Thread.Sleep`, the `Task.Delay`
+overloads that take no `TimeProvider`, `DateTime.Now`/`UtcNow`, `Stopwatch`,
+`Environment.TickCount`, and timers constructed without a `TimeProvider`:
+
+```
+error RS0030: The symbol 'Task.Delay(int)' is banned in this project: A delay in a
+test guesses how long something takes. Await a signal from the code under test, or
+use Task.Delay(TimeSpan, TimeProvider) with a FakeTimeProvider. See ADR-0089.
+```
+
+Inject a `TimeProvider` and pass `FakeTimeProvider`, which every test project already
+references. [ADR-0089](docs/adr/0089-tests-do-not-depend-on-elapsed-time.md) has the
+reasoning. The analyzer cannot check these, so review does:
+
+1. **Wait on a signal, not a duration.** When the code under test works on another
+   task, await something it completes: a `TaskCompletionSource` in a fake, an event it
+   raises, or a no-op queued behind the action. Passing `TimeProvider.System` compiles,
+   and it is still the real clock.
+2. **A timeout may only bound a failure.** `WaitAsync(TimeSpan)` and
+   `CancellationTokenSource(TimeSpan)` are allowed. The test has to stay correct if the
+   timeout were ten times longer.
+3. **Don't assert that nothing happened straight after an action that wakes a worker.**
+   Wait until the worker has reacted, then assert.
+4. **Show a regression test failing before claiming it catches the bug.** Put the bug
+   back, run the test, check it fails for that reason, and say in the PR what was
+   injected. A `Category=Integration` test also needs a positive control: make the
+   helper that reaches hardware throw, and check the test goes red.
+
+A project that cannot comply yet sets `PeripheryBanWallClockInTests` to `false` in its
+`.csproj` with a comment saying why. A test file whose subject is timing itself carries
+`#pragma warning disable RS0030` at the top with its reason instead. The list is meant
+to get shorter, so it is not written down here; this is the current one:
+
+```bash
+grep -rlE "PeripheryBanWallClockInTests>false|disable RS0030" tests --include=*.csproj --include=*.cs
+```
+
 ## Formatting
 
 CSharpier is pinned as a local tool:

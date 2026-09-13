@@ -47,8 +47,11 @@ public interface IRecoveryPolicy
 /// Inputs to a recovery decision. A pure value; same input → same decision.
 /// </summary>
 /// <param name="Attempt">
-/// 1-based consecutive open-failure count this cycle; resets to 1 when the device
-/// re-enumerates.
+/// 1-based count of consecutive recovery decisions since the last stable open. A
+/// session that reopens and then faults inside the stable-open dwell continues the
+/// count rather than restarting it. Cleared, like <paramref name="ResetCount"/>, when a
+/// session survives the dwell or the device re-enumerates out of
+/// <see cref="ConnectionState.GaveUp"/>.
 /// </param>
 /// <param name="ResetCount">
 /// Number of resets performed since the last stable open — the reset budget. A
