@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Periphery.Testing;
 using Xunit;
 
 namespace Periphery.Bootloader.Tests;
@@ -600,21 +601,30 @@ public class BootloaderEntryRecoveryTests
     /// <see cref="SlowReload"/> to come back after a PnP disable/enable. Until then any attempt to
     /// open it fails with "not found" — the device is not gone, it is mid-reload.
     /// </summary>
-    private sealed class SlowlyReloadingBoard
+    /// <remarks>
+    /// The reload runs on the test's fake clock, the same one the orchestrator's settle is armed on,
+    /// so which finishes first is decided by the two durations rather than by the machine.
+    /// </remarks>
+    private sealed class SlowlyReloadingBoard(TimeProvider time)
     {
-        private long _usableAtTicks = long.MaxValue;
+        private DateTimeOffset? _usableAt;
 
-        public bool IsUsable => Environment.TickCount64 >= _usableAtTicks;
+        public bool IsUsable => _usableAt is { } at && time.GetUtcNow() >= at;
 
         /// <summary>The reset lands and the driver stack begins reloading.</summary>
-        public void BeginReload() => _usableAtTicks = Environment.TickCount64 + (long)SlowReload.TotalMilliseconds;
+        public void BeginReload() => _usableAt = time.GetUtcNow() + SlowReload;
 
-        public async Task WaitUntilUsableAsync()
+        /// <summary>What a reset honouring its contract does: return only once the device is back.</summary>
+        public Task WaitUntilUsableAsync()
         {
-            while (!IsUsable)
-                await Task.Delay(10);
+            var remaining = _usableAt!.Value - time.GetUtcNow();
+            return remaining <= TimeSpan.Zero ? Task.CompletedTask : Task.Delay(remaining, time);
         }
     }
+
+    // BootloaderEntryOrchestrator.SettleAfterReset. Private there; asserted here as the timer the
+    // orchestrator arms after a reset, so a change to it is a visible change to this test.
+    private static readonly TimeSpan SettleAfterReset = TimeSpan.FromMilliseconds(750);
 
     /// <summary>
     /// The #251 regression, stated as a property of the seam: a reset rung that reports success
@@ -631,7 +641,8 @@ public class BootloaderEntryRecoveryTests
     [Fact]
     public async Task DisableEnable_thatReturnsBeforeTheDeviceIsUsable_burnsTheAttemptAndFailsAHealthyBoard()
     {
-        var board = new SlowlyReloadingBoard();
+        var time = new TimerSignalingFakeTimeProvider();
+        var board = new SlowlyReloadingBoard(time);
         var bootSource = new FakeWaitSource();
         var appSource = new FakeWaitSource([App]);
 
@@ -651,17 +662,20 @@ public class BootloaderEntryRecoveryTests
         });
 
         var fault = await Assert.ThrowsAsync<BootloaderEntryException>(() =>
-            BootloaderEntryOrchestrator.RunAsync<string>(
+            time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunAsync<string>(
                 entry, App,
                 flash: (dev, ct) => Task.FromResult("ok"),
-                options: WithRecovery(reset, policy: new EscalatingResetRecoveryPolicy(sanityRetries: 0)),
-                waitSource: Route(bootSource, appSource)));
+                options: WithRecovery(reset, policy: new EscalatingResetRecoveryPolicy(sanityRetries: 0)) with { TimeProvider = time },
+                waitSource: Route(bootSource, appSource))));
 
         Assert.Contains("the recovery policy gave up", fault.Message);
 
+        // The retry came after the settle alone, which is shorter than the reload.
+        Assert.Equal([SettleAfterReset], time.ArmedDueTimes);
+
         // The board was never lost — exactly what was seen hours later. The update failed on a
         // host-side timing artifact, not on anything wrong with the hardware.
-        await board.WaitUntilUsableAsync();
+        time.Advance(SlowReload);
         Assert.True(board.IsUsable);
     }
 
@@ -673,7 +687,8 @@ public class BootloaderEntryRecoveryTests
     [Fact]
     public async Task DisableEnable_thatWaitsForTheDeviceToBeUsable_flashesTheSameBoard()
     {
-        var board = new SlowlyReloadingBoard();
+        var time = new TimerSignalingFakeTimeProvider();
+        var board = new SlowlyReloadingBoard(time);
         var bootSource = new FakeWaitSource();
         var appSource = new FakeWaitSource([App]);
 
@@ -696,13 +711,18 @@ public class BootloaderEntryRecoveryTests
         });
 
         DeviceInfo? flashed = null;
-        var result = await BootloaderEntryOrchestrator.RunAsync<string>(
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunAsync<string>(
             entry, App,
             flash: (dev, ct) => { flashed = dev; return Task.FromResult("ok"); },
-            options: WithRecovery(reset, policy: new EscalatingResetRecoveryPolicy(sanityRetries: 0)),
-            waitSource: Route(bootSource, appSource));
+            options: WithRecovery(reset, policy: new EscalatingResetRecoveryPolicy(sanityRetries: 0)) with { TimeProvider = time },
+            waitSource: Route(bootSource, appSource)));
 
         Assert.Equal("ok", result.FlashResult);
+
+        // The reset's own wait for the reload, then the settle after it: the retry waited on the
+        // device, not on the settle being long enough. The bootloader wait's deadline, armed once
+        // the retry is under way, follows them.
+        Assert.Equal([SlowReload, SettleAfterReset], time.ArmedDueTimes.Take(2));
         Assert.Equal("boot", flashed!.Id);
 
         // The wedged attempt, then the post-reset one. The single advertised rung was enough.

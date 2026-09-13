@@ -107,6 +107,17 @@ existing `CancellationTokenSource` always uses the system timer. A deadline that
 A test does not hand-roll a `TimeProvider` that advances. A double that only records what was asked
 of it, and fires nothing, is fine.
 
+*Added 2026-09-13.* Neither of those tells a test when to advance. A component that arms a timer
+and then waits needs the test to advance after the timer exists, and nothing short of the component
+itself can say when that is. `tests/Shared/TimerSignalingFakeTimeProvider.cs`, compiled into every
+test project, is `FakeTimeProvider` with one addition: `CreateTimer` reports each due time as it is
+armed. Arming is the component's own signal that it is about to wait, so awaiting it satisfies D2
+without a park signal on every production type. Creation, ordering and firing stay with
+`FakeTimeProvider`, so the rule above still holds: it simulates nothing itself. Its
+`RunAdvancingAsync` advances past each timer as it is armed. It is for sequential flows whose fakes
+deliver every event before the component arms the deadline that would end the wait. A worker that
+drains a queue still needs a signal of its own, because draining arms no timer.
+
 This reaches production. A conversion that finds a component waiting on the machine's clock gives it a
 `TimeProvider` in the same unit of work. For `DeviceProxyBase` that replaces the timing mechanism
 ADR-0060 describes; the decisions there are unchanged.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Periphery.Testing;
 using Xunit;
 
 namespace Periphery.Bootloader.Tests;
@@ -26,25 +27,33 @@ public class BootloaderEntryOrchestratorVerificationTests
     // whole flash -> verify -> retry sequence by firing events at the right narrative moments.
     private sealed class FakeWaitSource(IEnumerable<DeviceInfo>? snapshot = null) : IDeviceWaitSource
     {
+        private readonly Queue<DeviceInfo> _onNextStart = new();
+
         public event Action<DeviceInfo>? Appeared;
         public event Action<string>? Disappeared;
         public Task StartAsync(CancellationToken ct)
         {
             if (snapshot is not null)
                 foreach (var d in snapshot) Appeared?.Invoke(d);
+            while (_onNextStart.TryDequeue(out var d))
+                Appeared?.Invoke(d);
             return Task.CompletedTask;
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public void Fire(DeviceInfo d) => Appeared?.Invoke(d);
-    }
 
-    // The app-liveness wait (RunAsync's ApplicationFilter step) has no afterArm hook — production
-    // relies on the OS device watcher firing Appeared truly asynchronously, sometime after the wait
-    // subscribes. A synchronous Fire() call from inside the flash/verify callback runs and returns
-    // BEFORE that wait even starts listening, so the event would be lost. This schedules the fire on
-    // a background task with a short delay instead, comfortably ahead of the tests' 200ms timeouts.
-    private static void FireShortly(FakeWaitSource source, DeviceInfo device)
-        => _ = Task.Run(async () => { await Task.Delay(20); source.Fire(device); });
+        /// <summary>
+        /// The device comes back, and is present when the next wait subscribes. The app-liveness wait
+        /// (RunAsync's ApplicationFilter step) has no afterArm hook and accepts a pre-existing match, so
+        /// a flash or verify callback that brings the application back queues it here. It is delivered
+        /// by that wait's own StartAsync, ahead of the deadline the wait arms after it.
+        /// </summary>
+        /// <remarks>
+        /// This replaced firing from a background task 20 ms later, which raced the orchestrator's
+        /// subscription against its 200 ms timeout on a real clock (periphery#1).
+        /// </remarks>
+        public void AppearOnNextStart(DeviceInfo d) => _onNextStart.Enqueue(d);
+    }
 
     // EnterAsync always just reboots into the bootloader (fires Boot) - a real device re-entering a
     // second time for the verify round behaves identically to the first.
@@ -62,11 +71,18 @@ public class BootloaderEntryOrchestratorVerificationTests
 
     // Common options: ApplicationFilter is required for RunWithVerificationAsync to know when it is
     // safe to re-enter for a verify pass.
-    private static BootloaderEntryOptions Options() => new()
+    //
+    // The timeouts are on the test's fake clock and an hour long, so only that clock can end a wait:
+    // a deadline armed on the system timer fails a test at RunAdvancingAsync's bound instead of
+    // passing late (ADR-0089).
+    private static readonly TimeSpan WaitTimeout = TimeSpan.FromHours(1);
+
+    private static BootloaderEntryOptions Options(TimeProvider? time = null) => new()
     {
         ApplicationFilter = new DeviceFilter().WithUsbId("10C4", "8A7E"),
-        BootloaderTimeout = TimeSpan.FromMilliseconds(200),
-        ApplicationTimeout = TimeSpan.FromMilliseconds(200),
+        BootloaderTimeout = WaitTimeout,
+        ApplicationTimeout = WaitTimeout,
+        TimeProvider = time ?? TimeProvider.System,
     };
 
     [Fact]
@@ -76,13 +92,14 @@ public class BootloaderEntryOrchestratorVerificationTests
         var entry = new FakeEntry(source);
         int flashCalls = 0, verifyCalls = 0;
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
-            flash: (dev, ct) => { flashCalls++; FireShortly(source, App); return Task.FromResult("flashed"); },
-            verify: (dev, ct) => { verifyCalls++; FireShortly(source, App); return Task.FromResult(true); },
+            flash: (dev, ct) => { flashCalls++; source.AppearOnNextStart(App); return Task.FromResult("flashed"); },
+            verify: (dev, ct) => { verifyCalls++; source.AppearOnNextStart(App); return Task.FromResult(true); },
             flashSucceeded: static _ => true,
-            options: Options(),
-            waitSource: _ => source);
+            options: Options(time),
+            waitSource: _ => source));
 
         Assert.Equal("flashed", result.FlashResult);
         Assert.True(result.Verified);
@@ -99,19 +116,20 @@ public class BootloaderEntryOrchestratorVerificationTests
         var entry = new FakeEntry(source);
         int flashCalls = 0, verifyCalls = 0;
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
-            flash: (dev, ct) => { flashCalls++; FireShortly(source, App); return Task.FromResult("flashed"); },
+            flash: (dev, ct) => { flashCalls++; source.AppearOnNextStart(App); return Task.FromResult("flashed"); },
             verify: (dev, ct) =>
             {
                 verifyCalls++;
-                FireShortly(source, App);
+                source.AppearOnNextStart(App);
                 return Task.FromResult(verifyCalls > 1); // mismatch first, match second
             },
             flashSucceeded: static _ => true,
-            options: Options(),
+            options: Options(time),
             maxAttempts: 3,
-            waitSource: _ => source);
+            waitSource: _ => source));
 
         Assert.True(result.Verified);
         Assert.Equal(2, result.Attempts);
@@ -126,14 +144,15 @@ public class BootloaderEntryOrchestratorVerificationTests
         var entry = new FakeEntry(source);
         int flashCalls = 0, verifyCalls = 0;
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
-            flash: (dev, ct) => { flashCalls++; FireShortly(source, App); return Task.FromResult("flashed"); },
-            verify: (dev, ct) => { verifyCalls++; FireShortly(source, App); return Task.FromResult(false); },
+            flash: (dev, ct) => { flashCalls++; source.AppearOnNextStart(App); return Task.FromResult("flashed"); },
+            verify: (dev, ct) => { verifyCalls++; source.AppearOnNextStart(App); return Task.FromResult(false); },
             flashSucceeded: static _ => true,
-            options: Options(),
+            options: Options(time),
             maxAttempts: 3,
-            waitSource: _ => source);
+            waitSource: _ => source));
 
         Assert.False(result.Verified);
         Assert.Equal(3, result.Attempts);
@@ -148,13 +167,14 @@ public class BootloaderEntryOrchestratorVerificationTests
         var entry = new FakeEntry(source);
         bool verifyCalled = false;
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
             flash: (dev, ct) => Task.FromResult("failed"), // no App fire - the device never returns either
             verify: (dev, ct) => { verifyCalled = true; return Task.FromResult(true); },
             flashSucceeded: static r => r == "flashed", // "failed" does not satisfy this
-            options: Options(),
-            waitSource: _ => source);
+            options: Options(time),
+            waitSource: _ => source));
 
         Assert.False(result.Verified);
         Assert.Equal(1, result.Attempts);
@@ -168,13 +188,14 @@ public class BootloaderEntryOrchestratorVerificationTests
         var entry = new FakeEntry(source);
         bool verifyCalled = false;
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
             flash: (dev, ct) => Task.FromResult("flashed"), // succeeds, but never fires App back
             verify: (dev, ct) => { verifyCalled = true; return Task.FromResult(true); },
             flashSucceeded: static _ => true,
-            options: Options(),
-            waitSource: _ => source);
+            options: Options(time),
+            waitSource: _ => source));
 
         Assert.False(result.Verified);
         Assert.False(result.ApplicationReturned);
@@ -191,13 +212,14 @@ public class BootloaderEntryOrchestratorVerificationTests
         var source = new FakeWaitSource();
         var entry = new FakeEntry(source);
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
-            flash: (dev, ct) => { FireShortly(source, App); return Task.FromResult("flashed"); },
+            flash: (dev, ct) => { source.AppearOnNextStart(App); return Task.FromResult("flashed"); },
             verify: (dev, ct) => Task.FromResult(true), // content matches, but never fires App back
             flashSucceeded: static _ => true,
-            options: Options(),
-            waitSource: _ => source);
+            options: Options(time),
+            waitSource: _ => source));
 
         Assert.False(result.Verified);
         Assert.False(result.ApplicationReturned);
@@ -216,14 +238,15 @@ public class BootloaderEntryOrchestratorVerificationTests
         var entry = new FakeEntry(source);
         int flashCalls = 0, verifyCalls = 0;
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
-            flash: (dev, ct) => { flashCalls++; FireShortly(source, App); return Task.FromResult("flashed"); },
+            flash: (dev, ct) => { flashCalls++; source.AppearOnNextStart(App); return Task.FromResult("flashed"); },
             verify: (dev, ct) => { verifyCalls++; return Task.FromResult(false); }, // mismatch, no App fire
             flashSucceeded: static _ => true,
-            options: Options(),
+            options: Options(time),
             maxAttempts: 3,
-            waitSource: _ => source);
+            waitSource: _ => source));
 
         Assert.False(result.Verified);
         Assert.False(result.ApplicationReturned);
@@ -238,17 +261,19 @@ public class BootloaderEntryOrchestratorVerificationTests
         var source = new FakeWaitSource();
         var entry = new FakeEntry(source);
 
-        var result = await BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
+        var time = new TimerSignalingFakeTimeProvider();
+        var result = await time.RunAdvancingAsync(() => BootloaderEntryOrchestrator.RunWithVerificationAsync<string>(
             entry, App,
-            flash: (dev, ct) => { FireShortly(source, App); return Task.FromResult("flashed"); },
-            verify: (dev, ct) => { FireShortly(source, App); return Task.FromResult(true); },
+            flash: (dev, ct) => { source.AppearOnNextStart(App); return Task.FromResult("flashed"); },
+            verify: (dev, ct) => { source.AppearOnNextStart(App); return Task.FromResult(true); },
             flashSucceeded: static _ => true,
             options: new BootloaderEntryOptions
             {
-                BootloaderTimeout = TimeSpan.FromMilliseconds(200),
-                ApplicationTimeout = TimeSpan.FromMilliseconds(200),
+                BootloaderTimeout = WaitTimeout,
+                ApplicationTimeout = WaitTimeout,
+                TimeProvider = time,
             }, // ApplicationFilter deliberately omitted
-            waitSource: _ => source);
+            waitSource: _ => source));
 
         Assert.True(result.Verified);
         Assert.True(result.ApplicationReturned);
