@@ -186,7 +186,9 @@ public class Efm8BootloaderUploaderTests
         // Ack record 0, then the read for record 1 blocks until its deadline cancels it.
         var transport = FakeEfm8Transport.AckThenHang(ackCount: 1);
         var time = new FakeTimeProvider();
-        var timeout = TimeSpan.FromSeconds(5);
+        // Far past anything the real clock reaches during this test, so only the fake clock can fire
+        // it. With 5 s here, a deadline armed on the system timer passed this test 5 s late.
+        var timeout = TimeSpan.FromHours(1);
 
         var task = Efm8BootloaderUploader.UploadAsync(
             transport, stream, Confirm, replyTimeout: timeout, timeProvider: time);
@@ -197,8 +199,9 @@ public class Efm8BootloaderUploaderTests
         Assert.False(task.IsCompleted);
 
         // Crossing the deadline turns the stalled read into a reported timeout, not an infinite hang.
+        // The WaitAsync only bounds a failure: a correct upload completes as soon as the clock crosses.
         time.Advance(TimeSpan.FromMilliseconds(1));
-        var result = await task;
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(30));
 
         Assert.False(result.Success);
         Assert.True(result.TimedOut);
@@ -240,12 +243,12 @@ public class Efm8BootloaderUploaderTests
             BootRecordBuilder.Frame(0x36, 0x00, 0x00));
         var transport = FakeEfm8Transport.AckThenHang(ackCount: 0); // read 0 hangs
         var time = new FakeTimeProvider();
-        var timeout = TimeSpan.FromSeconds(5);
+        var timeout = TimeSpan.FromHours(1); // only the fake clock can reach it; see the mid-stream case
 
         var task = Efm8BootloaderUploader.UploadAsync(
             transport, stream, Confirm, replyTimeout: timeout, timeProvider: time);
         time.Advance(timeout);
-        var result = await task;
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(30));
 
         Assert.True(result.TimedOut);
         Assert.Equal(0, result.FailedRecordIndex);
