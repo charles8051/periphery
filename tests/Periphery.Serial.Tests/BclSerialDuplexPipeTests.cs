@@ -111,9 +111,9 @@ public class BclSerialDuplexPipeTests
         var pipe = new BclSerialDuplexPipe(stream, Tick);
 
         // Let the pump get into its tick loop rather than catching it before the first read.
-        while (stream.ReadCount < 2) await Task.Delay(5, Token());
+        await stream.ReadsStarted(2).WaitAsync(Token());
 
-        await pipe.DisposeAsync();
+        await pipe.DisposeAsync().AsTask().WaitAsync(Token());
 
         var read = await pipe.Input.ReadAsync(Token());
 
@@ -127,11 +127,11 @@ public class BclSerialDuplexPipeTests
         var stream = new FakeSyncSerialStream(Tick);
         var pipe = new BclSerialDuplexPipe(stream, Tick);
 
-        while (stream.ReadCount < 2) await Task.Delay(5, Token());
+        await stream.ReadsStarted(2).WaitAsync(Token());
 
-        await pipe.DisposeAsync();
+        await pipe.DisposeAsync().AsTask().WaitAsync(Token());
         // Must not throw ObjectDisposedException from re-cancelling an already-disposed _cts.
-        await pipe.DisposeAsync();
+        await pipe.DisposeAsync().AsTask().WaitAsync(Token());
     }
 
     [Fact]
@@ -140,14 +140,12 @@ public class BclSerialDuplexPipeTests
         var stream = new FakeSyncSerialStream(Tick);
         var pipe = new BclSerialDuplexPipe(stream, Tick);
 
-        while (stream.ReadCount < 2) await Task.Delay(5, Token());
-        await pipe.DisposeAsync();
+        await stream.ReadsStarted(2).WaitAsync(Token());
+        await pipe.DisposeAsync().AsTask().WaitAsync(Token());
 
-        var afterDispose = stream.ReadCount;
-        await Task.Delay(Tick + Tick + Tick, Token());
-
-        // At most the one read that was already in flight when the token tripped.
-        Assert.True(stream.ReadCount <= afterDispose + 1);
+        // DisposeAsync hands the port back only once the pump has left Read for good, so this is
+        // synchronous: a pump still running when it returns is the defect, not something to wait for.
+        Assert.True(pipe.PumpCompletion.IsCompleted, "DisposeAsync returned while the read pump was still running.");
     }
 
     [Theory]
