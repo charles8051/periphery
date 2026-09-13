@@ -33,9 +33,26 @@ internal sealed class FakeSyncSerialStream : Stream
     private readonly ManualResetEventSlim _idle = new(initialState: false);
 
     private int _reads;
+    private readonly List<(int Count, TaskCompletionSource Started)> _readWaiters = new();
 
     /// <summary>How many times <see cref="Read(byte[], int, int)"/> has been called.</summary>
     public int ReadCount => Volatile.Read(ref _reads);
+
+    /// <summary>
+    /// Completes once <see cref="Read(byte[], int, int)"/> has been entered
+    /// <paramref name="count"/> times, so a test can wait for the pump to reach a read instead
+    /// of polling <see cref="ReadCount"/>.
+    /// </summary>
+    public Task ReadsStarted(int count)
+    {
+        lock (_readWaiters)
+        {
+            if (_reads >= count) return Task.CompletedTask;
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _readWaiters.Add((count, started));
+            return started.Task;
+        }
+    }
 
     /// <summary>
     /// Make a later read throw <paramref name="exception"/>. Use this rather than a scripted
@@ -61,7 +78,11 @@ internal sealed class FakeSyncSerialStream : Stream
 
     public override int Read(byte[] buffer, int offset, int count)
     {
-        Interlocked.Increment(ref _reads);
+        lock (_readWaiters)
+        {
+            int reads = Interlocked.Increment(ref _reads);
+            _readWaiters.RemoveAll(w => w.Count <= reads && w.Started.TrySetResult());
+        }
 
         Step? step;
         lock (_steps)
