@@ -51,6 +51,13 @@ public abstract class DeviceProxyBase<TDevice, TException>
     private int _reconnectInProgress;
     private int _faultedRecoveryInProgress;
     private int _resetCount;
+
+    // RecoveryContext.Attempt. A field, not a loop local, because a successful reopen ends
+    // the recovery loop: a session that refaults inside the stable-open dwell must resume
+    // the count, or an attempt-indexed policy restarts at its first step every cycle. It is
+    // cleared exactly where _resetCount is: when the dwell elapses, and on a replug out of
+    // GaveUp. Both recovery loops share it, as they share _resetCount.
+    private int _attemptCount;
     private readonly SemaphoreSlim _openLock = new(1, 1);
 
     // Makes "decide to publish an opened device" and "decide to tear down" mutually
@@ -443,14 +450,15 @@ public abstract class DeviceProxyBase<TDevice, TException>
         if (state.IsActive)
         {
             // Re-enumeration is a fresh start: a power-cycled / replugged device
-            // gets a clean reconnect budget. Clear a prior give-up and the last
-            // fault, and drop back to Disconnected so the attempt counter (which
-            // restarts at 0 in ReconnectAsync) gets a full run.
+            // gets a clean reconnect budget. Clear a prior give-up, the last fault,
+            // the attempt count and the reset budget, and drop back to Disconnected
+            // so the recovery ladder gets a full run.
             if (_state == ConnectionState.GaveUp)
             {
                 SetState(ConnectionState.Disconnected);
                 _lastFault = null;
                 LastOpenFault = null;
+                _attemptCount = 0;
                 _resetCount = 0;                 // re-enumeration is a fresh budget
                 // ADR-0060: this clear (a genuine external replug while parked in
                 // GaveUp) is kept and is orthogonal to the stable-open dwell. It can
@@ -516,7 +524,6 @@ public abstract class DeviceProxyBase<TDevice, TException>
             try { await Task.Delay(FaultedNodeSettleWindow, _disposeCts.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
 
-            int attempt = 0;
             while (!_disposed && !IsOpen)
             {
                 var deviceInfo = _tracker.Device;
@@ -540,7 +547,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
                     || _state == ConnectionState.GaveUp)
                     return;
 
-                attempt++;
+                int attempt = Interlocked.Increment(ref _attemptCount);
                 var availableResets = _deviceReset.StrategiesFor(deviceInfo);
 
                 // Pure decision (no await, no ct): same context -> same directive. The
@@ -807,10 +814,11 @@ public abstract class DeviceProxyBase<TDevice, TException>
             if (_disposed || generation != _connectionGeneration || !IsOpen)
                 return;   // superseded or torn down — not our budget to clear
 
+            _attemptCount = 0;
             _resetCount = 0;
             _lastFault = null;
             LastOpenFault = null;
-            _logger.LogDebug("[{Device}] stable-open dwell ({DwellS}s) elapsed; reset budget cleared.",
+            _logger.LogDebug("[{Device}] stable-open dwell ({DwellS}s) elapsed; attempt count and reset budget cleared.",
                 Label, (int)StableOpenDwell.TotalSeconds);
         }
         finally
@@ -833,13 +841,11 @@ public abstract class DeviceProxyBase<TDevice, TException>
     {
         try
         {
-            int attempt = 0;
-
             while (!_disposed && !IsOpen && _tracker.IsActive)
             {
                 var deviceInfo = _tracker.Device;
                 if (deviceInfo is null) return;
-                attempt++;
+                int attempt = Interlocked.Increment(ref _attemptCount);
 
                 var availableResets = _deviceReset.StrategiesFor(deviceInfo);
 
@@ -920,6 +926,13 @@ public abstract class DeviceProxyBase<TDevice, TException>
                 return false;                            // loop re-decides (likely reset again, still gated)
             }
         }
+
+        // The recovery loop checked !IsOpen before deciding, but the gate above is consumer
+        // code that can take any amount of time. A tracker-driven open can land meanwhile;
+        // resetting that live session would tear it down and spend the budget on a device
+        // that already recovered.
+        if (_disposed || IsOpen)
+            return IsOpen;
 
         SetState(ConnectionState.Resetting);
         _resetCount++;
