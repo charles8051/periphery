@@ -1488,6 +1488,58 @@ public class DeviceProxyBaseTests
             + $"resets executed: {reset.Executed.Count}; Attempt values seen: {seen}");
     }
 
+    /// <summary>A reset-safety gate that parks every caller until the test releases it.</summary>
+    private sealed class HeldGate : IResetSafetyGate
+    {
+        private readonly TaskCompletionSource<bool> _verdict = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Release(bool safe) => _verdict.TrySetResult(safe);
+
+        public ValueTask<bool> CanResetAsync(DeviceInfo device, CancellationToken ct)
+        {
+            Entered.TrySetResult();
+            return new(_verdict.Task.WaitAsync(ct));
+        }
+    }
+
+    // The recovery loop checks !IsOpen before it decides, and the safety gate then runs
+    // consumer code of any duration. An open that lands while the gate is held must not
+    // be reset once the gate says yes.
+    [Fact]
+    public async Task ResetHeldAtGate_DeviceOpensMeanwhile_DoesNotResetTheLiveSession()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var device = MakeDevice();
+        var reset = new FakeDeviceReset(
+            new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
+        var gate = new HeldGate();
+        int openable = 0;
+
+        await using var handle = new TestHandle(tracker, watcher,
+            openDevice: (_, _) => Volatile.Read(ref openable) == 1
+                ? Task.FromResult(new FakeDevice())
+                : throw new InvalidOperationException("wedged"),
+            recoveryPolicy: new FuncPolicy(ctx => new RecoveryDirective.Reset(ctx.AvailableResets[0])),
+            deviceReset: reset,
+            resetSafetyGate: gate,
+            resetReopenPollInterval: TimeSpan.FromMilliseconds(5));
+
+        SimulateConnect(tracker, device);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));   // recovery is parked at the gate
+
+        // A property change on the active device drives a tracker open while the gate is held.
+        Volatile.Write(ref openable, 1);
+        tracker.OnDevicePropertyChanged(device, device with { Name = "renamed" }, new HashSet<string> { "Name" });
+        await WaitForAsync(() => handle.IsOpen, TimeSpan.FromSeconds(5));
+
+        gate.Release(safe: true);
+        await Task.Delay(200);
+
+        Assert.Equal(0, reset.ResetCalls);
+        Assert.True(handle.IsOpen);
+        Assert.Equal(ConnectionState.Open, handle.State);
+    }
+
     // The backoff policy's give-up is attempt-indexed too. A session that reopens and
     // refaults inside the dwell must count toward maxAttempts, or it retries forever.
     [Fact]

@@ -927,6 +927,13 @@ public abstract class DeviceProxyBase<TDevice, TException>
             }
         }
 
+        // The recovery loop checked !IsOpen before deciding, but the gate above is consumer
+        // code that can take any amount of time. A tracker-driven open can land meanwhile;
+        // resetting that live session would tear it down and spend the budget on a device
+        // that already recovered.
+        if (_disposed || IsOpen)
+            return IsOpen;
+
         SetState(ConnectionState.Resetting);
         _resetCount++;
         _logger.LogInformation(
