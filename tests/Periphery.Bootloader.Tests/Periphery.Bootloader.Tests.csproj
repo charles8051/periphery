@@ -7,6 +7,14 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!--
+      Opted out of the wall-clock ratchet in tests/Directory.Build.targets (ADR-0089).
+      Temporary, tracked in #244; comes off when the last violation is gone.
+      The orchestrator tests race a Task.Delay(20) against the app-liveness wait (#1) and
+      simulate a driver reload on Environment.TickCount64 against a real 750 ms settle.
+      BootloaderEntryOrchestrator has no TimeProvider to fake yet.
+    -->
+    <PeripheryBanWallClockInTests>false</PeripheryBanWallClockInTests>
   </PropertyGroup>
 
   <ItemGroup>
