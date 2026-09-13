@@ -1,1 +1,2 @@
 #nullable enable
+virtual Periphery.DeviceProxyBase<TDevice, TException>.TimeProvider.get -> System.TimeProvider!

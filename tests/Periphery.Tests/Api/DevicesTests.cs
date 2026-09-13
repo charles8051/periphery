@@ -205,11 +205,9 @@ public class DevicesTests
 
         watcher.Activated += (_, e) => activatedDevices.Add(e.Device);
         
+        // StartAsync raises the snapshot's events before it returns.
         await watcher.StartAsync();
-        
-        // Give watcher time to snapshot
-        await Task.Delay(100);
-        
+
         // Should have similar device counts (allowing for timing differences)
         Assert.True(Math.Abs(foundDevices.Count - activatedDevices.Count) <= 5,
             $"FindAsync returned {foundDevices.Count} devices, Watch snapshotted {activatedDevices.Count}");

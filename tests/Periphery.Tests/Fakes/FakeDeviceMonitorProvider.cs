@@ -16,6 +16,15 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
     /// </summary>
     public Exception? FailNextStartWith { get; set; }
 
+    /// <summary>
+    /// When set, <see cref="StartAsync"/> completes only when this task does, so a test can hold
+    /// a start attempt, and the watcher's lifecycle lock with it, while it queues other calls.
+    /// </summary>
+    public Task? HoldStartUntil { get; set; }
+
+    /// <summary>Completes the first time <see cref="StartAsync"/> is entered.</summary>
+    public TaskCompletionSource StartEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>How many times <see cref="StartAsync"/> has been entered.</summary>
     public int StartAttempts { get; private set; }
 
@@ -34,6 +43,7 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
     public Task StartAsync(DeviceFilter filter, CancellationToken ct = default)
     {
         StartAttempts++;
+        StartEntered.TrySetResult();
 
         if (FailNextStartWith is { } fault)
         {
@@ -45,7 +55,7 @@ internal class FakeDeviceMonitorProvider : IDeviceMonitorProvider
             throw new InvalidOperationException("Already started");
 
         _started = true;
-        return Task.CompletedTask;
+        return HoldStartUntil ?? Task.CompletedTask;
     }
 
     public void SimulateConnect(DeviceInfo device)

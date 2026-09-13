@@ -8,6 +8,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## Unreleased
 
 ### Added
+- **`DeviceProxyBase.TimeProvider`.** A protected virtual property naming the clock every recovery wait is armed on: the faulted-node settle window, the retry and reset-defer delays, the stable-open dwell, and the reset-reopen poll and its timeout. Defaults to `TimeProvider.System`. The delays used the system timer and the reopen timeout read `Environment.TickCount64`, so a test could shorten those windows but not step through them (ADR-0089).
 - **`Stm32SerialOptions.TimeProvider`.** The clock `Stm32SerialProgrammer` arms its command and sync deadlines on and measures the handshake's settle windows against. Defaults to `TimeProvider.System`. The deadlines used `CancelAfter` and the settle a `Stopwatch`, neither of which a test could drive (ADR-0089).
 - **`BootloaderEntryOptions.TimeProvider`.** The clock `BootloaderEntryOrchestrator` arms every timed step on: the bootloader and application wait deadlines, the recovery return wait, the post-reset settle, and a recovery policy's retry delay. Defaults to `TimeProvider.System`, so a run behaves as before unless a caller sets it. The wait deadlines used `CancelAfter`, which always runs on the system timer, so until now there was no way to drive a run's timing from a test (ADR-0089).
 

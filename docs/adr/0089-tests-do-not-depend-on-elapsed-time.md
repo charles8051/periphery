@@ -121,7 +121,9 @@ drains a queue still needs a signal of its own, because draining arms no timer.
 nothing runnable is left. One way to know is to make the code under test and its fakes continue
 inline: pipes built with `PipeScheduler.Inline`, run on a thread with no `SynchronizationContext`,
 where .NET does inline an awaiting continuation. A call into the code then returns only once
-everything it started is waiting or done. The STM32 serial sync tests work this way.
+everything it started is waiting or done. The STM32 serial sync tests work this way. So does the held
+reset-safety gate in `DeviceProxyBaseTests`, whose verdict is a `TaskCompletionSource` completed from
+`Task.Run`.
 
 This reaches production. A conversion that finds a component waiting on the machine's clock gives it a
 `TimeProvider` in the same unit of work. For `DeviceProxyBase` that replaces the timing mechanism
@@ -140,6 +142,14 @@ commits releases the test early.
 A negative assertion ("X did not happen") after a fixed delay passes whether or not the code is right,
 if X is merely late. Wait for the worker to park, or for a barrier queued behind the action, then
 assert synchronously. Where the path is synchronous, assert straight after the call.
+
+*Added 2026-09-13.* A fake clock can close the interval too. When every wait a component makes goes
+through its `TimeProvider`, a timer is the only way it can act later. Once the code has stopped
+running, because the decision was synchronous or because it continued inline as D1 describes, no
+timer armed (or none left pending) means nothing more will happen. `DeviceProxyBaseTests` shows that
+faulted-node recovery did not start, and that closing a session cancelled its stable-open dwell, this
+way. Pair such an assertion with a test where the timer is armed, so an observation that can never
+fire does not pass by default.
 
 `Task.Delay(Timeout.Infinite, ct)` in a fake is a park, not a duration. It becomes a never-completing
 `TaskCompletionSource` awaited with `WaitAsync(ct)`.
