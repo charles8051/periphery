@@ -118,6 +118,8 @@ public class DeviceSessionHostTests
         var device = SessionHostTestHelpers.MakeDevice();
         var workerStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var crash = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var host = DeviceSessionHost<SessionHostTestHelpers.FakeSession>.Create(
             tracker,
@@ -126,13 +128,14 @@ public class DeviceSessionHostTests
             whileSessionActive: async (_, ct) =>
             {
                 workerStarted.TrySetResult();
-                await Task.Delay(50, ct); // let session become visible
+                await crash.Task.WaitAsync(ct); // crash once the test has seen the session
                 throw new InvalidOperationException("worker crash");
             });
 
         SessionHostTestHelpers.SimulateConnect(tracker, device);
         await host.WaitForSessionAsync().WaitAsync(TimeSpan.FromSeconds(5));
         await workerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        crash.SetResult();
 
         await SessionHostTestHelpers.WaitForStatusAsync<
             SessionHostTestHelpers.FakeSession,

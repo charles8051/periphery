@@ -1,7 +1,8 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Time.Testing;
+using Periphery.Testing;
 using Xunit;
 
 namespace Periphery.Tests;
@@ -19,15 +20,18 @@ public class ReadinessPollTests
     public async Task AlreadyReady_returnsAtOnceAndAsksExactlyOnce()
     {
         int asked = 0;
-        var elapsed = await ReadinessPoll.UntilAsync(
+        var time = new TimerSignalingFakeTimeProvider();
+        var poll = ReadinessPoll.UntilAsync(
             () => { asked++; return true; },
-            timeout: TimeSpan.FromSeconds(30), Interval, CancellationToken.None);
+            timeout: TimeSpan.FromSeconds(30), Interval, CancellationToken.None, time);
 
-        Assert.NotNull(elapsed);
-        Assert.Equal(1, asked);
         // Never pays an interval it did not need — the common case for a device that came
-        // back before the platform call even returned.
-        Assert.True(elapsed!.Value < TimeSpan.FromSeconds(1), $"took {elapsed}");
+        // back before the platform call even returned. Nothing advances this clock, so the
+        // answer has to be there when the call returns.
+        Assert.True(poll.IsCompleted, "the poll waited before it asked");
+        Assert.Equal(TimeSpan.Zero, await poll);
+        Assert.Equal(1, asked);
+        Assert.Empty(time.ArmedDueTimes);
     }
 
     [Fact]
@@ -45,15 +49,21 @@ public class ReadinessPollTests
     [Fact]
     public async Task NeverReady_givesUpAtTheTimeoutRatherThanHanging()
     {
-        var watch = Stopwatch.StartNew();
-        var elapsed = await ReadinessPoll.UntilAsync(
+        var time = new TimerSignalingFakeTimeProvider();
+        var started = time.GetUtcNow();
+        var interval = TimeSpan.FromMilliseconds(50);
+
+        var elapsed = await time.RunAdvancingAsync(() => ReadinessPoll.UntilAsync(
             () => false,
-            timeout: TimeSpan.FromMilliseconds(120), Interval, CancellationToken.None);
+            timeout: TimeSpan.FromMilliseconds(120), interval, CancellationToken.None, time).AsTask());
 
         Assert.Null(elapsed);
         // Bounded on both sides: it must actually wait, and must not overrun the deadline
-        // waiting out a final whole interval.
-        Assert.InRange(watch.Elapsed, TimeSpan.FromMilliseconds(80), TimeSpan.FromSeconds(5));
+        // waiting out a final whole interval. The last wait is cut to the 20 ms left.
+        Assert.Equal(TimeSpan.FromMilliseconds(120), time.GetUtcNow() - started);
+        Assert.Equal(
+            new[] { interval, interval, TimeSpan.FromMilliseconds(20) },
+            time.ArmedDueTimes);
     }
 
     [Fact]
@@ -71,13 +81,16 @@ public class ReadinessPollTests
     public async Task ADeadlineThatPassesDuringTheProbe_reportsNotReadyRatherThanThrowing()
     {
         // The probe outlives the whole budget, so the deadline is already behind us
-        // by the time it is consulted. Reachable without any clock trickery, and
-        // the plain contract: not ready in time is null, never an exception.
-        var elapsed = await ReadinessPoll.UntilAsync(
-            () => { Thread.Sleep(40); return false; },
-            timeout: TimeSpan.FromMilliseconds(10), Interval, CancellationToken.None);
+        // by the time it is consulted. The plain contract: not ready in time is null,
+        // never an exception.
+        var time = new FakeTimeProvider();
+        var poll = ReadinessPoll.UntilAsync(
+            () => { time.Advance(TimeSpan.FromMilliseconds(40)); return false; },
+            timeout: TimeSpan.FromMilliseconds(10), Interval, CancellationToken.None, time);
 
-        Assert.Null(elapsed);
+        // Nothing advances this clock after the probe, so a poll that waited would never return.
+        Assert.True(poll.IsCompleted, "the poll waited instead of reporting the missed deadline");
+        Assert.Null(await poll);
     }
 
     [Fact]

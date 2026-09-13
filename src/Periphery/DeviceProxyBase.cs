@@ -105,6 +105,14 @@ public abstract class DeviceProxyBase<TDevice, TException>
     private static readonly TimeSpan FaultedNodeSettleWindowDefault = TimeSpan.FromSeconds(3);
     protected virtual TimeSpan FaultedNodeSettleWindow => FaultedNodeSettleWindowDefault;
 
+    /// <summary>
+    /// The clock every recovery delay and deadline is armed on: the faulted-node settle
+    /// window, retry and reset-defer delays, the stable-open dwell, and the reset-reopen
+    /// poll and its timeout (ADR-0089). <see cref="TimeProvider.System"/> by default; tests
+    /// override it with a fake they advance.
+    /// </summary>
+    protected virtual TimeProvider TimeProvider => TimeProvider.System;
+
     // Monotonic id of the live connection. Bumped under the open lock each time a
     // session opens; the stable-open dwell captures it and only clears the budget if
     // it is still the current generation (the race guard against a stale dwell timer
@@ -521,7 +529,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
         {
             // Settle window: give a freshly-enumerated node a moment to start on its own
             // (drivers can report a transient problem code mid bring-up) before we touch it.
-            try { await Task.Delay(FaultedNodeSettleWindow, _disposeCts.Token).ConfigureAwait(false); }
+            try { await Task.Delay(FaultedNodeSettleWindow, TimeProvider, _disposeCts.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
 
             while (!_disposed && !IsOpen)
@@ -571,7 +579,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
                         // A faulted node has no healthy handle to re-open — "retry" here
                         // means wait, then re-check whether it cleared to Active on its own.
                         SetState(ConnectionState.Connecting);
-                        try { await Task.Delay(retry.Delay, _disposeCts.Token).ConfigureAwait(false); }
+                        try { await Task.Delay(retry.Delay, TimeProvider, _disposeCts.Token).ConfigureAwait(false); }
                         catch (OperationCanceledException) { return; }
                         break;
 
@@ -795,7 +803,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
     {
         try
         {
-            await Task.Delay(StableOpenDwell, connectionToken).ConfigureAwait(false);
+            await Task.Delay(StableOpenDwell, TimeProvider, connectionToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -864,7 +872,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
 
                     case RecoveryDirective.Retry retry:
                         SetState(ConnectionState.Connecting);
-                        try { await Task.Delay(retry.Delay, _disposeCts.Token).ConfigureAwait(false); }
+                        try { await Task.Delay(retry.Delay, TimeProvider, _disposeCts.Token).ConfigureAwait(false); }
                         catch (OperationCanceledException) { return; }
 
                         if (_disposed || IsOpen || !_tracker.IsActive) return;
@@ -903,7 +911,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
     // (it is one the device advertises); this method owns ONLY the IO and timing:
     // consult the safety gate (a genuine async port across a boundary), perform the
     // reset via the injected mechanism, then SELF-DRIVE the re-open with a
-    // shell-owned (Environment.TickCount64) timeout backstop. The proxy knows it
+    // shell-owned (TimeProvider) timeout backstop. The proxy knows it
     // just reset, so it does not wait on the watcher; a re-enumerating strategy may
     // also wake via OnTrackerStateChanged, and the open lock dedups whoever opens first.
     private async Task<bool> ExecuteResetAsync(DeviceInfo deviceInfo, ResetStrategy strategy)
@@ -921,7 +929,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
                 _logger.LogDebug("[{Device}] reset deferred by safety gate; backing off {DelayMs}ms.",
                     Label, (int)ResetDeferDelay.TotalMilliseconds);
                 SetState(ConnectionState.Connecting);
-                try { await Task.Delay(ResetDeferDelay, _disposeCts.Token).ConfigureAwait(false); }
+                try { await Task.Delay(ResetDeferDelay, TimeProvider, _disposeCts.Token).ConfigureAwait(false); }
                 catch (OperationCanceledException) { return false; }
                 return false;                            // loop re-decides (likely reset again, still gated)
             }
@@ -953,10 +961,11 @@ public abstract class DeviceProxyBase<TDevice, TException>
         }
 
         // Self-driven reopen, bounded by ResetReopenTimeout.
-        long deadline = Environment.TickCount64 + (long)ResetReopenTimeout.TotalMilliseconds;
-        while (!_disposed && !IsOpen && Environment.TickCount64 < deadline)
+        var clock = TimeProvider;
+        long started = clock.GetTimestamp();
+        while (!_disposed && !IsOpen && clock.GetElapsedTime(started) < ResetReopenTimeout)
         {
-            try { await Task.Delay(ResetReopenPollInterval, _disposeCts.Token).ConfigureAwait(false); }
+            try { await Task.Delay(ResetReopenPollInterval, clock, _disposeCts.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) { return false; }
 
             if (_disposed || IsOpen) return IsOpen;

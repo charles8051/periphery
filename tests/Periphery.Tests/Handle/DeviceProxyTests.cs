@@ -364,11 +364,12 @@ public class DeviceProxyTests
 
         // First connect — DeviceOpened fires and throws, but state machine should survive.
         SimulateConnect(tracker, device);
-        await Task.Delay(50);
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen);
 
-        // Disconnect then reconnect to verify the handle is still functional.
+        // Disconnect then reconnect to verify the handle is still functional. The close waits
+        // on the open lock, so it runs after the throwing handler returned.
         SimulateDisconnect(tracker, device);
-        await Task.Delay(50);
+        await ProxyWait.UntilAsync(handle, () => !handle.IsOpen);
 
         SimulateConnect(tracker, device);
         await secondOpened.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -420,9 +421,7 @@ public class DeviceProxyTests
 
         await openCalled.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Give the async state machine time to settle (set IsOpen)
-        await Task.Delay(50);
-        Assert.True(handle.IsOpen);
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen);
     }
 
     [Fact]

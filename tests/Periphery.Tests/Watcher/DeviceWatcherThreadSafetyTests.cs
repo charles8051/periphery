@@ -40,26 +40,29 @@ public class DeviceWatcherThreadSafetyTests
     [Fact]
     public async Task ConcurrentStartAndDispose_NoDeadlock()
     {
-        var watcher = FakeWatcher();
+        // One start holds the lifecycle lock inside the provider while four more starts and a
+        // dispose queue behind it, in that order. The lock serves waiters in the order they
+        // queued, so the losing starts run before the dispose. A start queued behind the dispose
+        // is #262.
+        var monitor = new FakeDeviceMonitorProvider();
+        var holdStart = new TaskCompletionSource();
+        monitor.HoldStartUntil = holdStart.Task;
+        var watcher = new DeviceWatcher(FakeDeviceProvider.Empty(), monitor);
 
-        var tasks = new List<Task>();
+        var winner = watcher.StartAsync();
+        await monitor.StartEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        for (int i = 0; i < 5; i++)
-        {
-            tasks.Add(Task.Run(async () =>
-            {
-                try { await watcher.StartAsync(); }
-                catch (InvalidOperationException) { }
-            }));
-        }
+        var losers = Enumerable.Range(0, 4).Select(_ => watcher.StartAsync()).ToArray();
+        var dispose = watcher.DisposeAsync().AsTask();
+        holdStart.SetResult();
 
-        tasks.Add(Task.Run(async () =>
-        {
-            await Task.Delay(5);
-            await watcher.DisposeAsync();
-        }));
+        await winner.WaitAsync(TimeSpan.FromSeconds(10));
+        foreach (var loser in losers)
+            await Assert.ThrowsAsync<InvalidOperationException>(() => loser.WaitAsync(TimeSpan.FromSeconds(10)));
+        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 
-        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(1, monitor.StartAttempts);
+        Assert.Equal(1, monitor.DisposeCount);
     }
 
     [Fact]
@@ -72,7 +75,6 @@ public class DeviceWatcherThreadSafetyTests
         try
         {
             await Task.WhenAll(watchers.Select(w => w.StartAsync()));
-            await Task.Delay(20);
         }
         finally
         {

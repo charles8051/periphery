@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Periphery.Testing;
 
 namespace Periphery.Tests;
 
@@ -41,6 +42,7 @@ public class DeviceProxyBaseTests
         private readonly TimeSpan? _faultedSettleWindow;
         private readonly TimeSpan? _resetReopenTimeout;
         private readonly TimeSpan? _resetReopenPollInterval;
+        private readonly TimeProvider? _timeProvider;
 
         public FakeDevice? LastOpenedDevice { get; private set; }
 
@@ -58,9 +60,11 @@ public class DeviceProxyBaseTests
             TimeSpan? stableOpenDwell = null,
             TimeSpan? faultedSettleWindow = null,
             TimeSpan? resetReopenTimeout = null,
-            TimeSpan? resetReopenPollInterval = null)
+            TimeSpan? resetReopenPollInterval = null,
+            TimeProvider? timeProvider = null)
             : base(tracker, watcher, recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery)
         {
+            _timeProvider = timeProvider;
             _openDevice = openDevice;
             _onActivated = onActivated;
             _onDeactivated = onDeactivated;
@@ -81,6 +85,10 @@ public class DeviceProxyBaseTests
         protected override TimeSpan FaultedNodeSettleWindow => _faultedSettleWindow ?? base.FaultedNodeSettleWindow;
         protected override TimeSpan ResetReopenTimeout => _resetReopenTimeout ?? base.ResetReopenTimeout;
         protected override TimeSpan ResetReopenPollInterval => _resetReopenPollInterval ?? base.ResetReopenPollInterval;
+
+        // A test that has to step through a recovery delay passes a fake clock; the rest keep the
+        // system clock, where the delay's length changes how long they take but not what they see.
+        protected override TimeProvider TimeProvider => _timeProvider ?? base.TimeProvider;
 
         protected override Task<FakeDevice> OpenDeviceAsync(
             DeviceInfo deviceInfo, CancellationToken ct)
@@ -209,19 +217,14 @@ public class DeviceProxyBaseTests
     public async Task OnActivatedAsync_Failure_AbortsConnection_DisposesDevice()
     {
         var (tracker, watcher) = CreateTestInfra();
-        var initAttempted = new TaskCompletionSource();
         var handle = new TestHandle(tracker, watcher,
-            onActivated: (_, _) =>
-            {
-                initAttempted.TrySetResult();
-                throw new InvalidOperationException("init failed");
-            });
+            onActivated: (_, _) => throw new InvalidOperationException("init failed"),
+            // Recovery starts only after the aborted open has disposed its device, so giving up
+            // at once turns the end of the abort into a state change the test can wait for.
+            recoveryPolicy: new FuncPolicy(_ => new RecoveryDirective.GiveUp()));
 
         SimulateConnect(tracker, MakeDevice());
-        await initAttempted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        // Give async state machine time to settle
-        await Task.Delay(50);
+        await ProxyWait.UntilAsync(handle, () => handle.State == ConnectionState.GaveUp);
 
         Assert.False(handle.IsOpen);
         Assert.True(handle.LastOpenedDevice!.IsDisposed);
@@ -284,7 +287,7 @@ public class DeviceProxyBaseTests
             {
                 capturedCt = ct;
                 workerStarted.TrySetResult();
-                await Task.Delay(Timeout.Infinite, ct);
+                await new TaskCompletionSource().Task.WaitAsync(ct);
             });
 
         var opened = new TaskCompletionSource();
@@ -604,15 +607,18 @@ public class DeviceProxyBaseTests
 
     // ── Reset + recovery (ADR-0060) ───────────────────────────────────
 
-    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
+    // The due time of the next timer the proxy arms on the fake clock.
+    private static Task<TimeSpan> NextTimerArmedAsync(TimerSignalingFakeTimeProvider time)
+        => time.NextTimerArmedAsync().AsTask().WaitAsync(ProxyWait.Bound);
+
+    // Completes once the proxy arms a timer due `due` after arming, passing over timers armed
+    // before it with other due times. Tests give each recovery delay a distinct length, so the due
+    // time says which wait the proxy has reached.
+    private static async Task TimerArmedAsync(TimerSignalingFakeTimeProvider time, TimeSpan due)
     {
-        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
-        while (Environment.TickCount64 < deadline)
+        while (await NextTimerArmedAsync(time) != due)
         {
-            if (condition()) return;
-            await Task.Delay(20);
         }
-        if (!condition()) throw new TimeoutException("Condition not met within timeout.");
     }
 
     [Fact]
@@ -670,7 +676,7 @@ public class DeviceProxyBaseTests
         handle.DeviceClosed += (_, _) => closed.TrySetResult();
 
         SimulateConnect(tracker, MakeDevice());
-        await WaitForAsync(() => handle.IsOpen, TimeSpan.FromSeconds(5));
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen);
 
         handle.Recover(new InvalidOperationException("io wedge"));
 
@@ -688,6 +694,9 @@ public class DeviceProxyBaseTests
         var reset = new FakeDeviceReset(
             new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
         var gate = new ToggleGate { Safe = false };
+        var time = new TimerSignalingFakeTimeProvider();
+        var resetDeferDelay = TimeSpan.FromSeconds(1);   // DeviceProxyBase.ResetDeferDelay
+        var reopenPoll = TimeSpan.FromMilliseconds(250);
 
         await using var handle = new TestHandle(tracker, watcher,
             openDevice: (_, _) => throw new InvalidOperationException("wedged"),
@@ -695,12 +704,22 @@ public class DeviceProxyBaseTests
                 ? new RecoveryDirective.Reset(ctx.AvailableResets[0])
                 : new RecoveryDirective.GiveUp()),
             deviceReset: reset,
-            resetSafetyGate: gate);
+            resetSafetyGate: gate,
+            resetReopenPollInterval: reopenPoll,
+            timeProvider: time);
 
         SimulateConnect(tracker, MakeDevice());
-        await Task.Delay(400);   // gate denies every attempt within the defer window
 
-        Assert.Equal(0, reset.ResetCalls);   // the gate blocked the mechanism
+        // A deferred reset waits out the defer delay. A reset that went ahead would call the
+        // mechanism and then wait on its reopen poll, so the first timer armed shows which way the
+        // gate decision went. The second round is the loop deciding again after the delay.
+        for (int round = 0; round < 2; round++)
+        {
+            Assert.Equal(resetDeferDelay, await NextTimerArmedAsync(time));
+            Assert.Equal(0, reset.ResetCalls);   // the gate blocked the mechanism
+            time.Advance(resetDeferDelay);
+        }
+
         Assert.False(handle.IsOpen);
     }
 
@@ -763,6 +782,9 @@ public class DeviceProxyBaseTests
         var (tracker, watcher) = CreateTestInfra();
         var reset = new FakeDeviceReset(
             new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
+        var time = new TimerSignalingFakeTimeProvider();
+        var dwell = TimeSpan.FromSeconds(5);
+        var reopenPoll = TimeSpan.FromMilliseconds(250);
 
         int workerRuns = 0;
         bool firstResetDone = false;
@@ -776,7 +798,7 @@ public class DeviceProxyBaseTests
                 // stays up so the dwell can elapse.
                 if (Interlocked.Increment(ref workerRuns) == 1)
                     throw new InvalidOperationException("initial wedge");
-                await Task.Delay(Timeout.Infinite, ct);
+                await new TaskCompletionSource().Task.WaitAsync(ct);
             },
             recoveryPolicy: new FuncPolicy(ctx =>
             {
@@ -794,15 +816,22 @@ public class DeviceProxyBaseTests
                 return new RecoveryDirective.Retry(TimeSpan.FromMilliseconds(1));
             }),
             deviceReset: reset,
-            stableOpenDwell: TimeSpan.FromMilliseconds(120));
+            stableOpenDwell: dwell,
+            resetReopenPollInterval: reopenPoll,
+            timeProvider: time);
 
-        // Connect -> worker faults -> reset (budget 1) -> reopen -> session stays up.
+        // Connect -> worker faults -> reset (budget 1) -> the reset's reopen waits on its poll.
         SimulateConnect(tracker, MakeDevice());
-        await WaitForAsync(() => handle.IsOpen, TimeSpan.FromSeconds(5));
+        await TimerArmedAsync(time, reopenPoll);
+        time.Advance(reopenPoll);
+
+        // Reopened: the new session has armed its dwell, and nothing has cleared the fault yet.
+        await TimerArmedAsync(time, dwell);
         Assert.NotNull(handle.LastOpenFault);   // the initial wedge is recorded
 
-        // Let the session out-survive the dwell: the budget AND LastOpenFault clear.
-        await WaitForAsync(() => handle.LastOpenFault is null, TimeSpan.FromSeconds(5));
+        // The session outlives the dwell: the budget AND LastOpenFault clear.
+        time.Advance(dwell);
+        await ProxyWait.UntilAsync(handle, () => handle.LastOpenFault is null);
 
         // A later, unrelated fault must now see a fresh budget (0) and a fresh count (1).
         finalPhase = true;
@@ -818,12 +847,15 @@ public class DeviceProxyBaseTests
     {
         // The dwell timer must never zero the budget for a session that has already
         // ended. A session opens with budget 1, then CLOSES before the dwell elapses;
-        // the stale timer must not fire. We then wait well past the (now-cancelled)
-        // dwell deadline and confirm the next fault still sees the preserved budget.
+        // closing must cancel the dwell, so no timer is left to fire. The next fault
+        // then still sees the preserved budget.
         var (tracker, watcher) = CreateTestInfra();
         var reset = new FakeDeviceReset(
             new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
         var device = MakeDevice();
+        var time = new TimerSignalingFakeTimeProvider();
+        var dwell = TimeSpan.FromSeconds(5);
+        var reopenPoll = TimeSpan.FromMilliseconds(250);
 
         int workerRuns = 0;
         bool firstResetDone = false;
@@ -836,7 +868,7 @@ public class DeviceProxyBaseTests
                 // Run #1 faults to drive one reset (budget -> 1); later sessions stay up.
                 if (Interlocked.Increment(ref workerRuns) == 1)
                     throw new InvalidOperationException("initial wedge");
-                await Task.Delay(Timeout.Infinite, ct);
+                await new TaskCompletionSource().Task.WaitAsync(ct);
             },
             recoveryPolicy: new FuncPolicy(ctx =>
             {
@@ -853,19 +885,23 @@ public class DeviceProxyBaseTests
                 return new RecoveryDirective.Retry(TimeSpan.FromMilliseconds(1));
             }),
             deviceReset: reset,
-            stableOpenDwell: TimeSpan.FromMilliseconds(200));
+            stableOpenDwell: dwell,
+            resetReopenPollInterval: reopenPoll,
+            timeProvider: time);
 
         // Connect -> worker faults -> reset (budget 1) -> reopen -> session B stays up.
         SimulateConnect(tracker, device);
-        await WaitForAsync(() => handle.IsOpen, TimeSpan.FromSeconds(5));
+        await TimerArmedAsync(time, reopenPoll);
+        time.Advance(reopenPoll);
+        await TimerArmedAsync(time, dwell);   // session B is open and its dwell is armed
 
-        // Close session B BEFORE its 200ms dwell elapses -> the dwell must be cancelled.
+        // Close session B BEFORE its dwell elapses -> the dwell must be cancelled.
         SimulateDisconnect(tracker, device);
-        await WaitForAsync(() => !handle.IsOpen, TimeSpan.FromSeconds(5));
+        await ProxyWait.UntilAsync(handle, () => !handle.IsOpen);
 
-        // Wait well past the cancelled dwell's deadline. A stale-but-firing dwell would
-        // wrongly zero the budget here.
-        await Task.Delay(500);
+        // Closing cancels the dwell before it marks the session closed. With nothing left
+        // on the clock, no stale dwell can fire and zero the budget later.
+        Assert.False(time.AdvanceToNextPendingTimer(), "a timer was still pending after the session closed");
 
         // Device returns; the next fault must still see the preserved budget (1).
         finalPhase = true;
@@ -952,14 +988,24 @@ public class DeviceProxyBaseTests
         // records the reset) keeps "reset ran, then reopened" deterministically ordered —
         // otherwise the injected Active event races the reset call and the reopen can win.
         reset.OnReset = () => SimulateConnect(tracker, healthy);
+        var time = new TimerSignalingFakeTimeProvider();
+        var settleWindow = TimeSpan.FromSeconds(3);
         var handle = new TestHandle(tracker, watcher,
             recoveryPolicy: policy,
             deviceReset: reset,
             faultedNodeRecovery: true,
-            faultedSettleWindow: TimeSpan.FromMilliseconds(50));
+            faultedSettleWindow: settleWindow,
+            timeProvider: time);
         handle.DeviceOpened += (_, _) => reopened.TrySetResult();
 
+        // The tracker raises the Present edge synchronously, and recovery's first step is to
+        // arm the settle window, so both have happened by the time this returns. The negative
+        // faulted-node tests below rely on that.
         SimulatePresentFaulted(tracker, faulted);
+        Assert.Equal(new[] { settleWindow }, time.ArmedDueTimes);
+        Assert.Equal(0, reset.ResetCalls);   // nothing touches the node inside the window
+
+        time.Advance(settleWindow);
         await reopened.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.True(handle.IsOpen);
@@ -1026,6 +1072,7 @@ public class DeviceProxyBaseTests
         // the recovery loop never starts: the mechanism and the policy are never touched.
         var (tracker, watcher) = CreateTestInfra();
         var reset = new FakeDeviceReset(UsbCycle);
+        var time = new TimerSignalingFakeTimeProvider();
         int policyCalls = 0;
 
         await using var handle = new TestHandle(tracker, watcher,
@@ -1036,11 +1083,14 @@ public class DeviceProxyBaseTests
             }),
             deviceReset: reset,
             faultedNodeRecovery: true,
-            faultedSettleWindow: TimeSpan.FromMilliseconds(30));
+            faultedSettleWindow: TimeSpan.FromSeconds(3),
+            timeProvider: time);
 
+        // The decision is made on the Present edge, before this returns. Recovery would have
+        // armed its settle window; nothing was armed, so nothing is left to run later.
         SimulatePresentFaulted(tracker, MakeFaultedDevice(status, problemCode));
-        await Task.Delay(300);   // well past the settle window
 
+        Assert.Empty(time.ArmedDueTimes);
         Assert.Equal(0, reset.ResetCalls);
         Assert.Equal(0, Volatile.Read(ref policyCalls));
         Assert.NotEqual(ConnectionState.GaveUp, handle.State);
@@ -1055,6 +1105,7 @@ public class DeviceProxyBaseTests
         // must be left strictly alone even with faulted-node recovery opted in.
         var (tracker, watcher) = CreateTestInfra();
         var reset = new FakeDeviceReset(UsbCycle);
+        var time = new TimerSignalingFakeTimeProvider();
         int policyCalls = 0;
 
         await using var handle = new TestHandle(tracker, watcher,
@@ -1065,11 +1116,13 @@ public class DeviceProxyBaseTests
             }),
             deviceReset: reset,
             faultedNodeRecovery: true,
-            faultedSettleWindow: TimeSpan.FromMilliseconds(30));
+            faultedSettleWindow: TimeSpan.FromSeconds(3),
+            timeProvider: time);
 
+        // Decided on the Present edge: no settle window armed means no recovery started.
         SimulatePresentFaulted(tracker, MakeFaultedDevice(DeviceStatus.OK, DeviceFaultClassifier.CmProbNone));
-        await Task.Delay(300);
 
+        Assert.Empty(time.ArmedDueTimes);
         Assert.Equal(0, reset.ResetCalls);
         Assert.Equal(0, Volatile.Read(ref policyCalls));
         Assert.NotEqual(ConnectionState.GaveUp, handle.State);
@@ -1084,6 +1137,7 @@ public class DeviceProxyBaseTests
         // nothing, no reset, no GaveUp. Only an Active device ever drives recovery.
         var (tracker, watcher) = CreateTestInfra();
         var reset = new FakeDeviceReset(UsbCycle);
+        var time = new TimerSignalingFakeTimeProvider();
         int policyCalls = 0;
 
         await using var handle = new TestHandle(tracker, watcher,
@@ -1093,11 +1147,13 @@ public class DeviceProxyBaseTests
                 return new RecoveryDirective.Reset(ctx.AvailableResets[0]);
             }),
             deviceReset: reset,
-            faultedSettleWindow: TimeSpan.FromMilliseconds(30));   // faultedNodeRecovery left false
+            faultedSettleWindow: TimeSpan.FromSeconds(3),   // faultedNodeRecovery left false
+            timeProvider: time);
 
+        // Decided on the Present edge: no settle window armed means no recovery started.
         SimulatePresentFaulted(tracker, MakeFaultedDevice());
-        await Task.Delay(300);
 
+        Assert.Empty(time.ArmedDueTimes);
         Assert.Equal(0, reset.ResetCalls);
         Assert.Equal(0, Volatile.Read(ref policyCalls));
         Assert.Equal(ConnectionState.Disconnected, handle.State);
@@ -1330,13 +1386,13 @@ public class DeviceProxyBaseTests
             await using (var handle = new TestHandle(tracker, watcher))
                 ForgetATaskThatFaultsAfterDetaching(handle, sentinel);
 
-            // Let ObserveAsync resume, then force the finalizer pass that would publish
-            // the fault had nothing observed it.
-            await Task.Delay(100);
+            // Force the finalizer pass that would publish the fault had nothing observed it.
+            // No wait is needed first: until ObserveAsync resumes, its queued continuation
+            // keeps the task reachable, and once it resumes the fault is observed. A task
+            // nothing observes is unreachable here, and its finalizer raises the event
+            // before WaitForPendingFinalizers returns.
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            GC.Collect();
-            await Task.Delay(100);
 
             lock (escaped) Assert.Empty(escaped);
         }
@@ -1415,9 +1471,9 @@ public class DeviceProxyBaseTests
         }));
 
         SimulateConnect(tracker, MakeDevice());
-        await WaitForAsync(
-            () => handle.State == ConnectionState.GaveUp || reset.Executed.Count >= 6,
-            TimeSpan.FromSeconds(10));
+        // Each reset here is followed by a reopen, which raises a state change.
+        await ProxyWait.UntilAsync(handle,
+            () => handle.State == ConnectionState.GaveUp || reset.Executed.Count >= 6);
 
         var kinds = reset.Executed.ToArray();
         string trace;
@@ -1442,9 +1498,8 @@ public class DeviceProxyBaseTests
                 : new RecoveryDirective.GiveUp()));
 
         SimulateConnect(tracker, MakeDevice());
-        await WaitForAsync(
-            () => handle.State == ConnectionState.GaveUp || reset.Executed.Count >= 6,
-            TimeSpan.FromSeconds(10));
+        await ProxyWait.UntilAsync(handle,
+            () => handle.State == ConnectionState.GaveUp || reset.Executed.Count >= 6);
 
         Assert.Equal(
             [ResetKind.SoftProtocol, ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable],
@@ -1477,9 +1532,10 @@ public class DeviceProxyBaseTests
         handle.DeviceOpened += (_, _) => Interlocked.Increment(ref opens);
 
         SimulateConnect(tracker, MakeDevice());
-        await WaitForAsync(
-            () => Volatile.Read(ref opens) >= 10 || reset.Executed.Count > 0,
-            TimeSpan.FromSeconds(10));
+        // DeviceOpened follows the Open state change, but the session's fault closes it again,
+        // and a reset is followed by a reopen, so a state change follows either count moving.
+        await ProxyWait.UntilAsync(handle,
+            () => Volatile.Read(ref opens) >= 10 || reset.Executed.Count > 0);
 
         string seen;
         lock (attempts) seen = string.Join(",", attempts);
@@ -1489,17 +1545,49 @@ public class DeviceProxyBaseTests
     }
 
     /// <summary>A reset-safety gate that parks every caller until the test releases it.</summary>
+    /// <remarks>
+    /// The verdict runs its continuations inline, so released from a thread with no
+    /// SynchronizationContext, <see cref="Release"/> returns only once the proxy has acted on the
+    /// verdict and is waiting on something else or done (ADR-0089 D1). The token is not observed:
+    /// every test releases the gate before it disposes the proxy.
+    /// </remarks>
     private sealed class HeldGate : IResetSafetyGate
     {
-        private readonly TaskCompletionSource<bool> _verdict = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _verdict = new();
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public void Release(bool safe) => _verdict.TrySetResult(safe);
 
         public ValueTask<bool> CanResetAsync(DeviceInfo device, CancellationToken ct)
         {
             Entered.TrySetResult();
-            return new(_verdict.Task.WaitAsync(ct));
+            return new(_verdict.Task);
         }
+    }
+
+    // ResetHeldAtGate reads the reset count straight after releasing the gate. That is sound only
+    // while the runtime runs the awaiting continuation inside Release, so this pins it: a runtime
+    // change fails here by name instead of leaving that assertion checking nothing.
+    [Fact]
+    public async Task HeldGate_ReleasedOffTheTestContext_ResumesTheAwaiterBeforeReleaseReturns()
+    {
+        var gate = new HeldGate();
+        bool resumed = false;
+
+        var consulting = ConsultTheGateAsProxyDoesAsync(gate, () => resumed = true);
+        Assert.False(consulting.IsCompleted);   // parked on the verdict
+
+        await Task.Run(() =>
+        {
+            gate.Release(safe: true);
+            Assert.True(resumed, "releasing the gate did not run the awaiting continuation inline");
+        });
+    }
+
+    // Awaits the gate the way DeviceProxyBase.ExecuteResetAsync does, without capturing a context.
+    private static async Task ConsultTheGateAsProxyDoesAsync(HeldGate gate, Action resumed)
+    {
+        await gate.CanResetAsync(MakeDevice(), CancellationToken.None).ConfigureAwait(false);
+        resumed();
     }
 
     // The recovery loop checks !IsOpen before it decides, and the safety gate then runs
@@ -1513,6 +1601,8 @@ public class DeviceProxyBaseTests
         var reset = new FakeDeviceReset(
             new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
         var gate = new HeldGate();
+        var time = new TimerSignalingFakeTimeProvider();
+        var dwell = TimeSpan.FromSeconds(5);
         int openable = 0;
 
         await using var handle = new TestHandle(tracker, watcher,
@@ -1522,7 +1612,8 @@ public class DeviceProxyBaseTests
             recoveryPolicy: new FuncPolicy(ctx => new RecoveryDirective.Reset(ctx.AvailableResets[0])),
             deviceReset: reset,
             resetSafetyGate: gate,
-            resetReopenPollInterval: TimeSpan.FromMilliseconds(5));
+            stableOpenDwell: dwell,
+            timeProvider: time);
 
         SimulateConnect(tracker, device);
         await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));   // recovery is parked at the gate
@@ -1530,11 +1621,15 @@ public class DeviceProxyBaseTests
         // A property change on the active device drives a tracker open while the gate is held.
         Volatile.Write(ref openable, 1);
         tracker.OnDevicePropertyChanged(device, device with { Name = "renamed" }, new HashSet<string> { "Name" });
-        await WaitForAsync(() => handle.IsOpen, TimeSpan.FromSeconds(5));
+        await TimerArmedAsync(time, dwell);   // the open has published and armed its dwell
+        var armedBeforeRelease = time.ArmedDueTimes.Count;
 
-        gate.Release(safe: true);
-        await Task.Delay(200);
+        // Off the test's SynchronizationContext the recovery loop resumes inside Release, so it
+        // has made its decision, and called the mechanism if it was going to, before this returns.
+        // Anything it deferred instead would have armed a timer.
+        await Task.Run(() => gate.Release(safe: true));
 
+        Assert.Equal(armedBeforeRelease, time.ArmedDueTimes.Count);
         Assert.Equal(0, reset.ResetCalls);
         Assert.True(handle.IsOpen);
         Assert.Equal(ConnectionState.Open, handle.State);
@@ -1553,7 +1648,7 @@ public class DeviceProxyBaseTests
             stableOpenDwell: TimeSpan.FromMinutes(5));
 
         SimulateConnect(tracker, MakeDevice());
-        await WaitForAsync(() => handle.State == ConnectionState.GaveUp, TimeSpan.FromSeconds(10));
+        await ProxyWait.UntilAsync(handle, () => handle.State == ConnectionState.GaveUp);
 
         Assert.Equal(ConnectionState.GaveUp, handle.State);
     }
