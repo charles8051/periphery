@@ -53,19 +53,20 @@ A test depends on elapsed time in two different ways.
   it. `CameraSessionClockTests` already drives a `FakeTimeProvider`, and still loops `Advance` then
   `Task.Delay(10)`, because nothing tells the test that the session has armed its next timer.
 
-Most of the 93 sites are the second kind. With the analyzer on, they break down as:
+Most of the 94 sites are the second kind. With the analyzer on, they break down as:
 
 | Kind | Sites | Example |
 | --- | --- | --- |
 | poll against a deadline, or a delay before a positive assertion | 38 | `HotplugEdgeBindingTests`: `DateTime.UtcNow.AddSeconds(5)`, then `Task.Delay(5)` in a loop |
-| delay before a negative assertion | 25 | `AutoflashServiceTests`: `await Task.Delay(200); Assert.Empty(opens)` |
+| delay before a negative assertion | 26 | `AutoflashServiceTests`: `await Task.Delay(200); Assert.Empty(opens)` |
 | a fake holding a call open for a real duration | 11 | `FakeStm32Bootloader` holds its ACK 400 ms past a 250 ms deadline |
 | `Task.Delay(Timeout.Infinite, ct)` as a park | 8 | `TestUsbBackend` wedges a transfer until cancelled |
 | elapsed time measured and asserted | 4 | `ReadinessPollTests`: `Stopwatch`, then `InRange(80 ms, 5 s)` |
 | race amplification, rig delays, a safety net | 7 | `DeviceWatcherThreadSafetyTests`: `Task.Delay(5)` before a dispose |
 
 They sit in 32 files across 11 of the 24 test projects. The other 13 have none. That was not a rule
-anyone wrote down, and nothing kept it.
+anyone wrote down, and nothing kept it. #242, merged while this record was in review, added one more:
+a 200 ms delay before asserting that a reset did not happen.
 
 ### Production has no clock to fake
 
@@ -248,7 +249,7 @@ a flake.
 
 ### Write the policy down and rely on review
 
-Rejected as sufficient, kept as necessary. The tree reached 93 sites with review as the only check.
+Rejected as sufficient, kept as necessary. The tree reached 94 sites with review as the only check.
 
 ### Exempt `Category=Integration` files by pragma
 
