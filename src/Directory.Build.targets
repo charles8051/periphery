@@ -1,0 +1,69 @@
+<Project>
+  <!--
+    ============================================================================
+    Public API baseline.
+    ============================================================================
+
+    Every public type and member of a published library is written down in
+    PublicAPI.Shipped.txt and PublicAPI.Unshipped.txt beside its project.
+    RS0016 fails the build on a public symbol missing from both files, and
+    RS0017 fails it on a recorded symbol the code no longer declares. A change
+    to the surface is then a change to a checked-in text file, which a
+    reviewer sees whether or not they open the source.
+
+    Shipped holds the surface of the last release. Unshipped holds what has
+    changed since: additions as plain lines, removals as `*REMOVED*` lines.
+    Cutting a release moves Unshipped into Shipped; see CONTRIBUTING.md.
+    Outside that step, any edit to a Shipped file is a mistake.
+
+    Tracked by default: every project that packs as a library. Not tracked:
+    executables and `PackAsTool` projects, whose contract is a command line,
+    and projects that set IsPackable=false, which ship to no feed. A project
+    overrides the default by setting PeripheryTrackPublicApi itself.
+
+    This is a .targets file rather than .props because the default reads
+    IsPackable, PackAsTool and OutputType, which a csproj sets in its body.
+    Directory.Build.props is imported before the body and would see them unset.
+    IsPackable is still empty here for a project relying on the SDK default,
+    which is set later, so the condition tests for 'false' rather than 'true'.
+
+    RS0026 and RS0027 (optional parameters across overloads) are off. They flag
+    the shape of existing overloads rather than a change to the surface.
+
+    RS0041 (public symbol uses oblivious reference types) is off. Every project
+    enables nullable and no source file disables it, so the only oblivious
+    public symbols are the JsonTypeInfo properties that the net10.0
+    System.Text.Json generator deliberately marks oblivious. Their lines carry
+    the `~` prefix that records this.
+
+    The same generator is why PublicAPI/<tfm>/ exists: the net8.0 generator
+    annotates those properties, so their lines differ by framework. The RS0016
+    code fix skips generated code and will not write them. After adding a
+    [JsonSerializable] type to a public context, run
+    scripts/record-generated-public-api.sh.
+  -->
+  <PropertyGroup Condition="'$(PeripheryTrackPublicApi)' == ''">
+    <PeripheryTrackPublicApi Condition="'$(IsPackable)' != 'false' and '$(PackAsTool)' != 'true' and '$(OutputType)' != 'Exe' and '$(OutputType)' != 'WinExe'">true</PeripheryTrackPublicApi>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PeripheryTrackPublicApi)' == 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027;RS0041</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PeripheryTrackPublicApi)' == 'true'">
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!--
+    The package adds the two project-level files itself; listing them here as
+    well makes each a duplicate AdditionalFile, and the RS0016 code fix then
+    records nothing. Only the per-framework files are added here: a symbol
+    whose recorded form differs between net8.0 and net10.0 lives in
+    PublicAPI/<tfm>/, which the analyzer merges with the project-level pair.
+  -->
+  <ItemGroup Condition="'$(PeripheryTrackPublicApi)' == 'true'">
+    <AdditionalFiles Include="PublicAPI/$(TargetFramework)/PublicAPI.Shipped.txt" Condition="Exists('PublicAPI/$(TargetFramework)/PublicAPI.Shipped.txt')" />
+    <AdditionalFiles Include="PublicAPI/$(TargetFramework)/PublicAPI.Unshipped.txt" Condition="Exists('PublicAPI/$(TargetFramework)/PublicAPI.Unshipped.txt')" />
+  </ItemGroup>
+</Project>

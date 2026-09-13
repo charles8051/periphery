@@ -1,0 +1,6 @@
+#nullable enable
+Periphery.Serial.Rjcp.SerialDuplexPipe
+Periphery.Serial.Rjcp.SerialDuplexPipe.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Serial.Rjcp.SerialDuplexPipe.Input.get -> System.IO.Pipelines.PipeReader!
+Periphery.Serial.Rjcp.SerialDuplexPipe.Output.get -> System.IO.Pipelines.PipeWriter!
+Periphery.Serial.Rjcp.SerialDuplexPipe.SerialDuplexPipe(RJCP.IO.Ports.SerialPortStream! serialPort) -> void

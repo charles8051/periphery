@@ -1,0 +1,68 @@
+#nullable enable
+Periphery.Hid.Codecs.HidBattery
+Periphery.Hid.Codecs.HidBatterySnapshot
+Periphery.Hid.Codecs.HidBatterySnapshot.BatteryChargePercent.get -> int?
+Periphery.Hid.Codecs.HidBatterySnapshot.BatteryChargePercent.init -> void
+Periphery.Hid.Codecs.HidBatterySnapshot.BatteryStatus.get -> Periphery.BatteryStatus?
+Periphery.Hid.Codecs.HidBatterySnapshot.BatteryStatus.init -> void
+Periphery.Hid.Codecs.HidBatterySnapshot.HidBatterySnapshot() -> void
+Periphery.Hid.Codecs.HidBatterySnapshot.HidBatterySnapshot(int? BatteryChargePercent, Periphery.BatteryStatus? BatteryStatus, bool? IsExternalPowerConnected, bool? IsBatteryLow) -> void
+Periphery.Hid.Codecs.HidBatterySnapshot.IsBatteryLow.get -> bool?
+Periphery.Hid.Codecs.HidBatterySnapshot.IsBatteryLow.init -> void
+Periphery.Hid.Codecs.HidBatterySnapshot.IsExternalPowerConnected.get -> bool?
+Periphery.Hid.Codecs.HidBatterySnapshot.IsExternalPowerConnected.init -> void
+Periphery.Hid.Codecs.IHidUpsCodec
+Periphery.Hid.Codecs.IHidUpsCodec.ReadSnapshotAsync(Periphery.Hid.HidDevice! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Periphery.Hid.Codecs.HidBatterySnapshot>
+Periphery.Hid.Codecs.MegatecQxCodec
+Periphery.Hid.Codecs.MegatecQxCodec.MegatecQxCodec() -> void
+Periphery.Hid.Codecs.MegatecQxCodec.ReadSnapshotAsync(Periphery.Hid.HidDevice! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Periphery.Hid.Codecs.HidBatterySnapshot>
+Periphery.Hid.HidAccessDeniedException
+Periphery.Hid.HidAccessDeniedException.HidAccessDeniedException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Hid.HidBatteryEnricher
+Periphery.Hid.HidBatteryEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
+Periphery.Hid.HidBatteryEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Periphery.Hid.HidBatteryEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
+Periphery.Hid.HidBatteryEnricher.HidBatteryEnricher() -> void
+Periphery.Hid.HidBatteryEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.Hid.HidDevice
+Periphery.Hid.HidDevice.DeviceInfo.get -> Periphery.DeviceInfo!
+Periphery.Hid.HidDevice.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Hid.HidDevice.MaxFeatureReportLength.get -> int
+Periphery.Hid.HidDevice.MaxInputReportLength.get -> int
+Periphery.Hid.HidDevice.MaxOutputReportLength.get -> int
+Periphery.Hid.HidDevice.ReadFeatureReportAsync(byte reportId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Hid.HidReport>!
+Periphery.Hid.HidDevice.ReadReportAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Hid.HidReport>!
+Periphery.Hid.HidDevice.Usage.get -> ushort
+Periphery.Hid.HidDevice.UsagePage.get -> ushort
+Periphery.Hid.HidDevice.WriteFeatureReportAsync(Periphery.Hid.HidReport report, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Hid.HidDevice.WriteReportAsync(Periphery.Hid.HidReport report, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Hid.HidDeviceNotFoundException
+Periphery.Hid.HidDeviceNotFoundException.HidDeviceNotFoundException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Hid.HidDeviceProxy
+Periphery.Hid.HidException
+Periphery.Hid.HidException.DeviceId.get -> string?
+Periphery.Hid.HidException.HidException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Hid.HidException.HidException(string! message, string? deviceId = null) -> void
+Periphery.Hid.HidQuirks
+Periphery.Hid.HidReport
+Periphery.Hid.HidReport.Data.get -> System.ReadOnlyMemory<byte>
+Periphery.Hid.HidReport.Equals(Periphery.Hid.HidReport other) -> bool
+Periphery.Hid.HidReport.HidReport() -> void
+Periphery.Hid.HidReport.HidReport(byte reportId, System.ReadOnlyMemory<byte> data) -> void
+Periphery.Hid.HidReport.ReportId.get -> byte
+Periphery.Hid.HidTransferException
+Periphery.Hid.HidTransferException.HidTransferException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+override Periphery.Hid.HidReport.Equals(object? obj) -> bool
+override Periphery.Hid.HidReport.GetHashCode() -> int
+override Periphery.Hid.HidReport.ToString() -> string!
+static Periphery.Hid.Codecs.HidBattery.ReadSnapshotAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Hid.Codecs.HidBatterySnapshot?>!
+static Periphery.Hid.HidBatteryEnricher.Instance.get -> Periphery.Hid.HidBatteryEnricher!
+static Periphery.Hid.HidDevice.OpenAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Hid.HidDevice!>!
+static Periphery.Hid.HidDeviceProxy.Create(Periphery.DeviceTracker! tracker, Periphery.IRecoveryPolicy? recoveryPolicy = null) -> Periphery.Hid.HidDeviceProxy!
+static Periphery.Hid.HidDeviceProxy.OpenAsync(Periphery.DeviceProfile! profile, Periphery.IRecoveryPolicy? recoveryPolicy = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Hid.HidDeviceProxy!>!
+static Periphery.Hid.HidQuirks.GetUpsCodec(Periphery.HardwareId vendorId, Periphery.HardwareId productId) -> Periphery.Hid.Codecs.IHidUpsCodec?
+static Periphery.Hid.HidQuirks.RegisterUps(Periphery.HardwareId vendorId, Periphery.HardwareId productId, Periphery.Hid.Codecs.IHidUpsCodec! codec) -> void
+static Periphery.Hid.HidQuirks.TryRegisterUps(Periphery.HardwareId vendorId, Periphery.HardwareId productId, Periphery.Hid.Codecs.IHidUpsCodec! codec, out bool wasOverride) -> bool
+static Periphery.Hid.HidQuirks.UpsCodecOverridden -> System.Action<Periphery.HardwareId, Periphery.HardwareId>?
+static Periphery.Hid.HidReport.operator !=(Periphery.Hid.HidReport left, Periphery.Hid.HidReport right) -> bool
+static Periphery.Hid.HidReport.operator ==(Periphery.Hid.HidReport left, Periphery.Hid.HidReport right) -> bool

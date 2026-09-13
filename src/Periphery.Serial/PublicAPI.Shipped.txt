@@ -1,0 +1,7 @@
+#nullable enable
+Periphery.Serial.BclSerialDuplexPipe
+Periphery.Serial.BclSerialDuplexPipe.BclSerialDuplexPipe(System.IO.Ports.SerialPort! serialPort, System.TimeSpan? readTick = null) -> void
+Periphery.Serial.BclSerialDuplexPipe.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Serial.BclSerialDuplexPipe.Input.get -> System.IO.Pipelines.PipeReader!
+Periphery.Serial.BclSerialDuplexPipe.Output.get -> System.IO.Pipelines.PipeWriter!
+static readonly Periphery.Serial.BclSerialDuplexPipe.DefaultReadTick -> System.TimeSpan

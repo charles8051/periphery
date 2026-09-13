@@ -1,0 +1,209 @@
+#nullable enable
+Periphery.Bootloader.BootloaderEntryException
+Periphery.Bootloader.BootloaderEntryException.BootloaderEntryException(string! message) -> void
+Periphery.Bootloader.BootloaderEntryException.BootloaderEntryException(string! message, System.Exception! innerException) -> void
+Periphery.Bootloader.BootloaderEntryOptions
+Periphery.Bootloader.BootloaderEntryOptions.ApplicationFilter.get -> Periphery.DeviceFilter?
+Periphery.Bootloader.BootloaderEntryOptions.ApplicationFilter.init -> void
+Periphery.Bootloader.BootloaderEntryOptions.ApplicationTimeout.get -> System.TimeSpan
+Periphery.Bootloader.BootloaderEntryOptions.ApplicationTimeout.init -> void
+Periphery.Bootloader.BootloaderEntryOptions.BootloaderTimeout.get -> System.TimeSpan
+Periphery.Bootloader.BootloaderEntryOptions.BootloaderTimeout.init -> void
+Periphery.Bootloader.BootloaderEntryOptions.Correlation.get -> Periphery.Bootloader.DeviceCorrelationMode
+Periphery.Bootloader.BootloaderEntryOptions.Correlation.init -> void
+Periphery.Bootloader.BootloaderEntryOptions.Recovery.get -> Periphery.Bootloader.BootloaderEntryRecovery?
+Periphery.Bootloader.BootloaderEntryOptions.Recovery.init -> void
+Periphery.Bootloader.BootloaderEntryOrchestrator
+Periphery.Bootloader.BootloaderEntryPhase
+Periphery.Bootloader.BootloaderEntryPhase.Entering = 0 -> Periphery.Bootloader.BootloaderEntryPhase
+Periphery.Bootloader.BootloaderEntryPhase.Recovering = 2 -> Periphery.Bootloader.BootloaderEntryPhase
+Periphery.Bootloader.BootloaderEntryPhase.WaitingForBootloader = 1 -> Periphery.Bootloader.BootloaderEntryPhase
+Periphery.Bootloader.BootloaderEntryRecovery
+Periphery.Bootloader.BootloaderEntryRecovery.BootloaderEntryRecovery(Periphery.IDeviceReset! Reset, Periphery.IRecoveryPolicy? Policy = null, Periphery.IResetSafetyGate? SafetyGate = null, System.TimeSpan? ReturnTimeout = null) -> void
+Periphery.Bootloader.BootloaderEntryRecovery.EffectivePolicy.get -> Periphery.IRecoveryPolicy!
+Periphery.Bootloader.BootloaderEntryRecovery.EffectiveReturnTimeout.get -> System.TimeSpan
+Periphery.Bootloader.BootloaderEntryRecovery.Policy.get -> Periphery.IRecoveryPolicy?
+Periphery.Bootloader.BootloaderEntryRecovery.Policy.init -> void
+Periphery.Bootloader.BootloaderEntryRecovery.Reset.get -> Periphery.IDeviceReset!
+Periphery.Bootloader.BootloaderEntryRecovery.Reset.init -> void
+Periphery.Bootloader.BootloaderEntryRecovery.ReturnTimeout.get -> System.TimeSpan?
+Periphery.Bootloader.BootloaderEntryRecovery.ReturnTimeout.init -> void
+Periphery.Bootloader.BootloaderEntryRecovery.SafetyGate.get -> Periphery.IResetSafetyGate?
+Periphery.Bootloader.BootloaderEntryRecovery.SafetyGate.init -> void
+Periphery.Bootloader.BootloaderEntryRegistry
+Periphery.Bootloader.BootloaderEntryRegistry.BootloaderEntryRegistry() -> void
+Periphery.Bootloader.BootloaderEntryRegistry.Entries.get -> System.Collections.Generic.IReadOnlyList<Periphery.Bootloader.IBootloaderEntry!>!
+Periphery.Bootloader.BootloaderEntryRegistry.Match(Periphery.DeviceInfo! applicationDevice) -> Periphery.Bootloader.IBootloaderEntry?
+Periphery.Bootloader.BootloaderEntryRegistry.Register(Periphery.Bootloader.IBootloaderEntry! entry) -> void
+Periphery.Bootloader.BootloaderEntryResult<TResult>
+Periphery.Bootloader.BootloaderEntryResult<TResult>.ApplicationDevice.get -> Periphery.DeviceInfo?
+Periphery.Bootloader.BootloaderEntryResult<TResult>.ApplicationDevice.init -> void
+Periphery.Bootloader.BootloaderEntryResult<TResult>.ApplicationReturned.get -> bool
+Periphery.Bootloader.BootloaderEntryResult<TResult>.ApplicationReturned.init -> void
+Periphery.Bootloader.BootloaderEntryResult<TResult>.BootloaderEntryResult(TResult FlashResult, bool ApplicationReturned, Periphery.DeviceInfo? ApplicationDevice = null) -> void
+Periphery.Bootloader.BootloaderEntryResult<TResult>.FlashResult.get -> TResult
+Periphery.Bootloader.BootloaderEntryResult<TResult>.FlashResult.init -> void
+Periphery.Bootloader.BootloaderException
+Periphery.Bootloader.BootloaderException.BootloaderException(string! message) -> void
+Periphery.Bootloader.BootloaderException.BootloaderException(string! message, System.Exception! innerException) -> void
+Periphery.Bootloader.BootloaderRegistry
+Periphery.Bootloader.BootloaderRegistry.BootloaderRegistry() -> void
+Periphery.Bootloader.BootloaderRegistry.Match(Periphery.DeviceInfo! device) -> Periphery.Bootloader.IBootloaderProvider?
+Periphery.Bootloader.BootloaderRegistry.Providers.get -> System.Collections.Generic.IReadOnlyList<Periphery.Bootloader.IBootloaderProvider!>!
+Periphery.Bootloader.BootloaderRegistry.Register(Periphery.Bootloader.IBootloaderProvider! provider) -> void
+Periphery.Bootloader.DeviceCorrelationMode
+Periphery.Bootloader.DeviceCorrelationMode.ByLocationPath = 2 -> Periphery.Bootloader.DeviceCorrelationMode
+Periphery.Bootloader.DeviceCorrelationMode.BySerial = 1 -> Periphery.Bootloader.DeviceCorrelationMode
+Periphery.Bootloader.DeviceCorrelationMode.FirstAppearance = 0 -> Periphery.Bootloader.DeviceCorrelationMode
+Periphery.Bootloader.DeviceIdentity
+Periphery.Bootloader.DeviceIdentity.BootloaderVersion.get -> string?
+Periphery.Bootloader.DeviceIdentity.BootloaderVersion.init -> void
+Periphery.Bootloader.DeviceIdentity.Chip.get -> string?
+Periphery.Bootloader.DeviceIdentity.Chip.init -> void
+Periphery.Bootloader.DeviceIdentity.DeviceIdentity(string! Family, string? Chip, string? BootloaderVersion, int TransferSize, System.Collections.Immutable.ImmutableArray<Periphery.Bootloader.MemoryRegion> Regions, System.Collections.Immutable.ImmutableArray<string!> SupportedCommands) -> void
+Periphery.Bootloader.DeviceIdentity.Family.get -> string!
+Periphery.Bootloader.DeviceIdentity.Family.init -> void
+Periphery.Bootloader.DeviceIdentity.Regions.get -> System.Collections.Immutable.ImmutableArray<Periphery.Bootloader.MemoryRegion>
+Periphery.Bootloader.DeviceIdentity.Regions.init -> void
+Periphery.Bootloader.DeviceIdentity.SupportedCommands.get -> System.Collections.Immutable.ImmutableArray<string!>
+Periphery.Bootloader.DeviceIdentity.SupportedCommands.init -> void
+Periphery.Bootloader.DeviceIdentity.TransferSize.get -> int
+Periphery.Bootloader.DeviceIdentity.TransferSize.init -> void
+Periphery.Bootloader.DeviceWaitState
+Periphery.Bootloader.DeviceWaitState.Arm() -> Periphery.Bootloader.DeviceWaitState!
+Periphery.Bootloader.DeviceWaitState.Correlated.get -> Periphery.DeviceInfo?
+Periphery.Bootloader.DeviceWaitState.ExpectedLocationPath.get -> string?
+Periphery.Bootloader.DeviceWaitState.ExpectedSerial.get -> string?
+Periphery.Bootloader.DeviceWaitState.IsComplete.get -> bool
+Periphery.Bootloader.DeviceWaitState.Mode.get -> Periphery.Bootloader.DeviceCorrelationMode
+Periphery.Bootloader.DeviceWaitState.OnAppeared(Periphery.DeviceInfo! candidate) -> Periphery.Bootloader.DeviceWaitState!
+Periphery.Bootloader.DeviceWaitState.OnDisappeared(string! deviceId) -> Periphery.Bootloader.DeviceWaitState!
+Periphery.Bootloader.DeviceWaitState.OnTimeout() -> Periphery.Bootloader.DeviceWaitState!
+Periphery.Bootloader.DeviceWaitState.Status.get -> Periphery.Bootloader.DeviceWaitStatus
+Periphery.Bootloader.DeviceWaitStatus
+Periphery.Bootloader.DeviceWaitStatus.Collecting = 0 -> Periphery.Bootloader.DeviceWaitStatus
+Periphery.Bootloader.DeviceWaitStatus.Correlated = 2 -> Periphery.Bootloader.DeviceWaitStatus
+Periphery.Bootloader.DeviceWaitStatus.TimedOut = 3 -> Periphery.Bootloader.DeviceWaitStatus
+Periphery.Bootloader.DeviceWaitStatus.Waiting = 1 -> Periphery.Bootloader.DeviceWaitStatus
+Periphery.Bootloader.DeviceWatcherWaitSource
+Periphery.Bootloader.DeviceWatcherWaitSource.Appeared -> System.Action<Periphery.DeviceInfo!>?
+Periphery.Bootloader.DeviceWatcherWaitSource.DeviceWatcherWaitSource(Periphery.DeviceFilter! filter) -> void
+Periphery.Bootloader.DeviceWatcherWaitSource.Disappeared -> System.Action<string!>?
+Periphery.Bootloader.DeviceWatcherWaitSource.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Bootloader.DeviceWatcherWaitSource.StartAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.EraseMode
+Periphery.Bootloader.EraseMode.Auto = 0 -> Periphery.Bootloader.EraseMode
+Periphery.Bootloader.EraseMode.Mass = 1 -> Periphery.Bootloader.EraseMode
+Periphery.Bootloader.EraseMode.None = 3 -> Periphery.Bootloader.EraseMode
+Periphery.Bootloader.EraseMode.PerPage = 2 -> Periphery.Bootloader.EraseMode
+Periphery.Bootloader.ExceptionSummary
+Periphery.Bootloader.FirmwareConverterRegistry
+Periphery.Bootloader.FirmwareConverterRegistry.Converters.get -> System.Collections.Generic.IReadOnlyList<Periphery.Bootloader.IFirmwareConverter!>!
+Periphery.Bootloader.FirmwareConverterRegistry.Find(Periphery.Firmware.FirmwareFormat source, System.Collections.Generic.IEnumerable<Periphery.Firmware.FirmwareFormat>! acceptedTargets) -> Periphery.Bootloader.IFirmwareConverter?
+Periphery.Bootloader.FirmwareConverterRegistry.FirmwareConverterRegistry() -> void
+Periphery.Bootloader.FirmwareConverterRegistry.Register(Periphery.Bootloader.IFirmwareConverter! converter) -> void
+Periphery.Bootloader.FlashOptions
+Periphery.Bootloader.FlashOptions.Erase.get -> Periphery.Bootloader.EraseMode
+Periphery.Bootloader.FlashOptions.Erase.init -> void
+Periphery.Bootloader.FlashOptions.LeaveAfterFlash.get -> bool
+Periphery.Bootloader.FlashOptions.LeaveAfterFlash.init -> void
+Periphery.Bootloader.FlashOptions.Verify.get -> bool
+Periphery.Bootloader.FlashOptions.Verify.init -> void
+Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Connecting = 0 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Done = 6 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Erasing = 2 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Identifying = 1 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Leaving = 5 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Verifying = 4 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashPhase.Writing = 3 -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashProgress
+Periphery.Bootloader.FlashProgress.BytesDone.get -> long
+Periphery.Bootloader.FlashProgress.BytesDone.init -> void
+Periphery.Bootloader.FlashProgress.BytesTotal.get -> long
+Periphery.Bootloader.FlashProgress.BytesTotal.init -> void
+Periphery.Bootloader.FlashProgress.FlashProgress() -> void
+Periphery.Bootloader.FlashProgress.FlashProgress(Periphery.Bootloader.FlashPhase Phase, long BytesDone, long BytesTotal, string? Message = null) -> void
+Periphery.Bootloader.FlashProgress.Message.get -> string?
+Periphery.Bootloader.FlashProgress.Message.init -> void
+Periphery.Bootloader.FlashProgress.Percent.get -> int
+Periphery.Bootloader.FlashProgress.Phase.get -> Periphery.Bootloader.FlashPhase
+Periphery.Bootloader.FlashProgress.Phase.init -> void
+Periphery.Bootloader.FlashResult
+Periphery.Bootloader.FlashResult.BytesWritten.get -> long
+Periphery.Bootloader.FlashResult.BytesWritten.init -> void
+Periphery.Bootloader.FlashResult.Describe() -> string!
+Periphery.Bootloader.FlashResult.Error.get -> string?
+Periphery.Bootloader.FlashResult.Error.init -> void
+Periphery.Bootloader.FlashResult.FlashResult(bool Success, long BytesWritten, bool Verified, string? Error = null) -> void
+Periphery.Bootloader.FlashResult.Success.get -> bool
+Periphery.Bootloader.FlashResult.Success.init -> void
+Periphery.Bootloader.FlashResult.Verified.get -> bool
+Periphery.Bootloader.FlashResult.Verified.init -> void
+Periphery.Bootloader.IBootloaderEntry
+Periphery.Bootloader.IBootloaderEntry.CanEnter(Periphery.DeviceInfo! applicationDevice) -> bool
+Periphery.Bootloader.IBootloaderEntry.CanVerify.get -> bool
+Periphery.Bootloader.IBootloaderEntry.EnterAsync(Periphery.DeviceInfo! applicationDevice, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.IBootloaderEntry.ExpectedBootloader.get -> Periphery.DeviceFilter!
+Periphery.Bootloader.IBootloaderEntry.Name.get -> string!
+Periphery.Bootloader.IBootloaderEntry.VerifyAsync(Periphery.DeviceInfo! bootloaderDevice, Periphery.Firmware.FirmwarePayload! payload, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
+Periphery.Bootloader.IBootloaderProvider
+Periphery.Bootloader.IBootloaderProvider.CanHandle(Periphery.DeviceInfo! device) -> bool
+Periphery.Bootloader.IBootloaderProvider.Identification.get -> Periphery.Bootloader.IdentificationMode
+Periphery.Bootloader.IBootloaderProvider.Name.get -> string!
+Periphery.Bootloader.IBootloaderProvider.OpenAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.IFirmwareProgrammer!>!
+Periphery.Bootloader.IDeviceWaitSource
+Periphery.Bootloader.IDeviceWaitSource.Appeared -> System.Action<Periphery.DeviceInfo!>?
+Periphery.Bootloader.IDeviceWaitSource.Disappeared -> System.Action<string!>?
+Periphery.Bootloader.IDeviceWaitSource.StartAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.IFirmwareConverter
+Periphery.Bootloader.IFirmwareConverter.Convert(System.ReadOnlyMemory<byte> sourceContent) -> Periphery.Firmware.FirmwarePayload!
+Periphery.Bootloader.IFirmwareConverter.Source.get -> Periphery.Firmware.FirmwareFormat
+Periphery.Bootloader.IFirmwareConverter.Target.get -> Periphery.Firmware.FirmwareFormat
+Periphery.Bootloader.IFirmwareProgrammer
+Periphery.Bootloader.IFirmwareProgrammer.AcceptedFormats.get -> System.Collections.Immutable.ImmutableArray<Periphery.Firmware.FirmwareFormat>
+Periphery.Bootloader.IFirmwareProgrammer.Device.get -> Periphery.DeviceInfo!
+Periphery.Bootloader.IFirmwareProgrammer.FlashAsync(Periphery.Firmware.FirmwarePayload! payload, Periphery.Bootloader.FlashOptions! options, System.IProgress<Periphery.Bootloader.FlashProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.FlashResult!>!
+Periphery.Bootloader.IFirmwareProgrammer.IdentifyAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.DeviceIdentity!>!
+Periphery.Bootloader.IFirmwareProgrammer.LeaveAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Bootloader.IdentificationMode
+Periphery.Bootloader.IdentificationMode.Passive = 0 -> Periphery.Bootloader.IdentificationMode
+Periphery.Bootloader.IdentificationMode.Probe = 1 -> Periphery.Bootloader.IdentificationMode
+Periphery.Bootloader.MemoryAccess
+Periphery.Bootloader.MemoryAccess.Erasable = 4 -> Periphery.Bootloader.MemoryAccess
+Periphery.Bootloader.MemoryAccess.None = 0 -> Periphery.Bootloader.MemoryAccess
+Periphery.Bootloader.MemoryAccess.Readable = 1 -> Periphery.Bootloader.MemoryAccess
+Periphery.Bootloader.MemoryAccess.Writable = 2 -> Periphery.Bootloader.MemoryAccess
+Periphery.Bootloader.MemoryRegion
+Periphery.Bootloader.MemoryRegion.Access.get -> Periphery.Bootloader.MemoryAccess
+Periphery.Bootloader.MemoryRegion.Access.init -> void
+Periphery.Bootloader.MemoryRegion.MemoryRegion() -> void
+Periphery.Bootloader.MemoryRegion.MemoryRegion(string! Name, uint Start, uint Size, uint SectorSize, Periphery.Bootloader.MemoryAccess Access) -> void
+Periphery.Bootloader.MemoryRegion.Name.get -> string!
+Periphery.Bootloader.MemoryRegion.Name.init -> void
+Periphery.Bootloader.MemoryRegion.SectorSize.get -> uint
+Periphery.Bootloader.MemoryRegion.SectorSize.init -> void
+Periphery.Bootloader.MemoryRegion.Size.get -> uint
+Periphery.Bootloader.MemoryRegion.Size.init -> void
+Periphery.Bootloader.MemoryRegion.Start.get -> uint
+Periphery.Bootloader.MemoryRegion.Start.init -> void
+Periphery.Bootloader.VerifiedFlashResult<TResult>
+Periphery.Bootloader.VerifiedFlashResult<TResult>.ApplicationReturned.get -> bool
+Periphery.Bootloader.VerifiedFlashResult<TResult>.ApplicationReturned.init -> void
+Periphery.Bootloader.VerifiedFlashResult<TResult>.Attempts.get -> int
+Periphery.Bootloader.VerifiedFlashResult<TResult>.Attempts.init -> void
+Periphery.Bootloader.VerifiedFlashResult<TResult>.FlashResult.get -> TResult
+Periphery.Bootloader.VerifiedFlashResult<TResult>.FlashResult.init -> void
+Periphery.Bootloader.VerifiedFlashResult<TResult>.Verified.get -> bool
+Periphery.Bootloader.VerifiedFlashResult<TResult>.Verified.init -> void
+Periphery.Bootloader.VerifiedFlashResult<TResult>.VerifiedFlashResult(TResult FlashResult, bool ApplicationReturned, bool Verified, int Attempts) -> void
+const Periphery.Bootloader.ExceptionSummary.DefaultMaxDepth = 4 -> int
+static Periphery.Bootloader.BootloaderEntryOrchestrator.RunAsync<TResult>(Periphery.Bootloader.IBootloaderEntry! entry, Periphery.DeviceInfo! applicationDevice, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! flash, Periphery.Bootloader.BootloaderEntryOptions? options = null, System.Func<TResult, bool>? flashSucceeded = null, System.IProgress<Periphery.Bootloader.BootloaderEntryPhase>? phase = null, System.Func<Periphery.DeviceFilter!, Periphery.Bootloader.IDeviceWaitSource!>? waitSource = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.BootloaderEntryResult<TResult>!>!
+static Periphery.Bootloader.BootloaderEntryOrchestrator.RunWithVerificationAsync<TResult>(Periphery.Bootloader.IBootloaderEntry! entry, Periphery.DeviceInfo! applicationDevice, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! flash, System.Func<Periphery.DeviceInfo!, System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>!>! verify, System.Func<TResult, bool>! flashSucceeded, Periphery.Bootloader.BootloaderEntryOptions? options = null, int maxAttempts = 3, System.IProgress<Periphery.Bootloader.BootloaderEntryPhase>? phase = null, System.Func<Periphery.DeviceFilter!, Periphery.Bootloader.IDeviceWaitSource!>? waitSource = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Bootloader.VerifiedFlashResult<TResult>!>!
+static Periphery.Bootloader.DeviceIdentity.Unknown(string! family) -> Periphery.Bootloader.DeviceIdentity!
+static Periphery.Bootloader.DeviceWaitState.Collecting(Periphery.Bootloader.DeviceCorrelationMode mode, bool debouncePreExisting, string? expectedSerial = null, string? expectedLocationPath = null) -> Periphery.Bootloader.DeviceWaitState!
+static Periphery.Bootloader.ExceptionSummary.Describe(System.Exception! exception, int maxDepth = 4) -> string!
+static Periphery.Bootloader.FlashOptions.Default.get -> Periphery.Bootloader.FlashOptions!
+static Periphery.Bootloader.FlashResult.Fail(System.Exception! exception) -> Periphery.Bootloader.FlashResult!
+static Periphery.Bootloader.FlashResult.Fail(string! error) -> Periphery.Bootloader.FlashResult!
+static Periphery.Bootloader.FlashResult.Ok(long bytesWritten, bool verified) -> Periphery.Bootloader.FlashResult!

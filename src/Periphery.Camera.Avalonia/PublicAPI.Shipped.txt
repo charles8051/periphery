@@ -1,0 +1,22 @@
+#nullable enable
+Periphery.Camera.Avalonia.CameraPreview
+Periphery.Camera.Avalonia.CameraPreview.CameraPreview() -> void
+Periphery.Camera.Avalonia.CameraPreview.Device.get -> Periphery.DeviceInfo?
+Periphery.Camera.Avalonia.CameraPreview.Device.set -> void
+Periphery.Camera.Avalonia.CameraPreview.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Camera.Avalonia.CameraPreview.DroppedFrameCount.get -> long
+Periphery.Camera.Avalonia.CameraPreview.IsLive.get -> bool
+Periphery.Camera.Avalonia.CameraPreview.LastError.get -> System.Exception?
+Periphery.Camera.Avalonia.CameraPreview.MaxResolution.get -> Avalonia.PixelSize
+Periphery.Camera.Avalonia.CameraPreview.MaxResolution.set -> void
+Periphery.Camera.Avalonia.CameraPreview.OnFormatChangedAsync(Periphery.Camera.CameraFormatInfo! format, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Periphery.Camera.Avalonia.CameraPreview.PresentAsync(Periphery.Camera.ICameraFrame! frame, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Periphery.Camera.Avalonia.CameraPreview.RenderedFrameCount.get -> long
+Periphery.Camera.Avalonia.CameraPreview.StatusDescription.get -> string!
+Periphery.Camera.Avalonia.CameraPreview.SupportedMemoryDomains.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFrameMemoryDomain>!
+override Periphery.Camera.Avalonia.CameraPreview.Render(Avalonia.Media.DrawingContext! context) -> void
+static readonly Periphery.Camera.Avalonia.CameraPreview.DeviceProperty -> Avalonia.StyledProperty<Periphery.DeviceInfo?>!
+static readonly Periphery.Camera.Avalonia.CameraPreview.IsLiveProperty -> Avalonia.DirectProperty<Periphery.Camera.Avalonia.CameraPreview!, bool>!
+static readonly Periphery.Camera.Avalonia.CameraPreview.LastErrorProperty -> Avalonia.DirectProperty<Periphery.Camera.Avalonia.CameraPreview!, System.Exception?>!
+static readonly Periphery.Camera.Avalonia.CameraPreview.MaxResolutionProperty -> Avalonia.StyledProperty<Avalonia.PixelSize>!
+static readonly Periphery.Camera.Avalonia.CameraPreview.StatusDescriptionProperty -> Avalonia.DirectProperty<Periphery.Camera.Avalonia.CameraPreview!, string!>!

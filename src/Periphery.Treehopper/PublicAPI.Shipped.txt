@@ -1,0 +1,226 @@
+#nullable enable
+Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevel.Vref_1V65 = 1 -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevel.Vref_1V85 = 2 -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevel.Vref_2V4 = 3 -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevel.Vref_3V3 = 0 -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevel.Vref_3V3Derived = 4 -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevel.Vref_3V7 = 5 -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.AdcReferenceLevelExtensions
+Periphery.Treehopper.BoardConfig
+Periphery.Treehopper.BoardConfig.I2c.get -> Periphery.Treehopper.I2cConfig?
+Periphery.Treehopper.BoardConfig.I2c.init -> void
+Periphery.Treehopper.BoardConfig.LedOn.get -> bool
+Periphery.Treehopper.BoardConfig.LedOn.init -> void
+Periphery.Treehopper.BoardConfig.Parallel.get -> Periphery.Treehopper.ParallelConfig?
+Periphery.Treehopper.BoardConfig.Parallel.init -> void
+Periphery.Treehopper.BoardConfig.Pins.get -> System.Collections.Immutable.ImmutableDictionary<byte, Periphery.Treehopper.PinConfig!>!
+Periphery.Treehopper.BoardConfig.Pins.init -> void
+Periphery.Treehopper.BoardConfig.Pwm.get -> Periphery.Treehopper.PwmConfig?
+Periphery.Treehopper.BoardConfig.Pwm.init -> void
+Periphery.Treehopper.BoardConfig.SoftPwm.get -> System.Collections.Immutable.ImmutableDictionary<byte, ushort>!
+Periphery.Treehopper.BoardConfig.SoftPwm.init -> void
+Periphery.Treehopper.BoardConfig.Spi.get -> Periphery.Treehopper.SpiConfig?
+Periphery.Treehopper.BoardConfig.Spi.init -> void
+Periphery.Treehopper.BoardConfig.Uart.get -> Periphery.Treehopper.UartConfig?
+Periphery.Treehopper.BoardConfig.Uart.init -> void
+Periphery.Treehopper.BoardReport
+Periphery.Treehopper.BoardReport.BoardReport(long Sequence, System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.PinSnapshot> Pins) -> void
+Periphery.Treehopper.BoardReport.Pins.get -> System.Collections.Immutable.ImmutableArray<Periphery.Treehopper.PinSnapshot>
+Periphery.Treehopper.BoardReport.Pins.init -> void
+Periphery.Treehopper.BoardReport.Sequence.get -> long
+Periphery.Treehopper.BoardReport.Sequence.init -> void
+Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.ChipSelectMode.PulseHighAtBeginning = 2 -> Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.ChipSelectMode.PulseHighAtEnd = 3 -> Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.ChipSelectMode.PulseLowAtBeginning = 4 -> Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.ChipSelectMode.PulseLowAtEnd = 5 -> Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.ChipSelectMode.SpiActiveHigh = 1 -> Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.ChipSelectMode.SpiActiveLow = 0 -> Periphery.Treehopper.ChipSelectMode
+Periphery.Treehopper.I2cConfig
+Periphery.Treehopper.I2cConfig.I2cConfig(int SpeedKhz = 100) -> void
+Periphery.Treehopper.I2cConfig.SpeedKhz.get -> int
+Periphery.Treehopper.I2cConfig.SpeedKhz.init -> void
+Periphery.Treehopper.I2cLease
+Periphery.Treehopper.I2cLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.I2cLease.PingAsync(byte address, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Periphery.Treehopper.I2cLease.ReadAsync(byte address, int count, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.I2cLease.SendReceiveAsync(byte address, System.ReadOnlyMemory<byte> tx, int readLength, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.I2cLease.WriteAsync(byte address, System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.I2cLease.WriteReadAsync(byte address, System.ReadOnlyMemory<byte> write, int readCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.I2cTransferError.ArbitrationLost = 0 -> Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.I2cTransferError.Nack = 1 -> Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.I2cTransferError.Success = 255 -> Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.I2cTransferError.TxUnderrun = 3 -> Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.I2cTransferError.Unknown = 2 -> Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.OneWireLease
+Periphery.Treehopper.OneWireLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.OneWireLease.ReceiveAsync(int count, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.OneWireLease.ResetAndMatchAsync(ulong romAddress, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.OneWireLease.ResetAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Periphery.Treehopper.OneWireLease.SearchAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ulong>!>!
+Periphery.Treehopper.OneWireLease.SendAsync(System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.ParallelConfig
+Periphery.Treehopper.ParallelConfig.DataBusPins.get -> System.Collections.Immutable.ImmutableArray<byte>
+Periphery.Treehopper.ParallelConfig.DataBusPins.init -> void
+Periphery.Treehopper.ParallelConfig.DelayMicroseconds.get -> int
+Periphery.Treehopper.ParallelConfig.DelayMicroseconds.init -> void
+Periphery.Treehopper.ParallelConfig.EnablePin.get -> int
+Periphery.Treehopper.ParallelConfig.EnablePin.init -> void
+Periphery.Treehopper.ParallelConfig.ParallelConfig(System.Collections.Immutable.ImmutableArray<byte> DataBusPins, int RegisterSelectPin = -1, int ReadWritePin = -1, int EnablePin = -1, int DelayMicroseconds = 0) -> void
+Periphery.Treehopper.ParallelConfig.ReadWritePin.get -> int
+Periphery.Treehopper.ParallelConfig.ReadWritePin.init -> void
+Periphery.Treehopper.ParallelConfig.RegisterSelectPin.get -> int
+Periphery.Treehopper.ParallelConfig.RegisterSelectPin.init -> void
+Periphery.Treehopper.ParallelLease
+Periphery.Treehopper.ParallelLease.BusWidth.get -> int
+Periphery.Treehopper.ParallelLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.ParallelLease.WriteCommandAsync(uint[]! words, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.ParallelLease.WriteDataAsync(uint[]! words, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Pin
+Periphery.Treehopper.Pin.ConfigureAsync(Periphery.Treehopper.PinMode mode, Periphery.Treehopper.AdcReferenceLevel reference, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.PinHandle!>!
+Periphery.Treehopper.Pin.ConfigureAsync(Periphery.Treehopper.PinMode mode, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.PinHandle!>!
+Periphery.Treehopper.Pin.ConfigureSoftPwmAsync(double dutyCycle = 0, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.SoftPwmHandle!>!
+Periphery.Treehopper.Pin.Number.get -> int
+Periphery.Treehopper.PinConfig
+Periphery.Treehopper.PinConfig.DigitalValue.get -> bool
+Periphery.Treehopper.PinConfig.DigitalValue.init -> void
+Periphery.Treehopper.PinConfig.Mode.get -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinConfig.Mode.init -> void
+Periphery.Treehopper.PinConfig.PinConfig(Periphery.Treehopper.PinMode Mode, bool DigitalValue = false, Periphery.Treehopper.AdcReferenceLevel Reference = Periphery.Treehopper.AdcReferenceLevel.Vref_3V3) -> void
+Periphery.Treehopper.PinConfig.Reference.get -> Periphery.Treehopper.AdcReferenceLevel
+Periphery.Treehopper.PinConfig.Reference.init -> void
+Periphery.Treehopper.PinHandle
+Periphery.Treehopper.PinHandle.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.PinHandle.Pin.get -> Periphery.Treehopper.Pin!
+Periphery.Treehopper.PinHandle.ReadAnalogAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Periphery.Treehopper.PinHandle.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.PinSnapshot>!
+Periphery.Treehopper.PinHandle.ReadDigitalAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Periphery.Treehopper.PinHandle.ReadVoltageAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<double>!
+Periphery.Treehopper.PinHandle.ReadVoltageAsync(double referenceVoltage, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<double>!
+Periphery.Treehopper.PinHandle.WatchAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Periphery.Treehopper.PinSnapshot>!
+Periphery.Treehopper.PinHandle.WriteAsync(bool high, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinMode.AnalogInput = 4 -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinMode.DigitalInput = 1 -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinMode.OpenDrainOutput = 3 -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinMode.PushPullOutput = 2 -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinMode.Reserved = 0 -> Periphery.Treehopper.PinMode
+Periphery.Treehopper.PinSnapshot
+Periphery.Treehopper.PinSnapshot.Adc.get -> int
+Periphery.Treehopper.PinSnapshot.Adc.init -> void
+Periphery.Treehopper.PinSnapshot.AnalogValue.get -> double
+Periphery.Treehopper.PinSnapshot.AnalogVoltage(double referenceVoltage = 3.3) -> double
+Periphery.Treehopper.PinSnapshot.Digital.get -> bool
+Periphery.Treehopper.PinSnapshot.Digital.init -> void
+Periphery.Treehopper.PinSnapshot.PinSnapshot() -> void
+Periphery.Treehopper.PinSnapshot.PinSnapshot(bool Digital, int Adc) -> void
+Periphery.Treehopper.PwmChannel
+Periphery.Treehopper.PwmChannel.Pwm1 = 0 -> Periphery.Treehopper.PwmChannel
+Periphery.Treehopper.PwmChannel.Pwm2 = 1 -> Periphery.Treehopper.PwmChannel
+Periphery.Treehopper.PwmChannel.Pwm3 = 2 -> Periphery.Treehopper.PwmChannel
+Periphery.Treehopper.PwmConfig
+Periphery.Treehopper.PwmConfig.Duty7.get -> double
+Periphery.Treehopper.PwmConfig.Duty7.init -> void
+Periphery.Treehopper.PwmConfig.Duty8.get -> double
+Periphery.Treehopper.PwmConfig.Duty8.init -> void
+Periphery.Treehopper.PwmConfig.Duty9.get -> double
+Periphery.Treehopper.PwmConfig.Duty9.init -> void
+Periphery.Treehopper.PwmConfig.EnableMode.get -> byte
+Periphery.Treehopper.PwmConfig.EnableMode.init -> void
+Periphery.Treehopper.PwmConfig.Frequency.get -> Periphery.Treehopper.PwmFrequency
+Periphery.Treehopper.PwmConfig.Frequency.init -> void
+Periphery.Treehopper.PwmConfig.PwmConfig(Periphery.Treehopper.PwmFrequency Frequency, byte EnableMode = 0, double Duty7 = 0, double Duty8 = 0, double Duty9 = 0) -> void
+Periphery.Treehopper.PwmFrequency
+Periphery.Treehopper.PwmFrequency.Freq183Hz = 1 -> Periphery.Treehopper.PwmFrequency
+Periphery.Treehopper.PwmFrequency.Freq61Hz = 2 -> Periphery.Treehopper.PwmFrequency
+Periphery.Treehopper.PwmFrequency.Freq732Hz = 0 -> Periphery.Treehopper.PwmFrequency
+Periphery.Treehopper.PwmLease
+Periphery.Treehopper.PwmLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.PwmLease.PeriodMicroseconds.get -> double
+Periphery.Treehopper.PwmLease.SetDutyCycleAsync(Periphery.Treehopper.PwmChannel channel, double dutyCycle, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.PwmLease.SetFrequencyAsync(Periphery.Treehopper.PwmFrequency frequency, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.PwmLease.SetPulseWidthAsync(Periphery.Treehopper.PwmChannel channel, double microseconds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.SoftPwmHandle
+Periphery.Treehopper.SoftPwmHandle.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.SoftPwmHandle.Pin.get -> Periphery.Treehopper.Pin!
+Periphery.Treehopper.SoftPwmHandle.SetDutyCycleAsync(double dutyCycle, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.SoftPwmHandle.SetPulseWidthAsync(double microseconds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.SpiBurstMode
+Periphery.Treehopper.SpiBurstMode.BurstRx = 2 -> Periphery.Treehopper.SpiBurstMode
+Periphery.Treehopper.SpiBurstMode.BurstTx = 1 -> Periphery.Treehopper.SpiBurstMode
+Periphery.Treehopper.SpiBurstMode.NoBurst = 0 -> Periphery.Treehopper.SpiBurstMode
+Periphery.Treehopper.SpiConfig
+Periphery.Treehopper.SpiConfig.SpiConfig() -> void
+Periphery.Treehopper.SpiLease
+Periphery.Treehopper.SpiLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.SpiLease.ReadAsync(int count, int chipSelectPin = -1, Periphery.Treehopper.ChipSelectMode chipSelectMode = Periphery.Treehopper.ChipSelectMode.SpiActiveLow, double clockMhz = 0, Periphery.Treehopper.SpiMode? mode = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.SpiLease.TransferAsync(System.ReadOnlyMemory<byte> tx, int chipSelectPin = -1, Periphery.Treehopper.ChipSelectMode chipSelectMode = Periphery.Treehopper.ChipSelectMode.SpiActiveLow, Periphery.Treehopper.SpiBurstMode burstMode = Periphery.Treehopper.SpiBurstMode.NoBurst, double clockMhz = 0, Periphery.Treehopper.SpiMode? mode = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.SpiLease.WriteAsync(System.ReadOnlyMemory<byte> tx, int chipSelectPin = -1, Periphery.Treehopper.ChipSelectMode chipSelectMode = Periphery.Treehopper.ChipSelectMode.SpiActiveLow, double clockMhz = 0, Periphery.Treehopper.SpiMode? mode = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.SpiMode
+Periphery.Treehopper.SpiMode.Mode00 = 0 -> Periphery.Treehopper.SpiMode
+Periphery.Treehopper.SpiMode.Mode01 = 32 -> Periphery.Treehopper.SpiMode
+Periphery.Treehopper.SpiMode.Mode10 = 16 -> Periphery.Treehopper.SpiMode
+Periphery.Treehopper.SpiMode.Mode11 = 48 -> Periphery.Treehopper.SpiMode
+Periphery.Treehopper.TreehopperBoard
+Periphery.Treehopper.TreehopperBoard.DeviceInfo.get -> Periphery.DeviceInfo!
+Periphery.Treehopper.TreehopperBoard.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.TreehopperBoard.IsResponsePipeDesynced.get -> bool
+Periphery.Treehopper.TreehopperBoard.LastReport.get -> Periphery.Treehopper.BoardReport?
+Periphery.Treehopper.TreehopperBoard.Pins.get -> System.Collections.Generic.IReadOnlyList<Periphery.Treehopper.Pin!>!
+Periphery.Treehopper.TreehopperBoard.ReadReportAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.BoardReport!>!
+Periphery.Treehopper.TreehopperBoard.RebootAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.RebootIntoBootloaderAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.ReconcileAsync(System.Func<Periphery.Treehopper.BoardConfig!, Periphery.Treehopper.BoardConfig!>! update, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.Reports.get -> System.Collections.Generic.IAsyncEnumerable<Periphery.Treehopper.BoardReport!>!
+Periphery.Treehopper.TreehopperBoard.RescueResetAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.ResyncAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.SetLedAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.UpdateNameAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.UpdateSerialAsync(string! serialNumber, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.TreehopperBoard.UseI2cAsync(int speedKhz = 100, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.I2cLease!>!
+Periphery.Treehopper.TreehopperBoard.UseOneWireAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.OneWireLease!>!
+Periphery.Treehopper.TreehopperBoard.UseParallelAsync(System.Collections.Generic.IReadOnlyList<int>! dataBusPins, int registerSelectPin = -1, int readWritePin = -1, int enablePin = -1, int delayMicroseconds = 0, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.ParallelLease!>!
+Periphery.Treehopper.TreehopperBoard.UsePwmAsync(Periphery.Treehopper.PwmFrequency frequency = Periphery.Treehopper.PwmFrequency.Freq732Hz, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.PwmLease!>!
+Periphery.Treehopper.TreehopperBoard.UseSpiAsync(double clockMhz = 6, Periphery.Treehopper.SpiMode mode = Periphery.Treehopper.SpiMode.Mode00, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.SpiLease!>!
+Periphery.Treehopper.TreehopperBoard.UseUartAsync(int baud = 9600, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.UartLease!>!
+Periphery.Treehopper.TreehopperBoard.Version.get -> int
+Periphery.Treehopper.TreehopperBoard.VersionString.get -> string!
+Periphery.Treehopper.TreehopperDesyncException
+Periphery.Treehopper.TreehopperDesyncException.TreehopperDesyncException(string! message) -> void
+Periphery.Treehopper.TreehopperDeviceReset
+Periphery.Treehopper.TreehopperDeviceReset.ResetAsync(Periphery.DeviceInfo! device, Periphery.ResetStrategy strategy, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Periphery.ResetOutcome>
+Periphery.Treehopper.TreehopperDeviceReset.StrategiesFor(Periphery.DeviceInfo! device) -> System.Collections.Generic.IReadOnlyList<Periphery.ResetStrategy>!
+Periphery.Treehopper.TreehopperDeviceReset.TreehopperDeviceReset(Periphery.IDeviceReset! inner, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> void
+Periphery.Treehopper.TreehopperException
+Periphery.Treehopper.TreehopperException.TreehopperException(string! message) -> void
+Periphery.Treehopper.TreehopperException.TreehopperException(string! message, System.Exception! innerException) -> void
+Periphery.Treehopper.TreehopperI2cException
+Periphery.Treehopper.TreehopperI2cException.Address.get -> byte
+Periphery.Treehopper.TreehopperI2cException.Error.get -> Periphery.Treehopper.I2cTransferError
+Periphery.Treehopper.TreehopperI2cException.TreehopperI2cException(byte address, Periphery.Treehopper.I2cTransferError error) -> void
+Periphery.Treehopper.UartConfig
+Periphery.Treehopper.UartConfig.Baud.get -> int
+Periphery.Treehopper.UartConfig.Baud.init -> void
+Periphery.Treehopper.UartConfig.Mode.get -> Periphery.Treehopper.UartMode
+Periphery.Treehopper.UartConfig.Mode.init -> void
+Periphery.Treehopper.UartConfig.OpenDrainTx.get -> bool
+Periphery.Treehopper.UartConfig.OpenDrainTx.init -> void
+Periphery.Treehopper.UartConfig.UartConfig(int Baud = 9600, bool OpenDrainTx = false, Periphery.Treehopper.UartMode Mode = Periphery.Treehopper.UartMode.Uart) -> void
+Periphery.Treehopper.UartLease
+Periphery.Treehopper.UartLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Treehopper.UartLease.ReceiveAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Periphery.Treehopper.UartLease.SendAsync(System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.UartMode
+Periphery.Treehopper.UartMode.OneWire = 1 -> Periphery.Treehopper.UartMode
+Periphery.Treehopper.UartMode.Uart = 0 -> Periphery.Treehopper.UartMode
+static Periphery.Treehopper.AdcReferenceLevelExtensions.ReferenceVoltage(this Periphery.Treehopper.AdcReferenceLevel level) -> double
+static Periphery.Treehopper.TreehopperBoard.EnumerateAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.DeviceInfo!>!>!
+static Periphery.Treehopper.TreehopperBoard.OpenAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.TreehopperBoard!>!
+static Periphery.Treehopper.TreehopperBoard.OpenAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory) -> System.Threading.Tasks.Task<Periphery.Treehopper.TreehopperBoard!>!
+static Periphery.Treehopper.TreehopperBoard.OpenFirstAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.TreehopperBoard!>!
+static Periphery.Treehopper.TreehopperBoard.RescueResetAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> System.Threading.Tasks.Task!
+static readonly Periphery.Treehopper.BoardConfig.Blank -> Periphery.Treehopper.BoardConfig!
+static readonly Periphery.Treehopper.TreehopperBoard.Pid -> Periphery.HardwareId
+static readonly Periphery.Treehopper.TreehopperBoard.Vid -> Periphery.HardwareId
