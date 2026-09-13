@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Periphery.Camera.Testing;
 using Periphery.Camera.Tests.Fakes;
 
@@ -120,12 +121,12 @@ public sealed class CameraDeviceProxyTests
         Assert.True(proxy.IsOpen);
 
         SimulateDisconnect(tracker, device);
-        await WaitUntilAsync(() => !proxy.IsOpen, TimeSpan.FromSeconds(10));
+        await UntilAsync(proxy, () => !proxy.IsOpen);
 
         // The replug: same identity, and nothing asked of the consumer beyond
         // the edge itself. A fresh session is opened and the pump restarted.
         SimulateConnect(tracker, device);
-        await WaitUntilAsync(() => proxy.IsOpen, TimeSpan.FromSeconds(10));
+        await UntilAsync(proxy, () => proxy.IsOpen);
     }
 
     [Fact]
@@ -322,15 +323,27 @@ public sealed class CameraDeviceProxyTests
         }
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    // Completes once the condition holds, checked on entry and on every PropertyChanged the proxy
+    // raises; IsOpen is one of them (ADR-0089 D2).
+    private static async Task UntilAsync(CameraDeviceProxy proxy, Func<bool> condition)
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        var met = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Check(object? sender, PropertyChangedEventArgs e)
         {
-            if (condition()) return;
-            await Task.Delay(25);
+            if (condition())
+                met.TrySetResult();
         }
 
-        Assert.True(condition(), "condition was not met within the timeout");
+        proxy.PropertyChanged += Check;
+        try
+        {
+            if (condition())
+                return;
+            await met.Task.WaitAsync(TestHelpers.Patience);
+        }
+        finally
+        {
+            proxy.PropertyChanged -= Check;
+        }
     }
 }

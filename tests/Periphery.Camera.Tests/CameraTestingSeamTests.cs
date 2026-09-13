@@ -1,5 +1,6 @@
-using Microsoft.Extensions.Time.Testing;
 using Periphery.Camera.Testing;
+using Periphery.Camera.Tests.Fakes;
+using Periphery.Testing;
 
 namespace Periphery.Camera.Tests;
 
@@ -135,7 +136,7 @@ public sealed class CameraTestingSeamTests
     [Fact]
     public async Task HangOnRead_WithFakeClock_ThrowsCameraTimeout()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingFakeTimeProvider();
         // The stream stalls — the producer never returns a frame — exactly the
         // UVC wedge the seam exists to let consumers test. A FakeTimeProvider
         // drives the session's frame-timeout without a real wait.
@@ -148,13 +149,12 @@ public sealed class CameraTestingSeamTests
                 frame.Dispose();
         });
 
-        await backend.ReadHangReached.WaitAsync(TimeSpan.FromSeconds(10));
-        for (int i = 0; i < 500 && !captureTask.IsCompleted; i++)
-        {
-            time.Advance(FrameTimeout + TimeSpan.FromSeconds(1));
-            await Task.Delay(10);
-        }
+        // Advance once the consumer has armed its frame timeout, and by exactly that much. The
+        // clock is a FakeTimeProvider that reports the timers armed on it, which a consumer can
+        // write the same way.
+        await TestHelpers.TimerArmedAsync(time, FrameTimeout);
+        time.Advance(FrameTimeout);
 
-        await Assert.ThrowsAsync<CameraTimeoutException>(() => captureTask);
+        await Assert.ThrowsAsync<CameraTimeoutException>(() => captureTask.WaitAsync(TestHelpers.Patience));
     }
 }

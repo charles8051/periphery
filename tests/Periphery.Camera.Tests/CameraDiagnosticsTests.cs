@@ -71,11 +71,12 @@ public sealed class CameraDiagnosticsTests
         var stalls = 0L;
         using var listener = StartListener<long>(
             "periphery.camera.producer_stalls", v => Interlocked.Add(ref stalls, v));
+        using var durationListener = TestHelpers.FirstMeasurement<double>(
+            "periphery.camera.producer_stall_ms", out var stallDuration);
 
-        var durations = new List<double>();
-        using var durationListener = StartListener<double>(
-            "periphery.camera.producer_stall_ms",
-            v => { lock (durations) durations.Add(v); });
+        var clock = new TimestampReportingFakeTimeProvider();
+        using var parkListener = clock.ProducerParked(out var parked);
+        var stalledFor = TimeSpan.FromMilliseconds(250);
 
         // Frame 1 fills the queue of one; frame 2 finds it full and, under
         // StallProducer, parks there instead of evicting.
@@ -85,32 +86,21 @@ public sealed class CameraDiagnosticsTests
             options: new CameraSessionOptions(
                 BufferCount: 3,
                 ExhaustionPolicy: BufferExhaustionPolicy.StallProducer,
-                QueueDepth: 1));
+                QueueDepth: 1),
+            timeProvider: clock);
 
         await session.StartCaptureAsync();
 
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (Interlocked.Read(ref stalls) == 0)
-        {
-            Assert.True(DateTime.UtcNow < deadline, "Timed out waiting for the producer to park.");
-            await Task.Delay(10);
-        }
+        await parked.WaitAsync(TestHelpers.Patience);
+        Assert.Equal(1, Interlocked.Read(ref stalls));
 
         // Reading frame 1 frees the slot, which ends the stall and records how
-        // long it held the producer off the driver.
+        // long it held the producer off the driver: the time the clock moved
+        // while it was parked.
+        clock.Advance(stalledFor);
         using var frame = await session.ReadFrameAsync();
-        while (true)
-        {
-            lock (durations)
-            {
-                if (durations.Count > 0) break;
-            }
-            Assert.True(DateTime.UtcNow < deadline, "Timed out waiting for the stall duration.");
-            await Task.Delay(10);
-        }
 
-        lock (durations)
-            Assert.All(durations, ms => Assert.True(ms > 0, $"Stall duration was {ms} ms."));
+        Assert.Equal(stalledFor.TotalMilliseconds, await stallDuration.WaitAsync(TestHelpers.Patience));
 
         await session.StopCaptureAsync();
     }
