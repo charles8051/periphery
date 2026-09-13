@@ -46,6 +46,21 @@ internal sealed class TestUsbBackend : IUsbBackend
     /// </summary>
     public bool BlockUntilCancelled { get; set; }
 
+    private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Completes when a transfer first parks under <see cref="BlockUntilCancelled"/>. By then
+    /// <see cref="UsbDevice"/> has armed or skipped its deadline and been admitted by the pipe
+    /// gate, so a test can act on the parked transfer without guessing how long that took.
+    /// </summary>
+    public Task Blocked => _blocked.Task;
+
+    private Task BlockAsync(CancellationToken ct)
+    {
+        _blocked.TrySetResult();
+        return new TaskCompletionSource().Task.WaitAsync(ct);
+    }
+
     public void ClaimInterface(byte interfaceNumber) => LastClaimedInterface = interfaceNumber;
 
     public void ReleaseInterface(byte interfaceNumber) => LastReleasedInterface = interfaceNumber;
@@ -54,7 +69,7 @@ internal sealed class TestUsbBackend : IUsbBackend
     {
         LastControlSetup = setup;
         if (BlockUntilCancelled)
-            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            await BlockAsync(ct).ConfigureAwait(false);
         buffer.Span.Fill(Fill); // simulate an IN data stage filling the buffer
         return buffer.Length;
     }
@@ -62,7 +77,7 @@ internal sealed class TestUsbBackend : IUsbBackend
     public async Task<int> BulkReadAsync(byte endpointAddress, Memory<byte> buffer, CancellationToken ct)
     {
         if (BlockUntilCancelled)
-            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            await BlockAsync(ct).ConfigureAwait(false);
         int n = Math.Min(NextReadByteCount ?? buffer.Length, buffer.Length);
         buffer.Span[..n].Fill(Fill);
         return n;
@@ -71,7 +86,7 @@ internal sealed class TestUsbBackend : IUsbBackend
     public async Task<int> BulkWriteAsync(byte endpointAddress, ReadOnlyMemory<byte> data, CancellationToken ct)
     {
         if (BlockUntilCancelled)
-            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            await BlockAsync(ct).ConfigureAwait(false);
         return data.Length;
     }
 

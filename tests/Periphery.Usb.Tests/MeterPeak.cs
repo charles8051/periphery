@@ -23,6 +23,7 @@ internal sealed class MeterPeak : IDisposable
     private readonly MeterListener _listener = new();
     private readonly Dictionary<string, int> _current = new();
     private readonly Dictionary<string, int> _peak = new();
+    private readonly List<(string Instrument, int Value, TaskCompletionSource Reached)> _waiters = new();
     private readonly object _gate = new();
 
     public MeterPeak(params string[] instruments)
@@ -39,6 +40,7 @@ internal sealed class MeterPeak : IDisposable
                 int now = _current.GetValueOrDefault(inst.Name) + value;
                 _current[inst.Name] = now;
                 _peak[inst.Name] = Math.Max(_peak.GetValueOrDefault(inst.Name), now);
+                _waiters.RemoveAll(w => w.Instrument == inst.Name && w.Value == now && w.Reached.TrySetResult());
             }
         });
         _listener.Start();
@@ -60,19 +62,34 @@ internal sealed class MeterPeak : IDisposable
     /// sleeps and hopes is sampling a race; this waits for the steady state it means
     /// to assert on, and fails loudly if it never arrives.
     /// </summary>
+    /// <remarks>
+    /// Released by the measurement that brings the counter to <paramref name="value"/>, so it
+    /// matches the first time the value is reached. Callers wait at a point after which the
+    /// counter only moves toward it. <paramref name="timeout"/> only bounds a failure.
+    /// </remarks>
     public async Task WaitForAsync(string instrument, int value, TimeSpan timeout)
     {
-        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
-        while (Environment.TickCount64 < deadline)
+        Task reached;
+        lock (_gate)
         {
-            if (Current(instrument) == value)
+            if (_current.GetValueOrDefault(instrument) == value)
                 return;
-            await Task.Delay(10).ConfigureAwait(false);
+
+            var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((instrument, value, waiter));
+            reached = waiter.Task;
         }
 
-        Assert.Fail(
-            $"{instrument} never reached {value} within {timeout.TotalMilliseconds:F0} ms " +
-            $"(last read {Current(instrument)}).");
+        try
+        {
+            await reached.WaitAsync(timeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail(
+                $"{instrument} never reached {value} within {timeout.TotalMilliseconds:F0} ms " +
+                $"(last read {Current(instrument)}).");
+        }
     }
 
     public void Dispose() => _listener.Dispose();

@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Time.Testing;
 using Periphery.Usb.Tests.Fakes;
 
 namespace Periphery.Usb.Tests;
@@ -13,6 +14,13 @@ namespace Periphery.Usb.Tests;
 /// </summary>
 public class UsbTransferWatchdogTests
 {
+    // Far past anything the real clock reaches while a test runs, so only a fake clock can
+    // fire it: a deadline armed on the system timer fails these tests instead of passing late.
+    private static readonly TimeSpan Deadline = TimeSpan.FromHours(1);
+
+    // Bounds a failure only. A correct transfer finishes as soon as the test acts.
+    private static readonly TimeSpan Bound = TimeSpan.FromSeconds(30);
+
     private static DeviceInfo TestInfo() => new()
     {
         Id = @"\\?\usb#vid_10c4&pid_8a7e#test#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
@@ -23,13 +31,17 @@ public class UsbTransferWatchdogTests
     public async Task Transfer_WedgedEndpoint_ThrowsUsbTimeoutException_WithTheDeadline()
     {
         var backend = new TestUsbBackend { BlockUntilCancelled = true };
+        var time = new FakeTimeProvider();
         await using var dev = UsbDevice.CreateForTest(
-            TestInfo(), backend, transferTimeout: TimeSpan.FromMilliseconds(100));
+            TestInfo(), backend, transferTimeout: Deadline, timeProvider: time);
 
-        var ex = await Assert.ThrowsAsync<UsbTimeoutException>(
-            () => dev.BulkWriteAsync(0x02, new byte[] { 1, 2, 3 }));
+        var write = dev.BulkWriteAsync(0x02, new byte[] { 1, 2, 3 });
+        await backend.Blocked.WaitAsync(Bound);
 
-        Assert.Equal(TimeSpan.FromMilliseconds(100), ex.Timeout);
+        time.Advance(Deadline);
+
+        var ex = await Assert.ThrowsAsync<UsbTimeoutException>(() => write.WaitAsync(Bound));
+        Assert.Equal(Deadline, ex.Timeout);
     }
 
     [Fact]
@@ -38,12 +50,15 @@ public class UsbTransferWatchdogTests
         var backend = new TestUsbBackend { BlockUntilCancelled = true };
         // No deadline (infinite) — only the caller's token can end the transfer.
         await using var dev = UsbDevice.CreateForTest(TestInfo(), backend, transferTimeout: null);
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        using var cts = new CancellationTokenSource();
+
+        var write = dev.BulkWriteAsync(0x02, new byte[] { 1, 2, 3 }, cts.Token);
+        await backend.Blocked.WaitAsync(Bound);
+        cts.Cancel();
 
         // A UsbTimeoutException is NOT an OperationCanceledException, so this assertion
         // also proves caller cancellation is kept distinct from a watchdog timeout.
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => dev.BulkWriteAsync(0x02, new byte[] { 1, 2, 3 }, cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => write.WaitAsync(Bound));
     }
 
     [Fact]
@@ -62,18 +77,34 @@ public class UsbTransferWatchdogTests
     public async Task StreamRead_IsExemptFromTheDeadline()
     {
         // A pin-report endpoint legitimately blocks until data arrives, so the watchdog
-        // must NOT apply to ReadBulkStreamAsync even with a short deadline configured.
-        var backend = new TestUsbBackend { BlockUntilCancelled = true };
+        // must NOT apply to ReadBulkStreamAsync even with a deadline configured. Asserted as
+        // the decision itself: which transfers asked the clock for a deadline.
+        var backend = new TestUsbBackend();
+        var clock = new TimerRecordingTimeProvider();
         await using var dev = UsbDevice.CreateForTest(
-            TestInfo(), backend, transferTimeout: TimeSpan.FromMilliseconds(100));
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+            TestInfo(), backend, transferTimeout: Deadline, timeProvider: clock);
 
-        int produced = 0;
-        // Blocks ~300 ms (well past the 100 ms transfer deadline) then ends cleanly on
-        // cancellation. If the deadline applied, this would throw UsbTimeoutException.
-        await foreach (var _ in dev.ReadBulkStreamAsync(0x81, 41, cts.Token))
-            produced++;
+        // Positive control: an ordinary transfer on this device does arm its deadline on the
+        // injected clock, so an empty record below cannot mean the clock was never consulted.
+        await dev.BulkWriteAsync(0x02, new byte[] { 1, 2, 3 });
+        Assert.Equal(new[] { Deadline }, clock.RequestedDueTimes);
 
-        Assert.Equal(0, produced);
+        backend.BlockUntilCancelled = true;
+        using var cts = new CancellationTokenSource();
+        var stream = Task.Run(async () =>
+        {
+            int produced = 0;
+            await foreach (var _ in dev.ReadBulkStreamAsync(0x81, 41, cts.Token))
+                produced++;
+            return produced;
+        });
+
+        // Parked in the backend, so UsbDevice has already decided whether this read gets a
+        // deadline: the write's is still the only one.
+        await backend.Blocked.WaitAsync(Bound);
+        Assert.Equal(new[] { Deadline }, clock.RequestedDueTimes);
+
+        cts.Cancel();
+        Assert.Equal(0, await stream.WaitAsync(Bound));
     }
 }
