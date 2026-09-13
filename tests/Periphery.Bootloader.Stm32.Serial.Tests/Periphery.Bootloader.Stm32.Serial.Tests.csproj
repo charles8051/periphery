@@ -7,13 +7,6 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!--
-      Opted out of the wall-clock ratchet in tests/Directory.Build.targets (ADR-0089).
-      Temporary, tracked in #244; comes off when the last violation is gone.
-      FakeStm32Bootloader and the sync tests hold replies past Stm32SerialProgrammer's
-      real deadlines with Task.Delay. The programmer has no TimeProvider to fake yet.
-    -->
-    <PeripheryBanWallClockInTests>false</PeripheryBanWallClockInTests>
   </PropertyGroup>
 
   <ItemGroup>

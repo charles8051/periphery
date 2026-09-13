@@ -627,10 +627,11 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
         // puts its head in front of that single drain and its tail behind it, and the tail is
         // then read as the answer to whatever we send next. An idle window is evidence; an
         // elapsed interval is an assumption.
-        var spent = System.Diagnostics.Stopwatch.StartNew();
-        while (spent.Elapsed < _options.SyncSettleBudget)
+        var clock = _options.TimeProvider;
+        long started = clock.GetTimestamp();
+        while (clock.GetElapsedTime(started) < _options.SyncSettleBudget)
         {
-            await Task.Delay(_options.SyncSettle, ct).ConfigureAwait(false);
+            await Task.Delay(_options.SyncSettle, clock, ct).ConfigureAwait(false);
             if (!DrainStaleBytes())
                 return true;
         }
@@ -863,8 +864,9 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     private async Task<T> WithTimeout<T>(TimeSpan timeout, CancellationToken ct, Func<CancellationToken, Task<T>> action)
     {
         DrainStaleBytes();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(timeout);
+        // Armed on the options' clock rather than with CancelAfter, which always uses the system timer.
+        using var deadline = new CancellationTokenSource(timeout, _options.TimeProvider);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         try
         {
             return await action(cts.Token).ConfigureAwait(false);
@@ -878,8 +880,9 @@ public sealed class Stm32SerialProgrammer : IFirmwareProgrammer
     private async Task WithTimeout(TimeSpan timeout, CancellationToken ct, Func<CancellationToken, Task> action)
     {
         DrainStaleBytes();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(timeout);
+        // Armed on the options' clock rather than with CancelAfter, which always uses the system timer.
+        using var deadline = new CancellationTokenSource(timeout, _options.TimeProvider);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         try
         {
             await action(cts.Token).ConfigureAwait(false);

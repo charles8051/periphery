@@ -74,4 +74,33 @@ public class TimerSignalingFakeTimeProviderTests
             )
         );
     }
+
+    [Fact]
+    public void AdvanceToNextPendingTimer_FiresTheEarliestFirst_AndReportsWhenNoneIsLeft()
+    {
+        var time = new TimerSignalingFakeTimeProvider();
+        var fired = new List<string>();
+
+        // Armed latest-first, so due order is not arming order.
+        using var late = time.CreateTimer(
+            _ => fired.Add("late"),
+            null,
+            TimeSpan.FromSeconds(2),
+            Timeout.InfiniteTimeSpan
+        );
+        using var early = time.CreateTimer(
+            _ => fired.Add("early"),
+            null,
+            TimeSpan.FromSeconds(1),
+            Timeout.InfiniteTimeSpan
+        );
+
+        Assert.True(time.AdvanceToNextPendingTimer());
+        Assert.Equal(["early"], fired);
+
+        Assert.True(time.AdvanceToNextPendingTimer());
+        Assert.Equal(["early", "late"], fired);
+
+        Assert.False(time.AdvanceToNextPendingTimer());
+    }
 }

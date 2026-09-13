@@ -117,6 +117,11 @@ without a park signal on every production type. Creation, ordering and firing st
 `RunAdvancingAsync` advances past each timer as it is armed. It is for sequential flows whose fakes
 deliver every event before the component arms the deadline that would end the wait. A worker that
 drains a queue still needs a signal of its own, because draining arms no timer.
+`AdvanceToNextPendingTimer` advances to the earliest pending timer, for a test that already knows
+nothing runnable is left. One way to know is to make the code under test and its fakes continue
+inline: pipes built with `PipeScheduler.Inline`, run on a thread with no `SynchronizationContext`,
+where .NET does inline an awaiting continuation. A call into the code then returns only once
+everything it started is waiting or done. The STM32 serial sync tests work this way.
 
 This reaches production. A conversion that finds a component waiting on the machine's clock gives it a
 `TimeProvider` in the same unit of work. For `DeviceProxyBase` that replaces the timing mechanism

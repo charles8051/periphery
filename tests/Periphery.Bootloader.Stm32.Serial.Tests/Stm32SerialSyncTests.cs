@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using Periphery.Testing;
 
 namespace Periphery.Bootloader.Stm32.Serial.Tests;
 
@@ -27,6 +28,30 @@ public class Stm32SerialSyncTests
         SyncTimeout = TimeSpan.FromMilliseconds(250),
         CommandTimeout = TimeSpan.FromMilliseconds(250),
     };
+
+    /// <summary>
+    /// Runs <paramref name="body"/> as a deterministic simulation on a fake clock, for a programmer
+    /// talking to a fake built on the same clock (ADR-0089).
+    /// </summary>
+    /// <remarks>
+    /// The fake's pipes continue inline, so a call into the programmer returns only once the
+    /// programmer and the fake are both waiting on a timer or done. That needs no
+    /// <see cref="SynchronizationContext"/> on the thread: .NET does not inline a task's awaiting
+    /// continuation while one is current, and xUnit installs one, so the body runs on the thread pool.
+    /// </remarks>
+    private static Task SimulateAsync(Func<Task> body) => Task.Run(body);
+
+    /// <summary>
+    /// Advances the clock to the earliest pending timer until <paramref name="run"/> completes. Inside
+    /// <see cref="SimulateAsync"/> nothing runnable is left whenever this checks, so that is exactly
+    /// what a patient clock does next, and the handshake sees the same order of events on every run.
+    /// </summary>
+    private static async Task DriveAsync(TimerSignalingFakeTimeProvider time, Task run)
+    {
+        while (!run.IsCompleted)
+            Assert.True(time.AdvanceToNextPendingTimer(), "the handshake is waiting on something other than a timer");
+        await run;
+    }
 
     [Fact]
     public async Task Sync_succeeds_on_a_part_that_has_not_synced_since_reset()
@@ -88,17 +113,26 @@ public class Stm32SerialSyncTests
         // next single byte got this wrong in the dangerous direction: it reported success while a
         // byte sat pending, and the next command desynchronised. Proving the boundary with Get
         // makes the distinction unnecessary.
-        await using var device = new FakeStm32Bootloader
+        await SimulateAsync(async () =>
         {
-            SyncAckDelay = TimeSpan.FromMilliseconds(400),   // vs the 250 ms sync deadline below
-        };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+            var time = new TimerSignalingFakeTimeProvider();
+            await using var device = new FakeStm32Bootloader(timeProvider: time)
+            {
+                SyncAckDelay = TimeSpan.FromMilliseconds(400),   // vs the 250 ms sync deadline below
+            };
+            await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        await programmer.SyncAsync(CancellationToken.None);
+            await DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
 
-        // The proof that matters is not that Sync returned — it is that the session is usable.
-        var identity = await programmer.IdentifyAsync();
-        Assert.Equal("3.1", identity.BootloaderVersion);
+            // The scenario, not an accident of scheduling: the sync deadline was armed on this clock
+            // before the part began holding its ACK back, so the ACK really was late.
+            Assert.Equal([Quick.SyncTimeout, TimeSpan.FromMilliseconds(400)], time.ArmedDueTimes.Take(2));
+
+            // The proof that matters is not that Sync returned — it is that the session is usable.
+            var identify = programmer.IdentifyAsync();
+            await DriveAsync(time, identify);
+            Assert.Equal("3.1", (await identify).BootloaderVersion);
+        });
     }
 
     [Fact]
@@ -109,36 +143,49 @@ public class Stm32SerialSyncTests
         // front of that drain and its tail behind it, and the tail is then read as the answer to
         // whatever goes out next. Draining until a whole window passes with nothing arriving is
         // evidence of a quiet line; an elapsed interval is only an assumption.
-        await using var device = new FakeStm32Bootloader { StartSynced = true, ProductId = 0x0468 };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Stm32SerialOptions.Default with
+        await SimulateAsync(async () =>
         {
-            SyncTimeout = TimeSpan.FromMilliseconds(200),
-            CommandTimeout = TimeSpan.FromMilliseconds(500),
-            SyncSettle = TimeSpan.FromMilliseconds(100),
-            SyncSettleBudget = TimeSpan.FromSeconds(3),
-        });
-
-        // Dribble stale bytes across several settle windows while the handshake is running.
-        using var trickling = new CancellationTokenSource();
-        var trickle = Task.Run(async () =>
-        {
-            // Start after the sync byte's own deadline has passed, so these are bytes arriving
-            // during recovery rather than an answer to the sync byte itself.
-            await Task.Delay(260, trickling.Token);
-            for (int i = 0; i < 5 && !trickling.IsCancellationRequested; i++)
+            var time = new TimerSignalingFakeTimeProvider();
+            await using var device = new FakeStm32Bootloader(timeProvider: time) { StartSynced = true, ProductId = 0x0468 };
+            await using var programmer = new Stm32SerialProgrammer(Device, device, Stm32SerialOptions.Default with
             {
-                await device.InjectNoiseAsync(0x00);
-                await Task.Delay(60, trickling.Token);
+                SyncTimeout = TimeSpan.FromMilliseconds(200),
+                CommandTimeout = TimeSpan.FromMilliseconds(500),
+                SyncSettle = TimeSpan.FromMilliseconds(100),
+                SyncSettleBudget = TimeSpan.FromSeconds(3),
+                TimeProvider = time,
+            });
+
+            // Dribble stale bytes across several settle windows while the handshake is running, on the
+            // same clock, so where each byte lands relative to the windows is fixed rather than a race.
+            using var trickling = new CancellationTokenSource();
+            var trickle = TrickleAsync();
+            async Task TrickleAsync()
+            {
+                // Start after the sync byte's own deadline has passed, so these are bytes arriving
+                // during recovery rather than an answer to the sync byte itself.
+                await Task.Delay(TimeSpan.FromMilliseconds(260), time, trickling.Token);
+                for (int i = 0; i < 5; i++)
+                {
+                    await device.InjectNoiseAsync(0x00);
+                    await Task.Delay(TimeSpan.FromMilliseconds(60), time, trickling.Token);
+                }
             }
+
+            await DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
+            trickling.Cancel();
+            try { await trickle; } catch (OperationCanceledException) { }
+
+            // The boundary was proved with Get, once, rather than inferred from whatever byte arrived.
+            // This fake answers instantly, so trickled bytes never land inside a reply and cannot
+            // show whether the settle drained until quiet; the chattering-line test below does.
+            Assert.Equal(1, device.GetsAnswered);
+
+            // What matters is that the session is usable afterwards, not that Sync returned.
+            var identify = programmer.IdentifyAsync();
+            await DriveAsync(time, identify);
+            Assert.Equal("0x468", (await identify).Chip);
         });
-
-        await programmer.SyncAsync(CancellationToken.None);
-        trickling.Cancel();
-        try { await trickle; } catch (OperationCanceledException) { }
-
-        // What matters is that the session is usable afterwards, not that Sync returned.
-        var identity = await programmer.IdentifyAsync();
-        Assert.Equal("0x468", identity.Chip);
     }
 
     [Fact]
@@ -149,23 +196,29 @@ public class Stm32SerialSyncTests
         // interleaving the settle exists to prevent, and no answer coming back could then be
         // attributed to what we sent. Refusing is the only honest option; the error names the
         // likely causes rather than blaming the part for not answering.
-        await using var pipe = new ChatteringPipe(silenceAfterFirstWrite: TimeSpan.FromMilliseconds(250));
-        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Stm32SerialOptions.Default with
+        await SimulateAsync(async () =>
         {
-            SyncTimeout = TimeSpan.FromMilliseconds(200),
-            CommandTimeout = TimeSpan.FromMilliseconds(200),
-            SyncSettle = TimeSpan.FromMilliseconds(100),
-            SyncSettleBudget = TimeSpan.FromMilliseconds(700),
-        });
+            var time = new TimerSignalingFakeTimeProvider();
+            await using var pipe = new ChatteringPipe(time, silenceAfterFirstWrite: TimeSpan.FromMilliseconds(250));
+            await using var programmer = new Stm32SerialProgrammer(Device, pipe, Stm32SerialOptions.Default with
+            {
+                SyncTimeout = TimeSpan.FromMilliseconds(200),
+                CommandTimeout = TimeSpan.FromMilliseconds(200),
+                SyncSettle = TimeSpan.FromMilliseconds(100),
+                SyncSettleBudget = TimeSpan.FromMilliseconds(700),
+                TimeProvider = time,
+            });
 
-        // Asserting the exact message here was flaky, and the flakiness was the test's fault, not
-        // the code's: which correct failure surfaces depends on when noise lands relative to the
-        // sync deadline. Noise reaching the sync read is a junk answer; noise arriving during
-        // recovery is a line that never fell quiet. Both are right, and pinning one made a loaded
-        // CI runner fail a passing implementation. The invariant worth asserting holds either
-        // way: a line that never goes quiet never yields a successful sync.
-        await Assert.ThrowsAsync<Stm32SerialException>(
-            () => programmer.SyncAsync(CancellationToken.None));
+            // Which correct failure surfaces depends on when noise lands relative to the sync deadline:
+            // noise reaching the sync read is a junk answer, noise arriving during recovery is a line
+            // that never fell quiet. On a real clock that was a race, and pinning the message made a
+            // loaded CI runner fail a passing implementation. On this clock the chatter starts 50 ms
+            // after the 200 ms sync deadline on every run, so the failure is the settle giving up, and
+            // the message can say so.
+            var ex = await Assert.ThrowsAsync<Stm32SerialException>(
+                () => DriveAsync(time, programmer.SyncAsync(CancellationToken.None)));
+            Assert.Contains("never fell quiet", ex.Message);
+        });
     }
 
     [Fact]
@@ -243,43 +296,46 @@ public class Stm32SerialSyncTests
 
     /// <summary>
     /// Stays silent until the sync byte has been sent and its deadline has passed, then transmits
-    /// without pause — a device talking unprompted, a wrong baud rate turning noise into bytes, or
+    /// every 10 ms — a device talking unprompted, a wrong baud rate turning noise into bytes, or
     /// another program on the same port.
     /// <para>
-    /// The chatter is anchored to the first byte written, not to construction. Anchoring it to
-    /// wall-clock made the test racy: the handshake's first settle window could open and close
-    /// before the chatter had started, so the line looked quiet and a different failure surfaced.
+    /// The chatter is anchored to the first byte written, and paced on the test's fake clock with
+    /// inline pipes, so every 100 ms settle window sees bytes on every run. Pacing it on the real
+    /// clock is what failed on a loaded CI runner.
     /// </para>
     /// </summary>
     private sealed class ChatteringPipe : IDuplexPipe, IAsyncDisposable
     {
-        private readonly Pipe _in = new();
-        private readonly Pipe _out = new();
+        private static readonly PipeOptions Inline =
+            new(readerScheduler: PipeScheduler.Inline, writerScheduler: PipeScheduler.Inline, useSynchronizationContext: false);
+
+        private readonly Pipe _in = new(Inline);
+        private readonly Pipe _out = new(Inline);
         private readonly CancellationTokenSource _cts = new();
         private readonly Task _loop;
 
-        public ChatteringPipe(TimeSpan silenceAfterFirstWrite) => _loop = Task.Run(async () =>
+        public ChatteringPipe(TimeProvider time, TimeSpan silenceAfterFirstWrite) =>
+            _loop = ChatterAsync(time, silenceAfterFirstWrite);
+
+        private async Task ChatterAsync(TimeProvider time, TimeSpan silenceAfterFirstWrite)
         {
             try
             {
                 // Wait for the sync byte itself, then out-wait its deadline.
                 var first = await _out.Reader.ReadAsync(_cts.Token);
                 _out.Reader.AdvanceTo(first.Buffer.End);
-                await Task.Delay(silenceAfterFirstWrite, _cts.Token);
+                await Task.Delay(silenceAfterFirstWrite, time, _cts.Token);
 
                 while (!_cts.IsCancellationRequested)
                 {
-                    // No delay between writes. Pipe backpressure throttles this once the buffer
-                    // fills, and it refills the instant a drain empties it — so every settle
-                    // window sees bytes without depending on how the host schedules a timer.
-                    // Pacing this with Task.Delay is what failed on a loaded CI runner.
                     _in.Writer.GetSpan(1)[0] = 0x5A;
                     _in.Writer.Advance(1);
                     await _in.Writer.FlushAsync(_cts.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(10), time, _cts.Token);
                 }
             }
             catch (OperationCanceledException) { }
-        });
+        }
 
         public PipeReader Input => _in.Reader;
         public PipeWriter Output => _out.Writer;
