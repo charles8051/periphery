@@ -757,9 +757,9 @@ public class DeviceProxyBaseTests
     [Fact]
     public async Task OpenSurvivesDwell_ClearsBudget_AndLastOpenFault()
     {
-        // A session that stays up past the dwell DOES clear the budget and the last
-        // fault: a later, unrelated fault must start a fresh ladder from strategy [0]
-        // (ResetCount == 0).
+        // A session that stays up past the dwell DOES clear the budget, the attempt count
+        // and the last fault: a later, unrelated fault must start a fresh ladder from
+        // strategy [0] (ResetCount == 0, Attempt == 1).
         var (tracker, watcher) = CreateTestInfra();
         var reset = new FakeDeviceReset(
             new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
@@ -767,7 +767,7 @@ public class DeviceProxyBaseTests
         int workerRuns = 0;
         bool firstResetDone = false;
         bool finalPhase = false;
-        var budgetOnLaterFault = new TaskCompletionSource<int>();
+        var budgetOnLaterFault = new TaskCompletionSource<(int ResetCount, int Attempt)>();
 
         var handle = new TestHandle(tracker, watcher,
             whileOpen: async (_, ct) =>
@@ -783,7 +783,7 @@ public class DeviceProxyBaseTests
                 if (finalPhase)
                 {
                     // The later, post-dwell fault: capture what budget it sees.
-                    budgetOnLaterFault.TrySetResult(ctx.ResetCount);
+                    budgetOnLaterFault.TrySetResult((ctx.ResetCount, ctx.Attempt));
                     return new RecoveryDirective.Retry(TimeSpan.FromMilliseconds(1));
                 }
                 if (ctx.AvailableResets.Count > 0 && !firstResetDone)
@@ -804,12 +804,13 @@ public class DeviceProxyBaseTests
         // Let the session out-survive the dwell: the budget AND LastOpenFault clear.
         await WaitForAsync(() => handle.LastOpenFault is null, TimeSpan.FromSeconds(5));
 
-        // A later, unrelated fault must now see a fresh budget (0).
+        // A later, unrelated fault must now see a fresh budget (0) and a fresh count (1).
         finalPhase = true;
         handle.Recover(new InvalidOperationException("later unrelated fault"));
 
-        int seen = await budgetOnLaterFault.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, seen);
+        var seen = await budgetOnLaterFault.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, seen.ResetCount);
+        Assert.Equal(1, seen.Attempt);
     }
 
     [Fact]
@@ -1343,5 +1344,217 @@ public class DeviceProxyBaseTests
         {
             TaskScheduler.UnobservedTaskException -= OnUnobserved;
         }
+    }
+
+    // ── Attempt count across a reopen (ADR-0060 Decision 10) ──────────
+
+    /// <summary>Records each executed strategy in order.</summary>
+    private sealed class LadderRecordingReset(params ResetStrategy[] strategies) : IDeviceReset
+    {
+        private readonly List<ResetKind> _executed = [];
+        public Action? OnReset { get; set; }
+
+        public IReadOnlyList<ResetKind> Executed
+        {
+            get { lock (_executed) return _executed.ToArray(); }
+        }
+
+        public IReadOnlyList<ResetStrategy> StrategiesFor(DeviceInfo device) => strategies;
+
+        public ValueTask<ResetOutcome> ResetAsync(DeviceInfo device, ResetStrategy strategy, CancellationToken ct)
+        {
+            lock (_executed) _executed.Add(strategy.Kind);
+            OnReset?.Invoke();
+            return new(ResetOutcome.Issued);
+        }
+    }
+
+    private static readonly ResetStrategy[] ThreeRungs =
+    [
+        new(ResetKind.SoftProtocol, ResetBlastRadius.Self, ReEnumerates: false),
+        new(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: false),
+        new(ResetKind.PnpDisableEnable, ResetBlastRadius.Self, ReEnumerates: false),
+    ];
+
+    // The open fails unless a reset has just run. Each reset lets exactly one open
+    // through, and that session faults at once, far inside the stable-open dwell.
+    private static TestHandle WedgeThatOnlyAResetOpens(
+        DeviceTracker tracker, DeviceWatcher watcher, LadderRecordingReset reset, IRecoveryPolicy policy)
+    {
+        int openable = 0;
+        reset.OnReset = () => Volatile.Write(ref openable, 1);
+        return new TestHandle(tracker, watcher,
+            openDevice: (_, _) => Interlocked.Exchange(ref openable, 0) == 1
+                ? Task.FromResult(new FakeDevice())
+                : throw new InvalidOperationException("wedged"),
+            whileOpen: (_, _) => throw new InvalidOperationException("session refaults inside the dwell"),
+            recoveryPolicy: policy,
+            deviceReset: reset,
+            stableOpenDwell: TimeSpan.FromMinutes(5),
+            resetReopenPollInterval: TimeSpan.FromMilliseconds(5));
+    }
+
+    [Fact]
+    public async Task Ladder_EscalatingPolicy_RefaultInsideDwell_WalksEveryRungThenGivesUp()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var reset = new LadderRecordingReset(ThreeRungs);
+        var escalating = new EscalatingResetRecoveryPolicy(sanityRetries: 1, retryDelay: TimeSpan.FromMilliseconds(1));
+        var decisions = new List<string>();
+        await using var handle = WedgeThatOnlyAResetOpens(tracker, watcher, reset, new FuncPolicy(ctx =>
+        {
+            var d = escalating.Decide(ctx);
+            string what = d switch
+            {
+                RecoveryDirective.Reset r => r.Strategy.Kind.ToString(),
+                RecoveryDirective.Retry => "Retry",
+                _ => "GiveUp",
+            };
+            lock (decisions) decisions.Add($"(Attempt={ctx.Attempt}, ResetCount={ctx.ResetCount})->{what}");
+            return d;
+        }));
+
+        SimulateConnect(tracker, MakeDevice());
+        await WaitForAsync(
+            () => handle.State == ConnectionState.GaveUp || reset.Executed.Count >= 6,
+            TimeSpan.FromSeconds(10));
+
+        var kinds = reset.Executed.ToArray();
+        string trace;
+        lock (decisions) trace = string.Join(" ", decisions.Take(8));
+        Assert.True(
+            kinds.SequenceEqual(new[] { ResetKind.SoftProtocol, ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable })
+                && handle.State == ConnectionState.GaveUp,
+            $"executed: [{string.Join(", ", kinds)}]; state: {handle.State}; first decisions: {trace}");
+    }
+
+    // Positive control: the same harness with a policy that reads ResetCount. It proves
+    // the harness can observe a full walk, so a failure above comes from the attempt
+    // count and not from the harness.
+    [Fact]
+    public async Task Ladder_ResetCountPolicy_RefaultInsideDwell_WalksEveryRungThenGivesUp()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var reset = new LadderRecordingReset(ThreeRungs);
+        await using var handle = WedgeThatOnlyAResetOpens(tracker, watcher, reset,
+            new FuncPolicy(ctx => ctx.ResetCount < ctx.AvailableResets.Count
+                ? new RecoveryDirective.Reset(ctx.AvailableResets[ctx.ResetCount])
+                : new RecoveryDirective.GiveUp()));
+
+        SimulateConnect(tracker, MakeDevice());
+        await WaitForAsync(
+            () => handle.State == ConnectionState.GaveUp || reset.Executed.Count >= 6,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Equal(
+            [ResetKind.SoftProtocol, ResetKind.UsbPortCycle, ResetKind.PnpDisableEnable],
+            reset.Executed);
+        Assert.Equal(ConnectionState.GaveUp, handle.State);
+    }
+
+    // The open always succeeds and every session faults at once. The sanity retry
+    // reopens it, which ends the recovery loop, so the next fault must be attempt 2 and
+    // reach the first rung. With a loop-local count it was attempt 1 forever.
+    [Fact]
+    public async Task Ladder_EscalatingPolicy_OpenSucceedsSessionRefaults_ReachesARungWithinTenCycles()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var reset = new LadderRecordingReset(ThreeRungs);
+        var escalating = new EscalatingResetRecoveryPolicy(sanityRetries: 1, retryDelay: TimeSpan.FromMilliseconds(1));
+        var attempts = new List<int>();
+        int opens = 0;
+
+        await using var handle = new TestHandle(tracker, watcher,
+            whileOpen: (_, _) => throw new InvalidOperationException("session refaults inside the dwell"),
+            recoveryPolicy: new FuncPolicy(ctx =>
+            {
+                lock (attempts) attempts.Add(ctx.Attempt);
+                return escalating.Decide(ctx);
+            }),
+            deviceReset: reset,
+            stableOpenDwell: TimeSpan.FromMinutes(5),
+            resetReopenPollInterval: TimeSpan.FromMilliseconds(5));
+        handle.DeviceOpened += (_, _) => Interlocked.Increment(ref opens);
+
+        SimulateConnect(tracker, MakeDevice());
+        await WaitForAsync(
+            () => Volatile.Read(ref opens) >= 10 || reset.Executed.Count > 0,
+            TimeSpan.FromSeconds(10));
+
+        string seen;
+        lock (attempts) seen = string.Join(",", attempts);
+        Assert.True(reset.Executed.Count > 0,
+            $"{Volatile.Read(ref opens)} sessions opened and faulted inside the dwell; "
+            + $"resets executed: {reset.Executed.Count}; Attempt values seen: {seen}");
+    }
+
+    /// <summary>A reset-safety gate that parks every caller until the test releases it.</summary>
+    private sealed class HeldGate : IResetSafetyGate
+    {
+        private readonly TaskCompletionSource<bool> _verdict = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Release(bool safe) => _verdict.TrySetResult(safe);
+
+        public ValueTask<bool> CanResetAsync(DeviceInfo device, CancellationToken ct)
+        {
+            Entered.TrySetResult();
+            return new(_verdict.Task.WaitAsync(ct));
+        }
+    }
+
+    // The recovery loop checks !IsOpen before it decides, and the safety gate then runs
+    // consumer code of any duration. An open that lands while the gate is held must not
+    // be reset once the gate says yes.
+    [Fact]
+    public async Task ResetHeldAtGate_DeviceOpensMeanwhile_DoesNotResetTheLiveSession()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var device = MakeDevice();
+        var reset = new FakeDeviceReset(
+            new ResetStrategy(ResetKind.UsbPortCycle, ResetBlastRadius.Self, ReEnumerates: true));
+        var gate = new HeldGate();
+        int openable = 0;
+
+        await using var handle = new TestHandle(tracker, watcher,
+            openDevice: (_, _) => Volatile.Read(ref openable) == 1
+                ? Task.FromResult(new FakeDevice())
+                : throw new InvalidOperationException("wedged"),
+            recoveryPolicy: new FuncPolicy(ctx => new RecoveryDirective.Reset(ctx.AvailableResets[0])),
+            deviceReset: reset,
+            resetSafetyGate: gate,
+            resetReopenPollInterval: TimeSpan.FromMilliseconds(5));
+
+        SimulateConnect(tracker, device);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));   // recovery is parked at the gate
+
+        // A property change on the active device drives a tracker open while the gate is held.
+        Volatile.Write(ref openable, 1);
+        tracker.OnDevicePropertyChanged(device, device with { Name = "renamed" }, new HashSet<string> { "Name" });
+        await WaitForAsync(() => handle.IsOpen, TimeSpan.FromSeconds(5));
+
+        gate.Release(safe: true);
+        await Task.Delay(200);
+
+        Assert.Equal(0, reset.ResetCalls);
+        Assert.True(handle.IsOpen);
+        Assert.Equal(ConnectionState.Open, handle.State);
+    }
+
+    // The backoff policy's give-up is attempt-indexed too. A session that reopens and
+    // refaults inside the dwell must count toward maxAttempts, or it retries forever.
+    [Fact]
+    public async Task Backoff_RefaultInsideDwell_ReachesMaxAttemptsAndGivesUp()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        await using var handle = new TestHandle(tracker, watcher,
+            whileOpen: (_, _) => throw new InvalidOperationException("session refaults inside the dwell"),
+            recoveryPolicy: new ExponentialBackoffRecoveryPolicy(
+                TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(4), maxAttempts: 3),
+            stableOpenDwell: TimeSpan.FromMinutes(5));
+
+        SimulateConnect(tracker, MakeDevice());
+        await WaitForAsync(() => handle.State == ConnectionState.GaveUp, TimeSpan.FromSeconds(10));
+
+        Assert.Equal(ConnectionState.GaveUp, handle.State);
     }
 }
