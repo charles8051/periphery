@@ -29,10 +29,14 @@ This document provides quick commands and explanations for the Periphery CI/CD w
 - Git tags matching `v*.*.*` (e.g., `v1.0.0`)
 
 **What it does:**
+- Refuses the tag if `CHANGELOG.md` or `docs/BREAKING-CHANGES.md` has an `Unreleased`
+  section, or any `PublicAPI.Unshipped.txt` has lines
 - Builds in Release configuration
 - Runs all tests
 - Packs NuGet packages
 - Publishes to nuget.org via Trusted Publishing (OIDC)
+- Attaches the CLI and flasher binaries to the GitHub Release, with the annotated tag's
+  message as its body
 
 ---
 
@@ -56,33 +60,9 @@ dotnet test --collect:"XPlat Code Coverage"
 
 ## Creating a Release
 
-### 1. Prepare the release
-
-```bash
-# Ensure all tests pass
-dotnet test
-
-# Commit all changes
-git add .
-git commit -m "chore: prepare release v1.0.0"
-git push origin main
-```
-
-### 2. Tag and push
-
-```bash
-# Create annotated tag
-git tag -a v1.0.0 -m "Release v1.0.0"
-
-# Push tag (triggers publish workflow)
-git push origin v1.0.0
-```
-
-### 3. Monitor workflow
-
-- Go to https://github.com/charles8051/periphery/actions
-- Wait for the "Release" workflow
-- Check the packages at https://www.nuget.org/profiles/clee781
+[PUBLISHING.md](../PUBLISHING.md) is the procedure: the release commit, the annotated
+tag whose message becomes the Release body, and the checks that refuse a tag the
+docs do not describe.
 
 ---
 

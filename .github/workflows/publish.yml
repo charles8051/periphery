@@ -77,6 +77,85 @@ permissions:
   contents: read
 
 jobs:
+  # The release's prose, and the checks that the repository describes the release
+  # being tagged. Runs first and gates every job that publishes, because once
+  # nuget.org has a version, what shipped with it cannot be replaced; a failure here
+  # costs a re-tag.
+  #
+  # On a tag push it fails the release when:
+  #   - CHANGELOG.md or docs/BREAKING-CHANGES.md still has an `## Unreleased`
+  #     heading. Both group entries by release, so that heading at tag time means
+  #     the section this tag ships was never retitled, and the docs tell a reader
+  #     that changes they just received are still pending.
+  #   - any PublicAPI.Unshipped.txt still has lines. The tag's Shipped files would
+  #     not be the surface it publishes. scripts/ship-public-api.sh moves them.
+  # It also reads the annotated tag's message as the GitHub Release body. Until
+  # this job existed nothing read it, and every Release had an empty body.
+  #
+  # On workflow_dispatch the steps are skipped and the job still succeeds. A
+  # skipped job would skip every job that needs it, including the dispatch path
+  # in release-binaries.
+  release-notes:
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert CHANGELOG.md and BREAKING-CHANGES.md name this release
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          for doc in CHANGELOG.md docs/BREAKING-CHANGES.md; do
+            [ -f "$doc" ] || { echo "::error::$doc is missing."; exit 1; }
+            if grep -qiE '^##[[:space:]]+\[?Unreleased\]?[[:space:]]*$' "$doc"; then
+              echo "::error file=$doc::Still has an '## Unreleased' heading at ${GITHUB_REF_NAME}."
+              grep -niE '^##[[:space:]]+\[?Unreleased\]?[[:space:]]*$' "$doc"
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "Retitle each Unreleased section to ${GITHUB_REF_NAME}, commit, and move the tag."
+            exit 1
+          fi
+          echo "No Unreleased section. ${GITHUB_REF_NAME} is described."
+
+      - name: Assert the public API is shipped
+        if: github.event_name == 'push'
+        shell: bash
+        run: bash scripts/ship-public-api.sh --check
+
+      - name: Read the annotated tag message
+        id: notes
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # checkout replaces annotated tags with lightweight ones, which have no
+          # message. Re-fetch the tag objects before reading their contents.
+          git fetch --force --tags --quiet
+          tag="${GITHUB_REF_NAME}"
+          if [ "$(git cat-file -t "$tag" 2>/dev/null || true)" != "tag" ]; then
+            echo "::warning::${tag} is a lightweight tag and carries no message; Release body left empty."
+            body=""
+          else
+            # %(contents:body) skips the subject line, which is the version again.
+            # Drop a PGP trailer if the tag is signed.
+            body="$(git tag -l --format='%(contents:body)' "$tag" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
+          fi
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$body"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release body, ${#body} chars:"
+          echo "$body"
+
   # Validate before publishing — a release must not ship if tests fail. Unit
   # suites only (Category!=Integration); the device-backed Integration tier runs
   # on the Linux device rig via linux-ci.yml, not here. Split by OS because the
@@ -150,7 +229,7 @@ jobs:
           retention-days: 30
 
   publish:
-    needs: [test-linux, test-windows]
+    needs: [test-linux, test-windows, release-notes]
     # NOT gated at the job level, deliberately. The gate is on the push STEP
     # instead, which makes a workflow_dispatch of this job a genuine dry run:
     # restore, build, pack, the completeness gate and the nuget.org OIDC exchange
@@ -388,7 +467,7 @@ jobs:
   # Linux binary would ship non-executable. release-binaries-linux builds it on
   # the Linux runner instead, where the bit is set natively and needs no flag.
   release-binaries:
-    needs: [test-linux, test-windows]
+    needs: [test-linux, test-windows, release-notes]
     runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]') }}
     permissions:
       contents: write   # needed to create/upload to the GitHub Release
@@ -463,6 +542,10 @@ jobs:
           # Flag semver prerelease tags (hyphen suffix, e.g. v1.7.0-alpha.2) as
           # GitHub prereleases so they don't show as "Latest release".
           prerelease: ${{ contains(github.ref_name, '-') }}
+          # The annotated tag's message, read by release-notes. Every job that
+          # attaches to this Release passes the same body, so the Release carries it
+          # whichever job creates it.
+          body: ${{ needs.release-notes.outputs.body }}
 
       # Dispatch run: no tag exists, so there is no Release to attach to. The
       # archive is uploaded as a workflow artifact instead — this is the path that
@@ -490,7 +573,7 @@ jobs:
   # Building here sidesteps the whole problem: on Linux the SDK sets +x on the
   # apphost itself, and tar records it with no flag at all.
   release-binaries-linux:
-    needs: [test-linux, test-windows]
+    needs: [test-linux, test-windows, release-notes]
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]') }}
     container: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') && 'mcr.microsoft.com/dotnet/sdk:10.0' || '' }}
     permissions:
@@ -537,6 +620,10 @@ jobs:
           files: artifacts/Periphery.Cli-*.tar.gz
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          # The annotated tag's message, read by release-notes. Every job that
+          # attaches to this Release passes the same body, so the Release carries it
+          # whichever job creates it.
+          body: ${{ needs.release-notes.outputs.body }}
 
       - name: Upload as workflow artifact (dispatch)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -555,7 +642,7 @@ jobs:
   # single file. The self-hosted Windows runner has the SDK baked; the hosted
   # fallback installs it.
   release-flasher:
-    needs: [test-linux, test-windows]
+    needs: [test-linux, test-windows, release-notes]
     # Tag-only: this job's sole output is an asset on the GitHub Release for the
     # pushed tag, which does not exist on a dispatch run. The CLI is the smoke-check
     # tool, so only release-binaries gained the on-demand path.
@@ -613,3 +700,7 @@ jobs:
           fail_on_unmatched_files: true
           # Flag semver prerelease tags (hyphen suffix) as GitHub prereleases.
           prerelease: ${{ contains(github.ref_name, '-') }}
+          # The annotated tag's message, read by release-notes. Every job that
+          # attaches to this Release passes the same body, so the Release carries it
+          # whichever job creates it.
+          body: ${{ needs.release-notes.outputs.body }}

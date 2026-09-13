@@ -218,6 +218,9 @@ reports *"There are no stable versions available"* and adds nothing:
 dotnet add package Periphery --prerelease
 ```
 
+Before upgrading, read [docs/BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md) for what
+changed in each release and what to write instead.
+
 ## Device Categories
 
 A **category** answers *which OS subsystem surfaced this device* — it's single-valued and drives enumeration routing (SetupAPI class GUID / udev subsystem / IOKit class). All providers are complete on all three platforms.

@@ -7,32 +7,42 @@ there is no manual path, and no API key stored anywhere.
 ## Quick Publish Workflow
 
 ```sh
-# 1. Make your changes and commit
-git add .
-git commit -m "feat: add network adapter enumeration"
-
-# 2. Move the recorded public API changes into PublicAPI.Shipped.txt
+# 1. In one release commit: retitle the Unreleased section of CHANGELOG.md
+#    (`## 3.2.0 - <date>`) and of docs/BREAKING-CHANGES.md
+#    (`` ## `v3.2.0` — since `v3.1.0` ``), and ship the recorded public API
 scripts/ship-public-api.sh
-git commit -am "chore: ship the public API for v3.2.0"
+git commit -am "chore: release v3.2.0"
 
-# 3. Tag the release (annotated, semver, `v` prefix — MinVer reads the tag)
-git tag -a v3.2.0 -m "v3.2.0"
+# 2. Tag it, annotated, with the release notes as the message body
+#    (semver, `v` prefix: MinVer reads the tag)
+git tag -a v3.2.0 -F release-notes.txt
 
-# 4. Push commits and tag
-git push && git push --tags
+# 3. Push the commit, then the tag
+git push && git push origin v3.2.0
 ```
 
+The tag message's first line is the version. Everything after it becomes the body of
+the GitHub Release, so write it for someone deciding whether to upgrade: what the
+release is for, the breaking changes, and the fixes. `git show v4.2.0-alpha.1` is an
+example. A lightweight tag, or `-m` with only the version, publishes a Release with an
+empty body.
+
 GitHub Actions (`publish.yml`) will automatically:
-1. Gate the release on Linux and Windows test jobs — Release build, **unit suites only**
+1. Refuse the tag if `CHANGELOG.md` or `docs/BREAKING-CHANGES.md` still has an
+   `## Unreleased` heading, or if any `PublicAPI.Unshipped.txt` has lines. The check
+   runs before anything is built. Commit the fix, delete the tag
+   (`git tag -d v3.2.0 && git push origin :refs/tags/v3.2.0`) and tag again.
+2. Gate the release on Linux and Windows test jobs — Release build, **unit suites only**
    (`--filter "Category!=Integration"`). Device-backed tests never run here.
-2. Rebuild non-incrementally so every assembly comes from the tagged commit, then pack
+3. Rebuild non-incrementally so every assembly comes from the tagged commit, then pack
    those exact outputs. A completeness gate asserts every `IsPackable` project in
    `Periphery.slnx` produced a `.nupkg` — a partial family fails the release.
-3. Exchange a GitHub OIDC token for a one-hour nuget.org key, then push with
+4. Exchange a GitHub OIDC token for a one-hour nuget.org key, then push with
    `--skip-duplicate`, versioned from the tag (`v4.1.0` → `Periphery.4.1.0.nupkg`).
-4. Attach self-contained `Periphery.Cli` builds to the GitHub Release — `win-x64`
+5. Attach self-contained `Periphery.Cli` builds to the GitHub Release — `win-x64`
    and `win-arm64` zips and a `linux-x64` tar.gz — plus the dual-mode
-   `treehopper-flash.exe`. A hyphen in the tag marks it a prerelease.
+   `treehopper-flash.exe`, with the tag message as the Release body. A hyphen in the
+   tag marks it a prerelease.
 
 ### The `net8.0` assets are published untested, on purpose
 
@@ -73,10 +83,10 @@ which a grep for removed `public`/`protected` declarations cannot see.
 observe a different result from the same call, that is a MAJOR bump, and no API file
 will show it.
 
-Read `CHANGELOG.md`'s `[Unreleased]` section before choosing: **it accumulates
-across changes**, so a MINOR addition released while an unreleased breaking
-change is pending still ships as a MAJOR. The version reflects everything in the
-release, not the last thing merged into it.
+Read the `Unreleased` sections of `CHANGELOG.md` and `docs/BREAKING-CHANGES.md`
+before choosing: **they accumulate across changes**, so a MINOR addition released
+while an unreleased breaking change is pending still ships as a MAJOR. The version
+reflects everything in the release, not the last thing merged into it.
 
 ## Consuming the Package
 
