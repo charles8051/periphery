@@ -1,0 +1,44 @@
+#nullable enable
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.CanEnter(Periphery.DeviceInfo! applicationDevice) -> bool
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.CanVerify.get -> bool
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.EnterAsync(Periphery.DeviceInfo! applicationDevice, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.ExpectedBootloader.get -> Periphery.DeviceFilter!
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.Name.get -> string!
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.TreehopperBootloaderEntry() -> void
+Periphery.Treehopper.Firmware.TreehopperBootloaderEntry.VerifyAsync(Periphery.DeviceInfo! bootloaderDevice, Periphery.Firmware.FirmwarePayload! payload, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
+Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate
+Periphery.Treehopper.Firmware.TreehopperReflashOptions
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.ApplicationTimeout.get -> System.TimeSpan?
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.ApplicationTimeout.init -> void
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.BootloaderTimeout.get -> System.TimeSpan?
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.BootloaderTimeout.init -> void
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.PollInterval.get -> System.TimeSpan?
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.PollInterval.init -> void
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.TreehopperReflashOptions(System.TimeSpan? BootloaderTimeout = null, System.TimeSpan? ApplicationTimeout = null, System.TimeSpan? PollInterval = null, bool WaitForApplication = true) -> void
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.WaitForApplication.get -> bool
+Periphery.Treehopper.Firmware.TreehopperReflashOptions.WaitForApplication.init -> void
+Periphery.Treehopper.Firmware.TreehopperReflashResult
+Periphery.Treehopper.Firmware.TreehopperReflashResult.ApplicationReturned.get -> bool
+Periphery.Treehopper.Firmware.TreehopperReflashResult.ApplicationReturned.init -> void
+Periphery.Treehopper.Firmware.TreehopperReflashResult.Success.get -> bool
+Periphery.Treehopper.Firmware.TreehopperReflashResult.TreehopperReflashResult(Periphery.Bootloader.Efm8.Usb.Efm8UploadResult! Upload, bool ApplicationReturned) -> void
+Periphery.Treehopper.Firmware.TreehopperReflashResult.Upload.get -> Periphery.Bootloader.Efm8.Usb.Efm8UploadResult!
+Periphery.Treehopper.Firmware.TreehopperReflashResult.Upload.init -> void
+Periphery.Treehopper.Firmware.TreehopperVerifyResult
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.ApplicationReturned.get -> bool
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.ApplicationReturned.init -> void
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.ContentMismatch.get -> bool
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.Matches.get -> bool
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.TreehopperVerifyResult(Periphery.Bootloader.Efm8.Usb.Efm8UploadResult! Upload, bool ApplicationReturned) -> void
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.Upload.get -> Periphery.Bootloader.Efm8.Usb.Efm8UploadResult!
+Periphery.Treehopper.Firmware.TreehopperVerifyResult.Upload.init -> void
+static Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.ReflashAsync(Periphery.DeviceInfo! deviceInfo, System.IO.Stream! bootRecords, Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation confirmation, Periphery.Treehopper.Firmware.TreehopperReflashOptions? options = null, System.IProgress<Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.Firmware.TreehopperReflashResult!>!
+static Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.ReflashAsync(Periphery.Treehopper.TreehopperBoard! board, System.IO.Stream! bootRecords, Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation confirmation, Periphery.Treehopper.Firmware.TreehopperReflashOptions? options = null, System.IProgress<Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.Firmware.TreehopperReflashResult!>!
+static Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.ReflashFromFileAsync(Periphery.DeviceInfo! deviceInfo, string! firmwarePath, Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation confirmation, Periphery.Treehopper.Firmware.TreehopperReflashOptions? options = null, System.IProgress<Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.Firmware.TreehopperReflashResult!>!
+static Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.ReflashFromFileAsync(Periphery.Treehopper.TreehopperBoard! board, string! firmwarePath, Periphery.Bootloader.Efm8.Usb.Efm8FlashConfirmation confirmation, Periphery.Treehopper.Firmware.TreehopperReflashOptions? options = null, System.IProgress<Periphery.Bootloader.Efm8.Usb.Efm8UploadProgress>? progress = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.Firmware.TreehopperReflashResult!>!
+static Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.VerifyFromFileAsync(Periphery.DeviceInfo! deviceInfo, string! firmwarePath, Periphery.Treehopper.Firmware.TreehopperReflashOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Treehopper.Firmware.TreehopperVerifyResult!>!
+static readonly Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.ApplicationPid -> Periphery.HardwareId
+static readonly Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.ApplicationVid -> Periphery.HardwareId
+static readonly Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.BootloaderPid -> Periphery.HardwareId
+static readonly Periphery.Treehopper.Firmware.TreehopperFirmwareUpdate.BootloaderVid -> Periphery.HardwareId

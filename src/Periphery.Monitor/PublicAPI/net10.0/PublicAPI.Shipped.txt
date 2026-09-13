@@ -1,0 +1,18 @@
+#nullable enable
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.Boolean.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<bool>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.DeviceId.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.DeviceId>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.DisplayMode.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.DisplayMode>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.DisplayPosition.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.DisplayPosition>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.DisplaySize.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.DisplaySize>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.ImmutableArrayDisplayMode.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Immutable.ImmutableArray<Periphery.Monitor.DisplayMode>>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.ImmutableArrayMonitorLayoutEntry.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Immutable.ImmutableArray<Periphery.Monitor.MonitorLayoutEntry>>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.Int32.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<int>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.ListMonitorLayoutEntry.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<Periphery.Monitor.MonitorLayoutEntry>>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorLayout.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.MonitorLayout>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorLayoutAvailability.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.MonitorLayoutAvailability>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorLayoutEntry.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.MonitorLayoutEntry>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorOrientation.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.MonitorOrientation>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorOutputTechnology.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.MonitorOutputTechnology>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorPanelIdentity.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.Monitor.MonitorPanelIdentity>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.String.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<string>
+~Periphery.Monitor.Serialization.MonitorLayoutJsonContext.UInt16.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<ushort>

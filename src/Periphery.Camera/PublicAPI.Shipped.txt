@@ -1,0 +1,319 @@
+#nullable enable
+Periphery.Camera.BufferExhaustionPolicy
+Periphery.Camera.BufferExhaustionPolicy.LatestWins = 0 -> Periphery.Camera.BufferExhaustionPolicy
+Periphery.Camera.BufferExhaustionPolicy.StallProducer = 1 -> Periphery.Camera.BufferExhaustionPolicy
+Periphery.Camera.CameraAccessDeniedException
+Periphery.Camera.CameraAccessDeniedException.CameraAccessDeniedException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Camera.CameraCaptureOptions
+Periphery.Camera.CameraCaptureOptions.CameraCaptureOptions(System.TimeSpan? FrameTimeout = null) -> void
+Periphery.Camera.CameraCaptureOptions.FrameTimeout.get -> System.TimeSpan?
+Periphery.Camera.CameraCaptureOptions.FrameTimeout.init -> void
+Periphery.Camera.CameraConfiguration
+Periphery.Camera.CameraConfiguration.CameraConfiguration(Periphery.Camera.CameraFormat! Format, Periphery.Camera.Rational? TargetFrameRate = null) -> void
+Periphery.Camera.CameraConfiguration.Format.get -> Periphery.Camera.CameraFormat!
+Periphery.Camera.CameraConfiguration.Format.init -> void
+Periphery.Camera.CameraConfiguration.TargetFrameRate.get -> Periphery.Camera.Rational?
+Periphery.Camera.CameraConfiguration.TargetFrameRate.init -> void
+Periphery.Camera.CameraConfigurationException
+Periphery.Camera.CameraConfigurationException.CameraConfigurationException(string! message, string? deviceId = null) -> void
+Periphery.Camera.CameraControlInfo
+Periphery.Camera.CameraControlInfo.CameraControlInfo(Periphery.Camera.CameraControlKind Kind, string! Name, double? MinValue, double? MaxValue, double? Step, double? DefaultValue, bool SupportsAutoMode, bool IsReadOnly) -> void
+Periphery.Camera.CameraControlInfo.DefaultValue.get -> double?
+Periphery.Camera.CameraControlInfo.DefaultValue.init -> void
+Periphery.Camera.CameraControlInfo.IsReadOnly.get -> bool
+Periphery.Camera.CameraControlInfo.IsReadOnly.init -> void
+Periphery.Camera.CameraControlInfo.Kind.get -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlInfo.Kind.init -> void
+Periphery.Camera.CameraControlInfo.MaxValue.get -> double?
+Periphery.Camera.CameraControlInfo.MaxValue.init -> void
+Periphery.Camera.CameraControlInfo.MinValue.get -> double?
+Periphery.Camera.CameraControlInfo.MinValue.init -> void
+Periphery.Camera.CameraControlInfo.Name.get -> string!
+Periphery.Camera.CameraControlInfo.Name.init -> void
+Periphery.Camera.CameraControlInfo.Step.get -> double?
+Periphery.Camera.CameraControlInfo.Step.init -> void
+Periphery.Camera.CameraControlInfo.SupportsAutoMode.get -> bool
+Periphery.Camera.CameraControlInfo.SupportsAutoMode.init -> void
+Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.BacklightCompensation = 15 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Brightness = 1 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Contrast = 2 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Exposure = 6 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Focus = 8 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Gain = 5 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Gamma = 13 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Hue = 14 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Pan = 10 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.PowerLineFrequency = 16 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Saturation = 3 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Sharpness = 4 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Tilt = 11 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Torch = 12 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Unknown = 0 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.WhiteBalance = 7 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlKind.Zoom = 9 -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlMode
+Periphery.Camera.CameraControlMode.Automatic = 2 -> Periphery.Camera.CameraControlMode
+Periphery.Camera.CameraControlMode.Manual = 1 -> Periphery.Camera.CameraControlMode
+Periphery.Camera.CameraControlMode.Unknown = 0 -> Periphery.Camera.CameraControlMode
+Periphery.Camera.CameraControlState
+Periphery.Camera.CameraControlState.CameraControlState(Periphery.Camera.CameraControlKind Kind, double Value, Periphery.Camera.CameraControlMode Mode) -> void
+Periphery.Camera.CameraControlState.Kind.get -> Periphery.Camera.CameraControlKind
+Periphery.Camera.CameraControlState.Kind.init -> void
+Periphery.Camera.CameraControlState.Mode.get -> Periphery.Camera.CameraControlMode
+Periphery.Camera.CameraControlState.Mode.init -> void
+Periphery.Camera.CameraControlState.Value.get -> double
+Periphery.Camera.CameraControlState.Value.init -> void
+Periphery.Camera.CameraDevice
+Periphery.Camera.CameraDevice.DeviceInfo.get -> Periphery.DeviceInfo!
+Periphery.Camera.CameraDevice.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Camera.CameraDevice.GetControlAsync(Periphery.Camera.CameraControlKind control, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraControlState?>!
+Periphery.Camera.CameraDevice.GetControlsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraControlInfo!>!>!
+Periphery.Camera.CameraDevice.GetFormatsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFormat!>!>!
+Periphery.Camera.CameraDevice.GetSnapshotAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraSnapshot!>!
+Periphery.Camera.CameraDevice.NativeEndpointId.get -> string!
+Periphery.Camera.CameraDevice.OpenSessionAsync(Periphery.Camera.CameraConfiguration! configuration, Periphery.Camera.CameraSessionOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), Microsoft.Extensions.Logging.ILogger<Periphery.Camera.CameraSession!>? logger = null, System.TimeProvider? timeProvider = null) -> System.Threading.Tasks.Task<Periphery.Camera.CameraSession!>!
+Periphery.Camera.CameraDevice.ResetControlAsync(Periphery.Camera.CameraControlKind control, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Camera.CameraDevice.SetControlAsync(Periphery.Camera.CameraControlKind control, double value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Camera.CameraDeviceLostException
+Periphery.Camera.CameraDeviceLostException.CameraDeviceLostException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Camera.CameraDeviceLostException.CameraDeviceLostException(string! message, string? deviceId = null) -> void
+Periphery.Camera.CameraDeviceNotFoundException
+Periphery.Camera.CameraDeviceNotFoundException.CameraDeviceNotFoundException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Camera.CameraDeviceNotFoundException.CameraDeviceNotFoundException(string! message, string? deviceId = null) -> void
+Periphery.Camera.CameraDeviceProxy
+Periphery.Camera.CameraException
+Periphery.Camera.CameraException.CameraException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Camera.CameraException.CameraException(string! message, string? deviceId = null) -> void
+Periphery.Camera.CameraException.DeviceId.get -> string?
+Periphery.Camera.CameraFormat
+Periphery.Camera.CameraFormat.CameraFormat(int Width, int Height, Periphery.Camera.CameraPixelFormat PixelFormat, Periphery.Camera.Rational MinFrameRate, Periphery.Camera.Rational MaxFrameRate, Periphery.Camera.CameraTransport Transport) -> void
+Periphery.Camera.CameraFormat.Height.get -> int
+Periphery.Camera.CameraFormat.Height.init -> void
+Periphery.Camera.CameraFormat.MaxFrameRate.get -> Periphery.Camera.Rational
+Periphery.Camera.CameraFormat.MaxFrameRate.init -> void
+Periphery.Camera.CameraFormat.MinFrameRate.get -> Periphery.Camera.Rational
+Periphery.Camera.CameraFormat.MinFrameRate.init -> void
+Periphery.Camera.CameraFormat.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraFormat.PixelFormat.init -> void
+Periphery.Camera.CameraFormat.Transport.get -> Periphery.Camera.CameraTransport
+Periphery.Camera.CameraFormat.Transport.init -> void
+Periphery.Camera.CameraFormat.Width.get -> int
+Periphery.Camera.CameraFormat.Width.init -> void
+Periphery.Camera.CameraFormatInfo
+Periphery.Camera.CameraFormatInfo.CameraFormatInfo(int Width, int Height, Periphery.Camera.CameraPixelFormat PixelFormat) -> void
+Periphery.Camera.CameraFormatInfo.Height.get -> int
+Periphery.Camera.CameraFormatInfo.Height.init -> void
+Periphery.Camera.CameraFormatInfo.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraFormatInfo.PixelFormat.init -> void
+Periphery.Camera.CameraFormatInfo.Width.get -> int
+Periphery.Camera.CameraFormatInfo.Width.init -> void
+Periphery.Camera.CameraFormatSelectors
+Periphery.Camera.CameraFrameLayout
+Periphery.Camera.CameraFrameMemoryDomain
+Periphery.Camera.CameraFrameMemoryDomain.Cpu = 0 -> Periphery.Camera.CameraFrameMemoryDomain
+Periphery.Camera.CameraFrameNaming
+Periphery.Camera.CameraFrameNaming.Sequential = 0 -> Periphery.Camera.CameraFrameNaming
+Periphery.Camera.CameraFrameNaming.Timestamp = 1 -> Periphery.Camera.CameraFrameNaming
+Periphery.Camera.CameraFramePin
+Periphery.Camera.CameraFramePin.Dispose() -> void
+Periphery.Camera.CameraFramePin.Height.get -> int
+Periphery.Camera.CameraFramePin.Length.get -> int
+Periphery.Camera.CameraFramePin.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraFramePin.Scan0.get -> nint
+Periphery.Camera.CameraFramePin.Stride.get -> int
+Periphery.Camera.CameraFramePin.Width.get -> int
+Periphery.Camera.CameraFramePinning
+Periphery.Camera.CameraFrameSinks
+Periphery.Camera.CameraFrameWriteOptions
+Periphery.Camera.CameraFrameWriteOptions.CameraFrameWriteOptions(Periphery.Camera.CameraFrameNaming Naming = Periphery.Camera.CameraFrameNaming.Sequential, string? FilenamePrefix = null, int SequentialPadding = 4) -> void
+Periphery.Camera.CameraFrameWriteOptions.FilenamePrefix.get -> string?
+Periphery.Camera.CameraFrameWriteOptions.FilenamePrefix.init -> void
+Periphery.Camera.CameraFrameWriteOptions.Naming.get -> Periphery.Camera.CameraFrameNaming
+Periphery.Camera.CameraFrameWriteOptions.Naming.init -> void
+Periphery.Camera.CameraFrameWriteOptions.SequentialPadding.get -> int
+Periphery.Camera.CameraFrameWriteOptions.SequentialPadding.init -> void
+Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Argb32 = 12 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Bgr24 = 9 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Bgra32 = 11 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Gray16 = 14 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Gray8 = 13 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.I420 = 5 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Mjpeg = 1 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Nv12 = 4 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Nv21 = 7 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Rgb24 = 8 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Rgba32 = 10 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Unknown = 0 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Uyvy = 3 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Yuy2 = 2 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPixelFormat.Yv12 = 6 -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.CameraPlane
+Periphery.Camera.CameraPlane.Buffer.get -> System.ReadOnlyMemory<byte>
+Periphery.Camera.CameraPlane.Buffer.init -> void
+Periphery.Camera.CameraPlane.CameraPlane() -> void
+Periphery.Camera.CameraPlane.CameraPlane(System.ReadOnlyMemory<byte> Buffer, int Stride, int Width, int Height) -> void
+Periphery.Camera.CameraPlane.Height.get -> int
+Periphery.Camera.CameraPlane.Height.init -> void
+Periphery.Camera.CameraPlane.Stride.get -> int
+Periphery.Camera.CameraPlane.Stride.init -> void
+Periphery.Camera.CameraPlane.Width.get -> int
+Periphery.Camera.CameraPlane.Width.init -> void
+Periphery.Camera.CameraSession
+Periphery.Camera.CameraSession.CaptureAsync(Periphery.Camera.CameraCaptureOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Periphery.Camera.LeasedCameraFrame!>!
+Periphery.Camera.CameraSession.Configuration.get -> Periphery.Camera.CameraConfiguration!
+Periphery.Camera.CameraSession.Device.get -> Periphery.Camera.CameraDevice!
+Periphery.Camera.CameraSession.DeviceInfo.get -> Periphery.DeviceInfo!
+Periphery.Camera.CameraSession.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Camera.CameraSession.IsCapturing.get -> bool
+Periphery.Camera.CameraSession.Metrics.get -> Periphery.Camera.CameraSessionMetrics!
+Periphery.Camera.CameraSession.Options.get -> Periphery.Camera.CameraSessionOptions!
+Periphery.Camera.CameraSession.ReadFrameAsync(Periphery.Camera.CameraCaptureOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.LeasedCameraFrame!>!
+Periphery.Camera.CameraSession.StartCaptureAsync(Periphery.Camera.CameraCaptureOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Camera.CameraSession.StopCaptureAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Camera.CameraSessionBuilder
+Periphery.Camera.CameraSessionBuilder.AllowOnlyPixelFormats(params Periphery.Camera.CameraPixelFormat[]! formats) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.MaxResolution(int width, int height) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.MinFrameRate(Periphery.Camera.Rational fps) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.MinResolution(int width, int height) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.OpenAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraSession!>!
+Periphery.Camera.CameraSessionBuilder.PreferMjpeg() -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.PreferNv12() -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.PreferPixelFormat(Periphery.Camera.CameraPixelFormat format) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.PreferYuy2() -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.TargetFrameRate(Periphery.Camera.Rational fps) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.UseFormat(System.Func<Periphery.Camera.CameraSnapshot!, Periphery.Camera.CameraFormat!>! selector) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.UseFormat(System.Func<Periphery.Camera.CameraSnapshot!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Periphery.Camera.CameraFormat!>>! selector) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.WithLogger(Microsoft.Extensions.Logging.ILogger<Periphery.Camera.CameraSession!>? logger) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.WithSessionOptions(Periphery.Camera.CameraSessionOptions! options) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.WithSessionOptions(System.Func<Periphery.Camera.CameraSessionOptions!, Periphery.Camera.CameraSessionOptions!>! configure) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionBuilder.WithTimeProvider(System.TimeProvider? timeProvider) -> Periphery.Camera.CameraSessionBuilder!
+Periphery.Camera.CameraSessionMetrics
+Periphery.Camera.CameraSessionMetrics.CameraSessionMetrics(long FramesProduced, long FramesDropped, int OutstandingLeases, System.TimeSpan? LastFrameTimestamp, long ProducerStalls, System.TimeSpan ProducerStallTime) -> void
+Periphery.Camera.CameraSessionMetrics.FramesDropped.get -> long
+Periphery.Camera.CameraSessionMetrics.FramesDropped.init -> void
+Periphery.Camera.CameraSessionMetrics.FramesProduced.get -> long
+Periphery.Camera.CameraSessionMetrics.FramesProduced.init -> void
+Periphery.Camera.CameraSessionMetrics.LastFrameTimestamp.get -> System.TimeSpan?
+Periphery.Camera.CameraSessionMetrics.LastFrameTimestamp.init -> void
+Periphery.Camera.CameraSessionMetrics.OutstandingLeases.get -> int
+Periphery.Camera.CameraSessionMetrics.OutstandingLeases.init -> void
+Periphery.Camera.CameraSessionMetrics.ProducerStallTime.get -> System.TimeSpan
+Periphery.Camera.CameraSessionMetrics.ProducerStallTime.init -> void
+Periphery.Camera.CameraSessionMetrics.ProducerStalls.get -> long
+Periphery.Camera.CameraSessionMetrics.ProducerStalls.init -> void
+Periphery.Camera.CameraSessionOptions
+Periphery.Camera.CameraSessionOptions.BufferCount.get -> int
+Periphery.Camera.CameraSessionOptions.BufferCount.init -> void
+Periphery.Camera.CameraSessionOptions.CameraSessionOptions(int BufferCount = 3, int QueueDepth = 1, Periphery.Camera.BufferExhaustionPolicy ExhaustionPolicy = Periphery.Camera.BufferExhaustionPolicy.LatestWins) -> void
+Periphery.Camera.CameraSessionOptions.ExhaustionPolicy.get -> Periphery.Camera.BufferExhaustionPolicy
+Periphery.Camera.CameraSessionOptions.ExhaustionPolicy.init -> void
+Periphery.Camera.CameraSessionOptions.QueueDepth.get -> int
+Periphery.Camera.CameraSessionOptions.QueueDepth.init -> void
+Periphery.Camera.CameraSnapshot
+Periphery.Camera.CameraSnapshot.CameraSnapshot(string! NativeEndpointId, System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFormat!>! Formats, System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraControlInfo!>! Controls) -> void
+Periphery.Camera.CameraSnapshot.Controls.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraControlInfo!>!
+Periphery.Camera.CameraSnapshot.Controls.init -> void
+Periphery.Camera.CameraSnapshot.Formats.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFormat!>!
+Periphery.Camera.CameraSnapshot.Formats.init -> void
+Periphery.Camera.CameraSnapshot.NativeEndpointId.get -> string!
+Periphery.Camera.CameraSnapshot.NativeEndpointId.init -> void
+Periphery.Camera.CameraTeardownPendingException
+Periphery.Camera.CameraTeardownPendingException.CameraTeardownPendingException(string! message, string? deviceId, System.Threading.Tasks.Task! completion, System.TimeSpan pendingFor) -> void
+Periphery.Camera.CameraTeardownPendingException.Completion.get -> System.Threading.Tasks.Task!
+Periphery.Camera.CameraTeardownPendingException.PendingFor.get -> System.TimeSpan
+Periphery.Camera.CameraTimeoutException
+Periphery.Camera.CameraTimeoutException.CameraTimeoutException(string! message, string? deviceId = null) -> void
+Periphery.Camera.CameraTransport
+Periphery.Camera.CameraTransport.Compressed = 1 -> Periphery.Camera.CameraTransport
+Periphery.Camera.CameraTransport.Uncompressed = 0 -> Periphery.Camera.CameraTransport
+Periphery.Camera.ICameraFrame
+Periphery.Camera.ICameraFrame.AddRef() -> Periphery.Camera.ICameraFrame!
+Periphery.Camera.ICameraFrame.ContiguousBuffer.get -> System.ReadOnlyMemory<byte>
+Periphery.Camera.ICameraFrame.GetPlane(int index) -> Periphery.Camera.CameraPlane
+Periphery.Camera.ICameraFrame.Height.get -> int
+Periphery.Camera.ICameraFrame.IsContiguous.get -> bool
+Periphery.Camera.ICameraFrame.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.ICameraFrame.PlaneCount.get -> int
+Periphery.Camera.ICameraFrame.Timestamp.get -> System.TimeSpan
+Periphery.Camera.ICameraFrame.Width.get -> int
+Periphery.Camera.ICameraFrameSink
+Periphery.Camera.ICameraFrameSink.OnFormatChangedAsync(Periphery.Camera.CameraFormatInfo! format, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Periphery.Camera.ICameraFrameSink.PresentAsync(Periphery.Camera.ICameraFrame! frame, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Periphery.Camera.ICameraFrameSink.SupportedMemoryDomains.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFrameMemoryDomain>!
+Periphery.Camera.LeasedCameraFrame
+Periphery.Camera.LeasedCameraFrame.AddRef() -> Periphery.Camera.ICameraFrame!
+Periphery.Camera.LeasedCameraFrame.ContiguousBuffer.get -> System.ReadOnlyMemory<byte>
+Periphery.Camera.LeasedCameraFrame.Copy() -> Periphery.Camera.OwnedCameraFrame!
+Periphery.Camera.LeasedCameraFrame.Dispose() -> void
+Periphery.Camera.LeasedCameraFrame.GetPlane(int index) -> Periphery.Camera.CameraPlane
+Periphery.Camera.LeasedCameraFrame.Height.get -> int
+Periphery.Camera.LeasedCameraFrame.IsContiguous.get -> bool
+Periphery.Camera.LeasedCameraFrame.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.LeasedCameraFrame.PlaneCount.get -> int
+Periphery.Camera.LeasedCameraFrame.RefCount.get -> int
+Periphery.Camera.LeasedCameraFrame.Timestamp.get -> System.TimeSpan
+Periphery.Camera.LeasedCameraFrame.Width.get -> int
+Periphery.Camera.NullCameraFrameSink
+Periphery.Camera.NullCameraFrameSink.AcceptedFrameCount.get -> long
+Periphery.Camera.NullCameraFrameSink.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Camera.NullCameraFrameSink.NullCameraFrameSink() -> void
+Periphery.Camera.NullCameraFrameSink.OnFormatChangedAsync(Periphery.Camera.CameraFormatInfo! format, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Periphery.Camera.NullCameraFrameSink.PresentAsync(Periphery.Camera.ICameraFrame! frame, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Periphery.Camera.NullCameraFrameSink.SupportedMemoryDomains.get -> System.Collections.Generic.IReadOnlyList<Periphery.Camera.CameraFrameMemoryDomain>!
+Periphery.Camera.OwnedCameraFrame
+Periphery.Camera.OwnedCameraFrame.AddRef() -> Periphery.Camera.ICameraFrame!
+Periphery.Camera.OwnedCameraFrame.ContiguousBuffer.get -> System.ReadOnlyMemory<byte>
+Periphery.Camera.OwnedCameraFrame.Dispose() -> void
+Periphery.Camera.OwnedCameraFrame.GetPlane(int index) -> Periphery.Camera.CameraPlane
+Periphery.Camera.OwnedCameraFrame.Height.get -> int
+Periphery.Camera.OwnedCameraFrame.IsContiguous.get -> bool
+Periphery.Camera.OwnedCameraFrame.PixelFormat.get -> Periphery.Camera.CameraPixelFormat
+Periphery.Camera.OwnedCameraFrame.PlaneCount.get -> int
+Periphery.Camera.OwnedCameraFrame.RefCount.get -> int
+Periphery.Camera.OwnedCameraFrame.Timestamp.get -> System.TimeSpan
+Periphery.Camera.OwnedCameraFrame.Width.get -> int
+Periphery.Camera.Rational
+Periphery.Camera.Rational.CompareTo(Periphery.Camera.Rational other) -> int
+Periphery.Camera.Rational.Denominator.get -> int
+Periphery.Camera.Rational.Numerator.get -> int
+Periphery.Camera.Rational.Rational() -> void
+Periphery.Camera.Rational.Rational(int numerator, int denominator) -> void
+Periphery.Camera.Rational.Rational(int wholeNumber) -> void
+Periphery.Camera.Rational.ToDouble() -> double
+override Periphery.Camera.Rational.ToString() -> string!
+static Periphery.Camera.CameraDevice.EnumerateAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.DeviceInfo!>!>!
+static Periphery.Camera.CameraDevice.OpenAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), Microsoft.Extensions.Logging.ILogger<Periphery.Camera.CameraDevice!>? logger = null) -> System.Threading.Tasks.Task<Periphery.Camera.CameraDevice!>!
+static Periphery.Camera.CameraDevice.ReadSnapshotAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraSnapshot!>!
+static Periphery.Camera.CameraDeviceProxy.Create(Periphery.DeviceTracker! tracker, System.Func<Periphery.Camera.LeasedCameraFrame!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! onFrame, System.Action<Periphery.Camera.CameraSessionBuilder!>? configure = null, Periphery.Camera.CameraCaptureOptions? captureOptions = null, Periphery.IRecoveryPolicy? recoveryPolicy = null) -> Periphery.Camera.CameraDeviceProxy!
+static Periphery.Camera.CameraDeviceProxy.OpenAsync(Periphery.DeviceProfile! profile, System.Func<Periphery.Camera.LeasedCameraFrame!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! onFrame, System.Action<Periphery.Camera.CameraSessionBuilder!>? configure = null, Periphery.Camera.CameraCaptureOptions? captureOptions = null, Periphery.IRecoveryPolicy? recoveryPolicy = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Camera.CameraDeviceProxy!>!
+static Periphery.Camera.CameraFormatSelectors.AtLeastFrameRate(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source, Periphery.Camera.Rational minFps) -> System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.AtLeastResolution(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source, int minWidth, int minHeight) -> System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.ByHighestArea(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source) -> System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.ByHighestFrameRate(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source) -> System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.PreferPixelFormat(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source, Periphery.Camera.CameraPixelFormat preferred) -> System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.ThenByHighestArea(this System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>! source) -> System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.ThenByHighestFrameRate(this System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>! source) -> System.Linq.IOrderedEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.WithAnyPixelFormat(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source, params Periphery.Camera.CameraPixelFormat[]! pixelFormats) -> System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.WithPixelFormat(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source, Periphery.Camera.CameraPixelFormat pixelFormat) -> System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFormatSelectors.WithinBox(this System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>! source, int maxWidth, int maxHeight) -> System.Collections.Generic.IEnumerable<Periphery.Camera.CameraFormat!>!
+static Periphery.Camera.CameraFrameLayout.BitsPerPixel(Periphery.Camera.CameraPixelFormat format) -> int
+static Periphery.Camera.CameraFrameLayout.BytesPerRow(Periphery.Camera.CameraPixelFormat format, int width) -> int
+static Periphery.Camera.CameraFrameLayout.FrameSize(Periphery.Camera.CameraPixelFormat format, int width, int height, int lumaStride = 0) -> int
+static Periphery.Camera.CameraFrameLayout.PlaneCount(Periphery.Camera.CameraPixelFormat format) -> int
+static Periphery.Camera.CameraFramePinning.Pin(this Periphery.Camera.ICameraFrame! frame) -> Periphery.Camera.CameraFramePin!
+static Periphery.Camera.CameraFramePinning.PinPlane(this Periphery.Camera.ICameraFrame! frame, int index) -> Periphery.Camera.CameraFramePin!
+static Periphery.Camera.CameraFrameSinks.SaveToDirectoryAsync(this System.Collections.Generic.IAsyncEnumerable<Periphery.Camera.ICameraFrame!>! source, string! directory, Periphery.Camera.CameraFrameWriteOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+static Periphery.Camera.CameraFrameSinks.ToOwnedAsync(this System.Collections.Generic.IAsyncEnumerable<Periphery.Camera.LeasedCameraFrame!>! source, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Periphery.Camera.OwnedCameraFrame!>!
+static Periphery.Camera.CameraFrameSinks.WriteContiguousToAsync(this System.Collections.Generic.IAsyncEnumerable<Periphery.Camera.ICameraFrame!>! source, System.IO.Stream! destination, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+static Periphery.Camera.CameraSession.For(Periphery.DeviceInfo! device) -> Periphery.Camera.CameraSessionBuilder!
+static Periphery.Camera.CameraSession.OpenAsync(Periphery.DeviceInfo! device, Periphery.Camera.CameraConfiguration! configuration, Periphery.Camera.CameraSessionOptions? sessionOptions = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken), Microsoft.Extensions.Logging.ILogger<Periphery.Camera.CameraSession!>? logger = null, System.TimeProvider? timeProvider = null) -> System.Threading.Tasks.Task<Periphery.Camera.CameraSession!>!
+static Periphery.Camera.Rational.implicit operator Periphery.Camera.Rational(int value) -> Periphery.Camera.Rational
+static Periphery.Camera.Rational.implicit operator double(Periphery.Camera.Rational r) -> double
+static Periphery.Camera.Rational.operator <(Periphery.Camera.Rational left, Periphery.Camera.Rational right) -> bool
+static Periphery.Camera.Rational.operator <=(Periphery.Camera.Rational left, Periphery.Camera.Rational right) -> bool
+static Periphery.Camera.Rational.operator >(Periphery.Camera.Rational left, Periphery.Camera.Rational right) -> bool
+static Periphery.Camera.Rational.operator >=(Periphery.Camera.Rational left, Periphery.Camera.Rational right) -> bool
+static readonly Periphery.Camera.CameraCaptureOptions.DefaultFrameTimeout -> System.TimeSpan
+static readonly Periphery.Camera.CameraFrameWriteOptions.Default -> Periphery.Camera.CameraFrameWriteOptions!

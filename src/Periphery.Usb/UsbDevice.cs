@@ -38,6 +38,11 @@ public sealed partial class UsbDevice : IAsyncDisposable
     // catchable UsbTimeoutException.
     private readonly TimeSpan _transferTimeout;
 
+    // The clock the per-transfer deadline is armed on (ADR-0089). TimeProvider.System in
+    // every public open path; tests inject a fake so a wedged transfer times out when the
+    // test advances the clock, not when the machine's timer gets round to it.
+    private readonly TimeProvider _timeProvider;
+
     // One transfer in flight per pipe (#263). Neither WinUSB nor libusb serialises
     // concurrent submissions on the same endpoint, and nothing below this layer does
     // either — so before this gate existed the invariant was a *caller convention*
@@ -61,12 +66,13 @@ public sealed partial class UsbDevice : IAsyncDisposable
 
     private UsbDevice(
         DeviceInfo deviceInfo, IUsbBackend backend,
-        ILogger<UsbDevice>? logger, TimeSpan transferTimeout)
+        ILogger<UsbDevice>? logger, TimeSpan transferTimeout, TimeProvider? timeProvider = null)
     {
         DeviceInfo = deviceInfo;
         _backend = backend;
         _logger = logger ?? NullLogger<UsbDevice>.Instance;
         _transferTimeout = transferTimeout;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -76,8 +82,9 @@ public sealed partial class UsbDevice : IAsyncDisposable
     /// </summary>
     internal static UsbDevice CreateForTest(
         DeviceInfo deviceInfo, IUsbBackend backend,
-        ILogger<UsbDevice>? logger = null, TimeSpan? transferTimeout = null)
-        => new(deviceInfo, backend, logger, transferTimeout ?? Timeout.InfiniteTimeSpan);
+        ILogger<UsbDevice>? logger = null, TimeSpan? transferTimeout = null,
+        TimeProvider? timeProvider = null)
+        => new(deviceInfo, backend, logger, transferTimeout ?? Timeout.InfiniteTimeSpan, timeProvider);
 
     /// <summary>The discovery snapshot this device was opened from.</summary>
     public DeviceInfo DeviceInfo { get; }
@@ -271,12 +278,15 @@ public sealed partial class UsbDevice : IAsyncDisposable
         Func<CancellationToken, Task<int>> transfer, CancellationToken ct,
         Action? onIssued = null)
     {
+        CancellationTokenSource? deadlineCts = null;
         CancellationTokenSource? timeoutCts = null;
         CancellationToken effectiveCt = ct;
         if (timeout != Timeout.InfiniteTimeSpan)
         {
-            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(timeout);
+            // Armed on _timeProvider, not with CancelAfter: CancelAfter always uses the system
+            // timer, whatever provider the device holds.
+            deadlineCts = new CancellationTokenSource(timeout, _timeProvider);
+            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadlineCts.Token);
             effectiveCt = timeoutCts.Token;
         }
 
@@ -359,6 +369,7 @@ public sealed partial class UsbDevice : IAsyncDisposable
             }
 
             timeoutCts?.Dispose();
+            deadlineCts?.Dispose();
         }
     }
 

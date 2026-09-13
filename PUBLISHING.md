@@ -7,28 +7,42 @@ there is no manual path, and no API key stored anywhere.
 ## Quick Publish Workflow
 
 ```sh
-# 1. Make your changes and commit
-git add .
-git commit -m "feat: add network adapter enumeration"
+# 1. In one release commit: retitle the Unreleased section of CHANGELOG.md
+#    (`## 3.2.0 - <date>`) and of docs/BREAKING-CHANGES.md
+#    (`` ## `v3.2.0` — since `v3.1.0` ``), and ship the recorded public API
+scripts/ship-public-api.sh
+git commit -am "chore: release v3.2.0"
 
-# 2. Tag the release (annotated, semver, `v` prefix — MinVer reads the tag)
-git tag -a v3.2.0 -m "v3.2.0"
+# 2. Tag it, annotated, with the release notes as the message body
+#    (semver, `v` prefix: MinVer reads the tag)
+git tag -a v3.2.0 -F release-notes.txt
 
-# 3. Push commits and tag
-git push && git push --tags
+# 3. Push the commit, then the tag
+git push && git push origin v3.2.0
 ```
 
+The tag message becomes the body of the GitHub Release, less its first line when that
+line is only the tag name. Write it for someone deciding whether to upgrade: what the
+release is for, the breaking changes, and the fixes. `git show v4.2.0-alpha.1` is an
+example. A lightweight tag, or `-m` with only the version, publishes a Release with an
+empty body.
+
 GitHub Actions (`publish.yml`) will automatically:
-1. Gate the release on Linux and Windows test jobs — Release build, **unit suites only**
+1. Refuse the tag if `CHANGELOG.md` or `docs/BREAKING-CHANGES.md` still has an
+   `## Unreleased` heading, if `CHANGELOG.md`'s newest heading is not this version, or
+   if any `PublicAPI.Unshipped.txt` has lines. Every other job waits on this check. Commit the fix, delete the tag
+   (`git tag -d v3.2.0 && git push origin :refs/tags/v3.2.0`) and tag again.
+2. Gate the release on Linux and Windows test jobs — Release build, **unit suites only**
    (`--filter "Category!=Integration"`). Device-backed tests never run here.
-2. Rebuild non-incrementally so every assembly comes from the tagged commit, then pack
+3. Rebuild non-incrementally so every assembly comes from the tagged commit, then pack
    those exact outputs. A completeness gate asserts every `IsPackable` project in
    `Periphery.slnx` produced a `.nupkg` — a partial family fails the release.
-3. Exchange a GitHub OIDC token for a one-hour nuget.org key, then push with
+4. Exchange a GitHub OIDC token for a one-hour nuget.org key, then push with
    `--skip-duplicate`, versioned from the tag (`v4.1.0` → `Periphery.4.1.0.nupkg`).
-4. Attach self-contained `Periphery.Cli` builds to the GitHub Release — `win-x64`
+5. Attach self-contained `Periphery.Cli` builds to the GitHub Release — `win-x64`
    and `win-arm64` zips and a `linux-x64` tar.gz — plus the dual-mode
-   `treehopper-flash.exe`. A hyphen in the tag marks it a prerelease.
+   `treehopper-flash.exe`, with the tag message as the Release body. A hyphen in the
+   tag marks it a prerelease.
 
 ### The `net8.0` assets are published untested, on purpose
 
@@ -59,21 +73,20 @@ and nothing in a `.csproj` needs editing.
 | Added public surface, backwards-compatibly | **MINOR** | 4.0.0 → 4.1.0 |
 | Fix, internal refactor, docs, dependency bump | **PATCH** | 4.0.0 → 4.0.1 |
 
-Two things this repo has been bitten by, worth checking before you tag:
+Before choosing, read every `PublicAPI.Unshipped.txt` (`scripts/ship-public-api.sh
+--check` lists the ones with content). A `*REMOVED*` line is a MAJOR bump. So is an
+added line for a member of a public interface or an abstract member, because every
+implementer breaks. Any other added line is MINOR. The files record interface members,
+which a grep for removed `public`/`protected` declarations cannot see.
 
-- **A behaviour change is breaking even when the signature is not.** If callers
-  can observe a different result from the same call, that is a MAJOR bump
-  regardless of what the compiler says.
-- **Interface members carry no access modifier**, so a grep for removed
-  `public`/`protected` declarations cannot see a changed interface member — the
-  single most breaking thing a library can ship, since every implementer breaks.
-  Diff the interface files by eye. (A sibling library shipped exactly this defect
-  as a patch.)
+**A behaviour change is breaking even when the signature is not.** If callers can
+observe a different result from the same call, that is a MAJOR bump, and no API file
+will show it.
 
-Read `CHANGELOG.md`'s `[Unreleased]` section before choosing: **it accumulates
-across changes**, so a MINOR addition released while an unreleased breaking
-change is pending still ships as a MAJOR. The version reflects everything in the
-release, not the last thing merged into it.
+Read the `Unreleased` sections of `CHANGELOG.md` and `docs/BREAKING-CHANGES.md`
+before choosing: **they accumulate across changes**, so a MINOR addition released
+while an unreleased breaking change is pending still ships as a MAJOR. The version
+reflects everything in the release, not the last thing merged into it.
 
 ## Consuming the Package
 

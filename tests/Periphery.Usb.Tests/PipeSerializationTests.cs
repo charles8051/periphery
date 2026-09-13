@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Time.Testing;
 using Periphery.Usb.Tests.Fakes;
 
 namespace Periphery.Usb.Tests;
@@ -195,9 +196,16 @@ public class PipeSerializationTests
         // first, times out FIRST, releases the gate, and lets the queued caller through.
         // That is precisely how the first version of this test passed locally and failed
         // on CI: the assertion depended on which of two equal deadlines fired first.
+        //
+        // The deadline is on a fake clock and an hour long, so only the test advancing it can
+        // fire it (ADR-0089): a deadline armed on the system timer fails here instead of
+        // passing late.
+        var time = new FakeTimeProvider();
+        var deadline = TimeSpan.FromHours(1);
+        using var meters = new MeterPeak("periphery.usb.queued_transfers");
         var probe = new OverlapProbe { ExpectArrivals = 1 };
         await using var device = UsbDevice.CreateForTest(
-            Info(), probe, transferTimeout: TimeSpan.FromMilliseconds(300));
+            Info(), probe, transferTimeout: deadline, timeProvider: time);
 
         using var streamCts = new CancellationTokenSource();
         var holder = Task.Run(async () =>
@@ -209,8 +217,15 @@ public class PipeSerializationTests
 
         await probe.ArrivedCount.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Queued behind the stream read on the same pipe: never reaches the backend.
-        await Assert.ThrowsAsync<UsbTimeoutException>(() => device.BulkReadAsync(0x81, 8));
+        // Queued behind the stream read on the same pipe: never reaches the backend. The
+        // queued counter moves after the deadline is armed, so once it reads 1 the clock
+        // has something to fire.
+        var queued = device.BulkReadAsync(0x81, 8);
+        await meters.WaitForAsync("periphery.usb.queued_transfers", 1, TimeSpan.FromSeconds(5));
+
+        time.Advance(deadline);
+
+        await Assert.ThrowsAsync<UsbTimeoutException>(() => queued.WaitAsync(TimeSpan.FromSeconds(30)));
 
         Assert.Equal(1, probe.Entered);
 

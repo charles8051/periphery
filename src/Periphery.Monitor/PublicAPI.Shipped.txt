@@ -1,0 +1,207 @@
+#nullable enable
+Periphery.Monitor.DisplayMode
+Periphery.Monitor.DisplayMode.DisplayMode(int Width, int Height, int RefreshRateHz) -> void
+Periphery.Monitor.DisplayMode.Height.get -> int
+Periphery.Monitor.DisplayMode.Height.init -> void
+Periphery.Monitor.DisplayMode.RefreshRateHz.get -> int
+Periphery.Monitor.DisplayMode.RefreshRateHz.init -> void
+Periphery.Monitor.DisplayMode.Width.get -> int
+Periphery.Monitor.DisplayMode.Width.init -> void
+Periphery.Monitor.DisplayPosition
+Periphery.Monitor.DisplayPosition.DisplayPosition() -> void
+Periphery.Monitor.DisplayPosition.DisplayPosition(int X, int Y) -> void
+Periphery.Monitor.DisplayPosition.X.get -> int
+Periphery.Monitor.DisplayPosition.X.init -> void
+Periphery.Monitor.DisplayPosition.Y.get -> int
+Periphery.Monitor.DisplayPosition.Y.init -> void
+Periphery.Monitor.DisplaySize
+Periphery.Monitor.DisplaySize.DisplaySize(int Width, int Height) -> void
+Periphery.Monitor.DisplaySize.Height.get -> int
+Periphery.Monitor.DisplaySize.Height.init -> void
+Periphery.Monitor.DisplaySize.Width.get -> int
+Periphery.Monitor.DisplaySize.Width.init -> void
+Periphery.Monitor.MccsCapabilities
+Periphery.Monitor.MccsCapabilities.AllowedValues(byte vcpCode) -> System.Collections.Immutable.ImmutableArray<ushort>
+Periphery.Monitor.MccsCapabilities.MccsVersion.get -> string?
+Periphery.Monitor.MccsCapabilities.Model.get -> string?
+Periphery.Monitor.MccsCapabilities.Raw.get -> string!
+Periphery.Monitor.MccsCapabilities.SupportedVcpCodes.get -> System.Collections.Generic.IReadOnlyCollection<byte>!
+Periphery.Monitor.MccsCapabilities.Supports(byte vcpCode) -> bool
+Periphery.Monitor.MonitorAccessDeniedException
+Periphery.Monitor.MonitorAccessDeniedException.MonitorAccessDeniedException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Monitor.MonitorCapabilityException
+Periphery.Monitor.MonitorCapabilityException.MonitorCapabilityException(string! message, string? deviceId = null) -> void
+Periphery.Monitor.MonitorConfiguration
+Periphery.Monitor.MonitorConfiguration.DeviceId.get -> Periphery.DeviceId
+Periphery.Monitor.MonitorConfiguration.DeviceId.init -> void
+Periphery.Monitor.MonitorConfiguration.IsPrimary.get -> bool?
+Periphery.Monitor.MonitorConfiguration.IsPrimary.init -> void
+Periphery.Monitor.MonitorConfiguration.Mode.get -> Periphery.Monitor.DisplayMode?
+Periphery.Monitor.MonitorConfiguration.Mode.init -> void
+Periphery.Monitor.MonitorConfiguration.MonitorConfiguration(Periphery.DeviceId DeviceId, Periphery.Monitor.DisplayMode? Mode = null, Periphery.Monitor.MonitorOrientation? Orientation = null, Periphery.Monitor.DisplayPosition? Position = null, bool? IsPrimary = null) -> void
+Periphery.Monitor.MonitorConfiguration.Orientation.get -> Periphery.Monitor.MonitorOrientation?
+Periphery.Monitor.MonitorConfiguration.Orientation.init -> void
+Periphery.Monitor.MonitorConfiguration.Position.get -> Periphery.Monitor.DisplayPosition?
+Periphery.Monitor.MonitorConfiguration.Position.init -> void
+Periphery.Monitor.MonitorDevice
+Periphery.Monitor.MonitorDevice.DeviceInfo.get -> Periphery.DeviceInfo!
+Periphery.Monitor.MonitorDevice.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Monitor.MonitorDevice.GetBrightnessAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<double>!
+Periphery.Monitor.MonitorDevice.GetCapabilitiesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MccsCapabilities!>!
+Periphery.Monitor.MonitorDevice.GetCurrentModeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.DisplayMode!>!
+Periphery.Monitor.MonitorDevice.GetInputSourceAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ushort>!
+Periphery.Monitor.MonitorDevice.GetOrientationAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorOrientation>!
+Periphery.Monitor.MonitorDevice.GetPowerModeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorPowerMode>!
+Periphery.Monitor.MonitorDevice.GetSupportedModesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.Monitor.DisplayMode!>!>!
+Periphery.Monitor.MonitorDevice.GetVcpFeatureAsync(byte code, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.VcpFeatureValue>!
+Periphery.Monitor.MonitorDevice.SetBrightnessAsync(double fraction, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Monitor.MonitorDevice.SetInputSourceAsync(Periphery.Monitor.MonitorInputSource source, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Monitor.MonitorDevice.SetModeAsync(Periphery.Monitor.DisplayMode! mode, bool persist = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Monitor.MonitorDevice.SetOrientationAsync(Periphery.Monitor.MonitorOrientation orientation, bool persist = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Monitor.MonitorDevice.SetPowerModeAsync(Periphery.Monitor.MonitorPowerMode mode, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Monitor.MonitorDevice.SetVcpFeatureAsync(byte code, ushort value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Monitor.MonitorDevice.SupportsDisplayMode.get -> bool
+Periphery.Monitor.MonitorDevice.SupportsVcp.get -> bool
+Periphery.Monitor.MonitorDeviceLostException
+Periphery.Monitor.MonitorDeviceLostException.MonitorDeviceLostException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Monitor.MonitorDeviceLostException.MonitorDeviceLostException(string! message, string? deviceId = null) -> void
+Periphery.Monitor.MonitorDeviceNotFoundException
+Periphery.Monitor.MonitorDeviceNotFoundException.MonitorDeviceNotFoundException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Monitor.MonitorDeviceNotFoundException.MonitorDeviceNotFoundException(string! message, string? deviceId = null) -> void
+Periphery.Monitor.MonitorDeviceProxy
+Periphery.Monitor.MonitorException
+Periphery.Monitor.MonitorException.DeviceId.get -> string?
+Periphery.Monitor.MonitorException.MonitorException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Monitor.MonitorException.MonitorException(string! message, string? deviceId = null) -> void
+Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.DisplayPort1 = 15 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.DisplayPort2 = 16 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.Dvi1 = 3 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.Dvi2 = 4 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.Hdmi1 = 17 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.Hdmi2 = 18 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorInputSource.Vga1 = 1 -> Periphery.Monitor.MonitorInputSource
+Periphery.Monitor.MonitorLayout
+Periphery.Monitor.MonitorLayout.Availability.get -> Periphery.Monitor.MonitorLayoutAvailability
+Periphery.Monitor.MonitorLayout.Availability.init -> void
+Periphery.Monitor.MonitorLayout.MonitorLayout(System.Collections.Immutable.ImmutableArray<Periphery.Monitor.MonitorLayoutEntry!> Monitors, Periphery.Monitor.MonitorLayoutAvailability Availability) -> void
+Periphery.Monitor.MonitorLayout.Monitors.get -> System.Collections.Immutable.ImmutableArray<Periphery.Monitor.MonitorLayoutEntry!>
+Periphery.Monitor.MonitorLayout.Monitors.init -> void
+Periphery.Monitor.MonitorLayout.Primary.get -> Periphery.Monitor.MonitorLayoutEntry?
+Periphery.Monitor.MonitorLayoutApplier
+Periphery.Monitor.MonitorLayoutApplyOptions
+Periphery.Monitor.MonitorLayoutApplyOptions.Persist.get -> bool
+Periphery.Monitor.MonitorLayoutApplyOptions.Persist.init -> void
+Periphery.Monitor.MonitorLayoutApplyOutcome
+Periphery.Monitor.MonitorLayoutApplyOutcome.AlreadySatisfied = 0 -> Periphery.Monitor.MonitorLayoutApplyOutcome
+Periphery.Monitor.MonitorLayoutApplyOutcome.Applied = 1 -> Periphery.Monitor.MonitorLayoutApplyOutcome
+Periphery.Monitor.MonitorLayoutApplyResult
+Periphery.Monitor.MonitorLayoutApplyResult.Layout.get -> Periphery.Monitor.MonitorLayout!
+Periphery.Monitor.MonitorLayoutApplyResult.Layout.init -> void
+Periphery.Monitor.MonitorLayoutApplyResult.MonitorLayoutApplyResult(Periphery.Monitor.MonitorLayoutApplyOutcome Outcome, Periphery.Monitor.MonitorLayout! Layout) -> void
+Periphery.Monitor.MonitorLayoutApplyResult.Outcome.get -> Periphery.Monitor.MonitorLayoutApplyOutcome
+Periphery.Monitor.MonitorLayoutApplyResult.Outcome.init -> void
+Periphery.Monitor.MonitorLayoutAvailability
+Periphery.Monitor.MonitorLayoutAvailability.Available = 1 -> Periphery.Monitor.MonitorLayoutAvailability
+Periphery.Monitor.MonitorLayoutAvailability.NoActiveDisplays = 2 -> Periphery.Monitor.MonitorLayoutAvailability
+Periphery.Monitor.MonitorLayoutAvailability.NotMeasured = 0 -> Periphery.Monitor.MonitorLayoutAvailability
+Periphery.Monitor.MonitorLayoutAvailability.NotVisibleFromThisSession = 3 -> Periphery.Monitor.MonitorLayoutAvailability
+Periphery.Monitor.MonitorLayoutEntry
+Periphery.Monitor.MonitorLayoutEntry.CurrentMode.get -> Periphery.Monitor.DisplayMode!
+Periphery.Monitor.MonitorLayoutEntry.CurrentMode.init -> void
+Periphery.Monitor.MonitorLayoutEntry.DesktopSize.get -> Periphery.Monitor.DisplaySize!
+Periphery.Monitor.MonitorLayoutEntry.DeviceId.get -> Periphery.DeviceId
+Periphery.Monitor.MonitorLayoutEntry.DeviceId.init -> void
+Periphery.Monitor.MonitorLayoutEntry.FriendlyName.get -> string?
+Periphery.Monitor.MonitorLayoutEntry.FriendlyName.init -> void
+Periphery.Monitor.MonitorLayoutEntry.IsPrimary.get -> bool
+Periphery.Monitor.MonitorLayoutEntry.IsPrimary.init -> void
+Periphery.Monitor.MonitorLayoutEntry.MonitorLayoutEntry(Periphery.DeviceId DeviceId, string? FriendlyName, bool IsPrimary, Periphery.Monitor.DisplayMode! CurrentMode, Periphery.Monitor.DisplayMode? PreferredMode, Periphery.Monitor.MonitorOrientation Orientation, Periphery.Monitor.MonitorOutputTechnology OutputTechnology, Periphery.Monitor.DisplayPosition Position, System.Collections.Immutable.ImmutableArray<Periphery.Monitor.DisplayMode!> SupportedModes) -> void
+Periphery.Monitor.MonitorLayoutEntry.Orientation.get -> Periphery.Monitor.MonitorOrientation
+Periphery.Monitor.MonitorLayoutEntry.Orientation.init -> void
+Periphery.Monitor.MonitorLayoutEntry.OutputTechnology.get -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorLayoutEntry.OutputTechnology.init -> void
+Periphery.Monitor.MonitorLayoutEntry.PanelId.get -> Periphery.Monitor.MonitorPanelIdentity?
+Periphery.Monitor.MonitorLayoutEntry.PanelId.init -> void
+Periphery.Monitor.MonitorLayoutEntry.Position.get -> Periphery.Monitor.DisplayPosition
+Periphery.Monitor.MonitorLayoutEntry.Position.init -> void
+Periphery.Monitor.MonitorLayoutEntry.PreferredMode.get -> Periphery.Monitor.DisplayMode?
+Periphery.Monitor.MonitorLayoutEntry.PreferredMode.init -> void
+Periphery.Monitor.MonitorLayoutEntry.SupportedModes.get -> System.Collections.Immutable.ImmutableArray<Periphery.Monitor.DisplayMode!>
+Periphery.Monitor.MonitorLayoutEntry.SupportedModes.init -> void
+Periphery.Monitor.MonitorLayoutRejectedException
+Periphery.Monitor.MonitorLayoutRejectedException.CcdReturnCode.get -> int
+Periphery.Monitor.MonitorLayoutRejectedException.MonitorLayoutRejectedException(string! message, int ccdReturnCode) -> void
+Periphery.Monitor.MonitorOrientation
+Periphery.Monitor.MonitorOrientation.Landscape = 0 -> Periphery.Monitor.MonitorOrientation
+Periphery.Monitor.MonitorOrientation.LandscapeFlipped = 2 -> Periphery.Monitor.MonitorOrientation
+Periphery.Monitor.MonitorOrientation.Portrait = 1 -> Periphery.Monitor.MonitorOrientation
+Periphery.Monitor.MonitorOrientation.PortraitFlipped = 3 -> Periphery.Monitor.MonitorOrientation
+Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.DisplayPortEmbedded = 6 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.DisplayPortExternal = 5 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.Dvi = 3 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.Hdmi = 4 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.IndirectVirtual = 8 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.IndirectWired = 7 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.Internal = 1 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.Other = 0 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorOutputTechnology.Vga = 2 -> Periphery.Monitor.MonitorOutputTechnology
+Periphery.Monitor.MonitorPanelIdentity
+Periphery.Monitor.MonitorPanelIdentity.MonitorPanelIdentity(string! VendorId, ushort ProductCode) -> void
+Periphery.Monitor.MonitorPanelIdentity.PnpId.get -> string!
+Periphery.Monitor.MonitorPanelIdentity.ProductCode.get -> ushort
+Periphery.Monitor.MonitorPanelIdentity.ProductCode.init -> void
+Periphery.Monitor.MonitorPanelIdentity.VendorId.get -> string!
+Periphery.Monitor.MonitorPanelIdentity.VendorId.init -> void
+Periphery.Monitor.MonitorPowerMode
+Periphery.Monitor.MonitorPowerMode.HardOff = 5 -> Periphery.Monitor.MonitorPowerMode
+Periphery.Monitor.MonitorPowerMode.On = 1 -> Periphery.Monitor.MonitorPowerMode
+Periphery.Monitor.MonitorPowerMode.SoftOff = 4 -> Periphery.Monitor.MonitorPowerMode
+Periphery.Monitor.MonitorPowerMode.Standby = 2 -> Periphery.Monitor.MonitorPowerMode
+Periphery.Monitor.MonitorPowerMode.Suspend = 3 -> Periphery.Monitor.MonitorPowerMode
+Periphery.Monitor.MonitorSnapshot
+Periphery.Monitor.MonitorSnapshot.Capabilities.get -> Periphery.Monitor.MccsCapabilities?
+Periphery.Monitor.MonitorSnapshot.Capabilities.init -> void
+Periphery.Monitor.MonitorSnapshot.CurrentMode.get -> Periphery.Monitor.DisplayMode?
+Periphery.Monitor.MonitorSnapshot.CurrentMode.init -> void
+Periphery.Monitor.MonitorSnapshot.MonitorSnapshot(bool SupportsVcp, bool SupportsDisplayMode, Periphery.Monitor.MccsCapabilities? Capabilities, Periphery.Monitor.DisplayMode? CurrentMode, Periphery.Monitor.MonitorOrientation? Orientation) -> void
+Periphery.Monitor.MonitorSnapshot.Orientation.get -> Periphery.Monitor.MonitorOrientation?
+Periphery.Monitor.MonitorSnapshot.Orientation.init -> void
+Periphery.Monitor.MonitorSnapshot.SupportsDisplayMode.get -> bool
+Periphery.Monitor.MonitorSnapshot.SupportsDisplayMode.init -> void
+Periphery.Monitor.MonitorSnapshot.SupportsVcp.get -> bool
+Periphery.Monitor.MonitorSnapshot.SupportsVcp.init -> void
+Periphery.Monitor.MonitorTransferException
+Periphery.Monitor.MonitorTransferException.MonitorTransferException(string! message, System.Exception! innerException, string? deviceId = null) -> void
+Periphery.Monitor.MonitorTransferException.MonitorTransferException(string! message, string? deviceId = null) -> void
+Periphery.Monitor.Serialization.MonitorLayoutJsonContext
+Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorLayoutJsonContext() -> void
+Periphery.Monitor.Serialization.MonitorLayoutJsonContext.MonitorLayoutJsonContext(System.Text.Json.JsonSerializerOptions! options) -> void
+Periphery.Monitor.VcpCode
+Periphery.Monitor.VcpFeatureValue
+Periphery.Monitor.VcpFeatureValue.Current.get -> ushort
+Periphery.Monitor.VcpFeatureValue.Current.init -> void
+Periphery.Monitor.VcpFeatureValue.Maximum.get -> ushort
+Periphery.Monitor.VcpFeatureValue.Maximum.init -> void
+Periphery.Monitor.VcpFeatureValue.VcpFeatureValue() -> void
+Periphery.Monitor.VcpFeatureValue.VcpFeatureValue(ushort Current, ushort Maximum) -> void
+const Periphery.Monitor.VcpCode.AudioVolume = 98 -> byte
+const Periphery.Monitor.VcpCode.Contrast = 18 -> byte
+const Periphery.Monitor.VcpCode.InputSource = 96 -> byte
+const Periphery.Monitor.VcpCode.Luminance = 16 -> byte
+const Periphery.Monitor.VcpCode.PowerMode = 214 -> byte
+override Periphery.Monitor.DisplayMode.ToString() -> string!
+override Periphery.Monitor.DisplayPosition.ToString() -> string!
+override Periphery.Monitor.DisplaySize.ToString() -> string!
+override Periphery.Monitor.MonitorPanelIdentity.ToString() -> string!
+override Periphery.Monitor.Serialization.MonitorLayoutJsonContext.GeneratedSerializerOptions.get -> System.Text.Json.JsonSerializerOptions?
+override Periphery.Monitor.Serialization.MonitorLayoutJsonContext.GetTypeInfo(System.Type! type) -> System.Text.Json.Serialization.Metadata.JsonTypeInfo?
+static Periphery.Monitor.MccsCapabilities.Parse(string! raw) -> Periphery.Monitor.MccsCapabilities!
+static Periphery.Monitor.MonitorDevice.OpenAsync(Periphery.DeviceInfo! deviceInfo, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorDevice!>!
+static Periphery.Monitor.MonitorDevice.ReadCapabilitiesAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorSnapshot!>!
+static Periphery.Monitor.MonitorDeviceProxy.Create(Periphery.DeviceTracker! tracker, Periphery.IRecoveryPolicy? recoveryPolicy = null) -> Periphery.Monitor.MonitorDeviceProxy!
+static Periphery.Monitor.MonitorDeviceProxy.OpenAsync(Periphery.DeviceProfile! profile, Periphery.IRecoveryPolicy? recoveryPolicy = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorDeviceProxy!>!
+static Periphery.Monitor.MonitorLayout.ReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorLayout!>!
+static Periphery.Monitor.MonitorLayoutApplier.ApplyAsync(System.Collections.Generic.IReadOnlyList<Periphery.Monitor.MonitorConfiguration!>! desired, Periphery.Monitor.MonitorLayoutApplyOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Monitor.MonitorLayoutApplyResult!>!
+static Periphery.Monitor.Serialization.MonitorLayoutJsonContext.Default.get -> Periphery.Monitor.Serialization.MonitorLayoutJsonContext!

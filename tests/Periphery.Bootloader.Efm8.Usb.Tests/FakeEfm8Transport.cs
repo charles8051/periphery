@@ -77,7 +77,7 @@ internal sealed class FakeEfm8Transport : IEfm8Transport
         if (read == _hangAtRead)
             // Block exactly as a wedged HID read does: return nothing until the token is cancelled.
             // The uploader's per-reply deadline is what cancels it, so this exercises the timeout path.
-            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            await new TaskCompletionSource().Task.WaitAsync(ct).ConfigureAwait(false);
         if (_reportForRead is not null)
             return Efm8Reply.FromReport(_reportForRead(read).AsSpan(), (byte)'?');
         byte status = _replyForRead(read); // capture once: a stateful scripted func must advance only per read

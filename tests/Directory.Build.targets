@@ -1,0 +1,43 @@
+<Project>
+  <!--
+    A Directory.Build.targets here stops MSBuild's upward search. There is no root one
+    today. If one is added, import it at the top of this file.
+  -->
+
+  <!--
+    Wall-clock ratchet for tests (ADR-0089).
+
+    Bans the APIs that make a test depend on how fast the machine is: sleeping, reading
+    the wall clock, starting a stopwatch, and timers that run on the machine's clock.
+    BannedSymbols.txt beside this file lists them, each with its replacement named in
+    the message. RS0030 is an error, so a new dependency on elapsed time fails the
+    build instead of turning up later as a flake on one CI leg.
+
+    On by default. A project turns it off by setting PeripheryBanWallClockInTests to
+    false in its own csproj, with a comment saying why. Every exception is then a line
+    in a diff, and the list of exceptions is a grep (CONTRIBUTING.md has it). The list
+    only gets shorter: a project comes off when its last violation is gone, and a new
+    test project starts under the ban without anyone deciding to put it there.
+
+    In .targets rather than .props so the property a csproj sets is the one the
+    condition reads.
+  -->
+  <PropertyGroup Condition="'$(PeripheryBanWallClockInTests)' != 'false'">
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PeripheryBanWallClockInTests)' != 'false'">
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" PrivateAssets="All" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+  </ItemGroup>
+
+  <!--
+    The replacement comes with the ban. Every test project gets FakeTimeProvider, so the
+    banned-API message can say "use FakeTimeProvider" and the package is already there.
+    Unconditional: a project opted out of the ban is the one that most needs a way off it.
+    Pinned to the repo's Microsoft.Extensions.* 9.0.x line.
+  -->
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+  </ItemGroup>
+</Project>

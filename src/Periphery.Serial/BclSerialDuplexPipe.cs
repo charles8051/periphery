@@ -164,6 +164,12 @@ public sealed class BclSerialDuplexPipe : IDuplexPipe, IAsyncDisposable
             ? ReadDisposition.Benign
             : ReadDisposition.Failure;
 
+    /// <summary>
+    /// The read pump's task. Completes when the pump has left <see cref="Stream.Read(byte[], int, int)"/>
+    /// for good, which <see cref="DisposeAsync"/> waits for before returning.
+    /// </summary>
+    internal Task PumpCompletion => _pumpTask;
+
     private readonly object _disposeLock = new();
     private Task? _disposeTask;
 

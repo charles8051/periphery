@@ -1,0 +1,62 @@
+#nullable enable
+Periphery.Firmware.ElfFormatException
+Periphery.Firmware.ElfFormatException.ElfFormatException(string! message) -> void
+Periphery.Firmware.ElfFormatException.ElfFormatException(string! message, System.Exception! innerException) -> void
+Periphery.Firmware.ElfImage
+Periphery.Firmware.FirmwareFormat
+Periphery.Firmware.FirmwareFormat.Efm8BootRecords = 3 -> Periphery.Firmware.FirmwareFormat
+Periphery.Firmware.FirmwareFormat.Elf = 2 -> Periphery.Firmware.FirmwareFormat
+Periphery.Firmware.FirmwareFormat.IntelHex = 0 -> Periphery.Firmware.FirmwareFormat
+Periphery.Firmware.FirmwareFormat.RawBinary = 1 -> Periphery.Firmware.FirmwareFormat
+Periphery.Firmware.FirmwareFormatException
+Periphery.Firmware.FirmwareFormatException.FirmwareFormatException(string! message) -> void
+Periphery.Firmware.FirmwareFormatException.FirmwareFormatException(string! message, System.Exception! innerException) -> void
+Periphery.Firmware.FirmwareFormats
+Periphery.Firmware.FirmwareImage
+Periphery.Firmware.FirmwareImage.Segments.get -> System.Collections.Immutable.ImmutableArray<Periphery.Firmware.FirmwareSegment>
+Periphery.Firmware.FirmwareImage.TotalBytes.get -> long
+Periphery.Firmware.FirmwareKind
+Periphery.Firmware.FirmwareKind.MemoryImage = 0 -> Periphery.Firmware.FirmwareKind
+Periphery.Firmware.FirmwareKind.PackagedBlob = 1 -> Periphery.Firmware.FirmwareKind
+Periphery.Firmware.FirmwarePayload
+Periphery.Firmware.FirmwarePayload.Blob.get -> System.ReadOnlyMemory<byte>
+Periphery.Firmware.FirmwarePayload.ByteLength.get -> long
+Periphery.Firmware.FirmwarePayload.Format.get -> Periphery.Firmware.FirmwareFormat
+Periphery.Firmware.FirmwarePayload.Kind.get -> Periphery.Firmware.FirmwareKind
+Periphery.Firmware.FirmwarePayload.MemoryImage.get -> Periphery.Firmware.FirmwareImage?
+Periphery.Firmware.FirmwareSegment
+Periphery.Firmware.FirmwareSegment.Address.get -> uint
+Periphery.Firmware.FirmwareSegment.Address.init -> void
+Periphery.Firmware.FirmwareSegment.Data.get -> System.ReadOnlyMemory<byte>
+Periphery.Firmware.FirmwareSegment.Data.init -> void
+Periphery.Firmware.FirmwareSegment.FirmwareSegment() -> void
+Periphery.Firmware.FirmwareSegment.FirmwareSegment(uint Address, System.ReadOnlyMemory<byte> Data) -> void
+Periphery.Firmware.IntelHexFormatException
+Periphery.Firmware.IntelHexFormatException.IntelHexFormatException(string! message) -> void
+Periphery.Firmware.IntelHexFormatException.IntelHexFormatException(string! message, System.Exception! innerException) -> void
+Periphery.Firmware.IntelHexImage
+Periphery.Firmware.IntelHexImage.Addresses.get -> System.Collections.Generic.IEnumerable<int>!
+Periphery.Firmware.IntelHexImage.Get(int address) -> byte
+Periphery.Firmware.IntelHexImage.IsEmpty.get -> bool
+Periphery.Firmware.IntelHexImage.MaxAddress.get -> int
+Periphery.Firmware.IntelHexImage.MinAddress.get -> int
+Periphery.Firmware.IntelHexImage.Padding.get -> byte
+Periphery.Firmware.IntelHexImage.Slice(int startInclusive, int stopExclusive) -> Periphery.Firmware.IntelHexImage!
+Periphery.Firmware.IntelHexImage.ToBinary(int start, int size) -> byte[]!
+Periphery.Firmware.IntelHexImage.With(int address, byte value) -> Periphery.Firmware.IntelHexImage!
+static Periphery.Firmware.ElfImage.HasMagic(System.ReadOnlySpan<byte> content) -> bool
+static Periphery.Firmware.ElfImage.ReadLoadableSegments(System.ReadOnlyMemory<byte> content) -> System.Collections.Immutable.ImmutableArray<Periphery.Firmware.FirmwareSegment>
+static Periphery.Firmware.FirmwareFormats.FromExtension(string! fileName) -> Periphery.Firmware.FirmwareFormat?
+static Periphery.Firmware.FirmwareFormats.Kind(this Periphery.Firmware.FirmwareFormat format) -> Periphery.Firmware.FirmwareKind
+static Periphery.Firmware.FirmwareImage.FromBytes(uint baseAddress, System.ReadOnlyMemory<byte> data) -> Periphery.Firmware.FirmwareImage!
+static Periphery.Firmware.FirmwareImage.FromElf(System.ReadOnlyMemory<byte> content) -> Periphery.Firmware.FirmwareImage!
+static Periphery.Firmware.FirmwareImage.FromIntelHex(Periphery.Firmware.IntelHexImage! image) -> Periphery.Firmware.FirmwareImage!
+static Periphery.Firmware.FirmwareImage.FromIntelHex(string! hexText) -> Periphery.Firmware.FirmwareImage!
+static Periphery.Firmware.FirmwareImage.FromSegments(System.Collections.Generic.IEnumerable<Periphery.Firmware.FirmwareSegment>! segments) -> Periphery.Firmware.FirmwareImage!
+static Periphery.Firmware.FirmwareImage.Load(System.ReadOnlyMemory<byte> content, string! fileName, uint binBaseAddress) -> Periphery.Firmware.FirmwareImage!
+static Periphery.Firmware.FirmwarePayload.FromBlob(System.ReadOnlyMemory<byte> blob, Periphery.Firmware.FirmwareFormat format) -> Periphery.Firmware.FirmwarePayload!
+static Periphery.Firmware.FirmwarePayload.FromImage(Periphery.Firmware.FirmwareImage! image, Periphery.Firmware.FirmwareFormat format) -> Periphery.Firmware.FirmwarePayload!
+static Periphery.Firmware.FirmwarePayload.Load(System.ReadOnlyMemory<byte> content, string! fileName, uint binBaseAddress) -> Periphery.Firmware.FirmwarePayload!
+static Periphery.Firmware.IntelHexImage.FromBytes(System.Collections.Generic.IEnumerable<(int Address, byte Value)>! bytes, byte padding = 255) -> Periphery.Firmware.IntelHexImage!
+static Periphery.Firmware.IntelHexImage.Parse(string! hexText, byte padding = 255) -> Periphery.Firmware.IntelHexImage!
+static readonly Periphery.Firmware.FirmwareImage.Empty -> Periphery.Firmware.FirmwareImage!
