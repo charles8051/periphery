@@ -30,7 +30,8 @@ This document provides quick commands and explanations for the Periphery CI/CD w
 
 **What it does:**
 - Refuses the tag if `CHANGELOG.md` or `docs/BREAKING-CHANGES.md` has an `Unreleased`
-  section, or any `PublicAPI.Unshipped.txt` has lines
+  section, `CHANGELOG.md` has no section for the version, or any
+  `PublicAPI.Unshipped.txt` has lines
 - Builds in Release configuration
 - Runs all tests
 - Packs NuGet packages

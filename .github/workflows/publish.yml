@@ -78,15 +78,18 @@ permissions:
 
 jobs:
   # The release's prose, and the checks that the repository describes the release
-  # being tagged. Runs first and gates every job that publishes, because once
-  # nuget.org has a version, what shipped with it cannot be replaced; a failure here
-  # costs a re-tag.
+  # being tagged. Every other job needs this one, so a refused tag builds nothing;
+  # once nuget.org has a version, what shipped with it cannot be replaced, and a
+  # failure here costs only a re-tag.
   #
   # On a tag push it fails the release when:
   #   - CHANGELOG.md or docs/BREAKING-CHANGES.md still has an `## Unreleased`
   #     heading. Both group entries by release, so that heading at tag time means
   #     the section this tag ships was never retitled, and the docs tell a reader
   #     that changes they just received are still pending.
+  #   - CHANGELOG.md's newest release heading is not this tag's version. Every
+  #     release gets a CHANGELOG section. BREAKING-CHANGES.md is not held to the
+  #     same rule: a release that changes nothing a caller sees has no section.
   #   - any PublicAPI.Unshipped.txt still has lines. The tag's Shipped files would
   #     not be the surface it publishes. scripts/ship-public-api.sh moves them.
   # It also reads the annotated tag's message as the GitHub Release body. Until
@@ -105,7 +108,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Assert CHANGELOG.md and BREAKING-CHANGES.md name this release
+      - name: Assert CHANGELOG.md and BREAKING-CHANGES.md describe this release
         if: github.event_name == 'push'
         shell: bash
         run: |
@@ -119,11 +122,21 @@ jobs:
               status=1
             fi
           done
+          # The newest CHANGELOG heading must name this version. Its first token,
+          # with any `[`, backtick or `v` prefix removed, is compared as a string,
+          # so 4.2.0 does not match 4.2.0-alpha.1.
+          version="${GITHUB_REF_NAME#v}"
+          newest="$(grep -m1 -E '^##[[:space:]]' CHANGELOG.md || true)"
+          named="$(printf '%s\n' "$newest" | sed -E 's/^##[[:space:]]+//; s/^[[`]//; s/^v//; s/[]`[:space:]].*$//')"
+          if [ "$named" != "$version" ]; then
+            echo "::error file=CHANGELOG.md::The newest heading is '${newest}', not ${version}."
+            status=1
+          fi
           if [ "$status" -ne 0 ]; then
-            echo "Retitle each Unreleased section to ${GITHUB_REF_NAME}, commit, and move the tag."
+            echo "Give ${GITHUB_REF_NAME} its CHANGELOG section, retitle any Unreleased section, commit, and move the tag."
             exit 1
           fi
-          echo "No Unreleased section. ${GITHUB_REF_NAME} is described."
+          echo "CHANGELOG.md's newest section is ${version}, and neither doc has an Unreleased section."
 
       - name: Assert the public API is shipped
         if: github.event_name == 'push'
@@ -148,10 +161,13 @@ jobs:
             # Drop a PGP trailer if the tag is signed.
             body="$(git tag -l --format='%(contents:body)' "$tag" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
           fi
+          # A fixed delimiter would end the value early at a matching line in the
+          # message, so each run draws one the message cannot contain.
+          delim="RELEASE_NOTES_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
           {
-            echo "body<<RELEASE_NOTES_EOF"
+            echo "body<<${delim}"
             echo "$body"
-            echo "RELEASE_NOTES_EOF"
+            echo "${delim}"
           } >> "$GITHUB_OUTPUT"
           echo "Release body, ${#body} chars:"
           echo "$body"
@@ -162,6 +178,7 @@ jobs:
   # self-hosted Linux leg needs an SDK container and the Windows leg does not.
   # --blame-hang-timeout 5m dumps + fails any test that wedges >5 min.
   test-linux:
+    needs: [release-notes]
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]') }}
     # SDK container on the self-hosted runner (host has only Docker); none on the hosted fallback.
     container: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') && 'mcr.microsoft.com/dotnet/sdk:10.0' || '' }}
@@ -200,6 +217,7 @@ jobs:
           retention-days: 30
 
   test-windows:
+    needs: [release-notes]
     runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]') }}
     steps:
       - uses: actions/checkout@v6

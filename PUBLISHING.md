@@ -29,8 +29,8 @@ empty body.
 
 GitHub Actions (`publish.yml`) will automatically:
 1. Refuse the tag if `CHANGELOG.md` or `docs/BREAKING-CHANGES.md` still has an
-   `## Unreleased` heading, or if any `PublicAPI.Unshipped.txt` has lines. The check
-   runs before anything is built. Commit the fix, delete the tag
+   `## Unreleased` heading, if `CHANGELOG.md`'s newest heading is not this version, or
+   if any `PublicAPI.Unshipped.txt` has lines. Every other job waits on this check. Commit the fix, delete the tag
    (`git tag -d v3.2.0 && git push origin :refs/tags/v3.2.0`) and tag again.
 2. Gate the release on Linux and Windows test jobs — Release build, **unit suites only**
    (`--filter "Category!=Integration"`). Device-backed tests never run here.
