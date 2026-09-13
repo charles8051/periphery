@@ -21,7 +21,8 @@ string[] aepProps =
     "System.Devices.Aep.IsPaired",
     "System.Devices.Aep.IsPresent",
     "System.Devices.Aep.Bluetooth.Le.IsConnectable",
-    "System.Devices.Aep.ContainerId",
+    // ContainerId is deliberately absent. It is a stable per-device GUID, and
+    // Mask only recognises address formats, so it would print verbatim.
     "System.Devices.Aep.ProtocolId",
 ];
 
