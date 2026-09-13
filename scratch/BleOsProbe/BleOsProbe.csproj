@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- What Windows itself exposes about bonded Bluetooth devices, read without
+         opening a connection. Answers the questions that
+         docs/explorations/bluetooth-os-apis-2026-09.md leaves to measurement on
+         Windows:
+
+           - the DeviceInformation.Id shape for LE and BR/EDR association endpoints
+           - the InTheHand.BluetoothLE BluetoothDevice.Id shape, which is the
+             handoff key between 32feet and a Periphery DeviceInfo
+           - the address type WinRT reports, and whether it agrees with the devnode
+           - whether a cached GATT read of a service the OS has claimed is refused
+
+         Every query uses the cache. Nothing here connects to a peripheral, so it
+         changes no link state. Addresses are masked in the output. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="InTheHand.BluetoothLE" Version="4.0.44" />
+  </ItemGroup>
+
+</Project>
