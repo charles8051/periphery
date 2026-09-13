@@ -157,6 +157,24 @@ public sealed record Stm32SerialOptions
         }
     }
 
+    private readonly TimeProvider _timeProvider = TimeProvider.System;
+
+    /// <summary>
+    /// The clock the programmer arms its command and sync deadlines on, and measures the handshake's
+    /// settle windows against. Default <see cref="System.TimeProvider.System"/>. Tests pass a fake
+    /// provider to drive the handshake without waiting in real time.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">Null.</exception>
+    public TimeProvider TimeProvider
+    {
+        get => _timeProvider;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _timeProvider = value;
+        }
+    }
+
     /// <summary>115200 8E1, 2 KiB pages, 256-byte transfers, 5 s per command, 30 s for erase.</summary>
     public static Stm32SerialOptions Default { get; } = new();
 }

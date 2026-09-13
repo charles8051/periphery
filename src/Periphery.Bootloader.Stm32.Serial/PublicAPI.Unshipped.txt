@@ -1,1 +1,3 @@
 #nullable enable
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.TimeProvider.get -> System.TimeProvider!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.TimeProvider.init -> void

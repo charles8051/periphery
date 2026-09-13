@@ -19,8 +19,9 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     public const byte Nack = 0x1F;
     public const uint FlashBase = 0x08000000;
 
-    private readonly Pipe _toDevice = new();  // programmer writes, device reads
-    private readonly Pipe _toHost = new();    // device writes, programmer reads
+    private readonly Pipe _toDevice;          // programmer writes, device reads
+    private readonly Pipe _toHost;            // device writes, programmer reads
+    private readonly TimeProvider? _timeProvider;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _deviceLoop;
     private readonly byte[] _flash;
@@ -38,7 +39,7 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     /// Hold the autobaud ACK back by this long — a fresh part whose answer lands after the
     /// host's sync deadline, because of bridge latency or scheduling. The dangerous case: the
     /// host has already moved on, so the late ACK arrives looking like a reply to whatever it
-    /// sent next.
+    /// sent next. Measured on the clock the fake was constructed with.
     /// </summary>
     public TimeSpan SyncAckDelay { get; init; } = TimeSpan.Zero;
 
@@ -47,6 +48,9 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
 
     /// <summary>Pages erased so far, in the order Extended Erase reported them.</summary>
     public List<int> ErasedPageCounts { get; } = new();
+
+    /// <summary>How many Get commands the part has answered.</summary>
+    public int GetsAnswered { get; private set; }
 
     /// <summary>How many times Extended Erase arrived with the mass-erase code rather than a page list.</summary>
     public int MassErases { get; private set; }
@@ -136,12 +140,31 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     public PipeReader Input => _toHost.Reader;
     public PipeWriter Output => _toDevice.Writer;
 
-    public FakeStm32Bootloader(int flashSize = 64 * 1024, int pageSize = 2048)
+    /// <param name="flashSize">Bytes of modelled flash.</param>
+    /// <param name="pageSize">Erase page size.</param>
+    /// <param name="timeProvider">
+    /// When given, the fake runs as a deterministic simulation (ADR-0089): its delays are armed on
+    /// this clock, both pipes continue their readers inline, and its loop starts on the calling
+    /// thread. A call into the programmer then returns only once the programmer and this fake are
+    /// both waiting on a timer or done, so a test drives the pair by advancing to the next pending
+    /// timer. Without it, the fake behaves as it always has, on the system clock and thread pool.
+    /// </param>
+    public FakeStm32Bootloader(int flashSize = 64 * 1024, int pageSize = 2048, TimeProvider? timeProvider = null)
     {
         _flash = new byte[flashSize];
         Array.Fill(_flash, (byte)0xFF);
         _pageSize = pageSize;
-        _deviceLoop = Task.Run(() => RunAsync(_cts.Token));
+        _timeProvider = timeProvider;
+
+        var options = timeProvider is null
+            ? PipeOptions.Default
+            : new PipeOptions(readerScheduler: PipeScheduler.Inline, writerScheduler: PipeScheduler.Inline, useSynchronizationContext: false);
+        _toDevice = new Pipe(options);
+        _toHost = new Pipe(options);
+
+        _deviceLoop = timeProvider is null
+            ? Task.Run(() => RunAsync(_cts.Token))
+            : RunAsync(_cts.Token);
     }
 
     /// <summary>Reads modelled flash at an absolute address.</summary>
@@ -184,7 +207,7 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
                 {
                     // AN3155 3.1: the first 0x7F since reset drives autobaud and is ACKed.
                     if (SyncAckDelay > TimeSpan.Zero)
-                        await Task.Delay(SyncAckDelay, ct).ConfigureAwait(false);
+                        await Task.Delay(SyncAckDelay, _timeProvider ?? TimeProvider.System, ct).ConfigureAwait(false);
                     await SendAsync(writer, new[] { Ack }, ct).ConfigureAwait(false);
                     _synced = true;
                     continue;
@@ -230,6 +253,7 @@ internal sealed class FakeStm32Bootloader : IDuplexPipe, IAsyncDisposable
     // ACK, N, version, supported commands, ACK.
     private Task GetAsync(PipeWriter writer, CancellationToken ct)
     {
+        GetsAnswered++;
         byte[] commands = { 0x00, 0x01, 0x02, 0x11, 0x21, 0x31, 0x44 };
         // AN3155 3.2: N is the number of bytes to follow minus one. Those bytes are the version
         // plus the command list, so N is the command count. Hardware agrees: an STM32G431 with

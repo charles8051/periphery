@@ -146,6 +146,25 @@ internal sealed class TimerSignalingFakeTimeProvider : FakeTimeProvider
             bound
         );
 
+    /// <summary>
+    /// Advances to the earliest pending timer, which fires it, and returns whether there was one.
+    /// </summary>
+    /// <remarks>
+    /// Advancing to the earliest pending timer is what a patient clock does next only once nothing
+    /// runnable is left, so call it when the code under test is known to be waiting. Two ways to
+    /// know: it has raised a signal the test awaited, or every continuation in the test runs inline,
+    /// so a call into the code returns only when that code is waiting or done.
+    /// </remarks>
+    public bool AdvanceToNextPendingTimer()
+    {
+        var pending = PendingTimers();
+        if (pending.Count == 0)
+            return false;
+
+        Advance(pending[0].Due - GetUtcNow());
+        return true;
+    }
+
     private List<TrackedTimer> PendingTimers()
     {
         var now = GetUtcNow();
