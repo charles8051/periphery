@@ -121,9 +121,11 @@ from `Shipped` into `Unshipped` with a `*REMOVED*` prefix:
 *REMOVED*static readonly Periphery.Serial.BclSerialDuplexPipe.DefaultReadTick -> System.TimeSpan
 ```
 
-A `*REMOVED*` line is a breaking change and needs a major version; see
-[PUBLISHING.md](PUBLISHING.md#version-scheme). A changed signature is a `*REMOVED*`
-line for the old form plus the RS0016 entry for the new one.
+A `*REMOVED*` line is a breaking change. It needs a major version (see
+[PUBLISHING.md](PUBLISHING.md#version-scheme)) and an entry under `Unreleased` in
+[docs/BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md) saying what to write instead. A
+changed signature is a `*REMOVED*` line for the old form plus the RS0016 entry for the
+new one.
 
 Two cases the code fix cannot write:
 
@@ -162,6 +164,21 @@ Two conventions worth knowing:
   push back in the thread when you disagree, with your reasoning.
 - CI must be green. If a test fails in a way you cannot reproduce locally, say so
   rather than retrying silently; some are platform-specific.
+
+## Commits and release notes
+
+Commit subjects follow Conventional Commits, scoped to the subsystem:
+
+```
+fix(watcher): isolate a throwing filter predicate, directionally
+feat(core): give the core package a Meter, and count isolated handler faults
+```
+
+A `!` after the scope (`feat(camera)!: ...`) marks a breaking change, whether to a signature or to behaviour a
+caller can observe. A change like that also adds an entry under `Unreleased` in
+[docs/BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md): what changed, who it affects, and
+what to write instead. Every change a consumer can see gets a `CHANGELOG.md` entry under
+`Unreleased`.
 
 ## Reporting bugs
 
