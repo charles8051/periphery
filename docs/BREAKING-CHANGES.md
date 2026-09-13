@@ -11,7 +11,24 @@ there.
 
 ## Unreleased
 
-### 1. Bluetooth LE devices on Windows report `BusType.Bluetooth`
+### 1. A proxy whose session keeps refaulting now gives up
+
+`DeviceProxyBase` restarted `RecoveryContext.Attempt` at 1 whenever a reopen succeeded,
+including a reopen whose session faulted again straight away. Recovery policies that
+read `Attempt` now see the count keep rising until a session survives the stable-open
+dwell, or until the device is replugged after giving up.
+
+> **This one does not announce itself.** A device whose session opens and then faults
+> used to be retried at `baseDelay` forever. With `ExponentialBackoffRecoveryPolicy`
+> and a `maxAttempts` set, it now backs off, reaches that limit, and the proxy moves to
+> `GaveUp`, as the policy's documentation always said.
+
+With `EscalatingResetRecoveryPolicy` such a device now climbs the reset ladder, where
+it used to repeat the first step forever. If you depended on endless retries, leave
+`maxAttempts` null or raise it. Otherwise handle `ConnectionState.GaveUp`, which a
+replug clears.
+
+### 2. Bluetooth LE devices on Windows report `BusType.Bluetooth`
 
 Windows uses five Bluetooth enumerators, and only `BTHENUM` was mapped. Devices under
 `BTHLE`, `BTHLEDEVICE`, `BTHHFENUM` and `BTH` reported `BusType.Unknown`, and every
