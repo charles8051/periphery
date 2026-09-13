@@ -89,32 +89,14 @@ public class HotplugEdgeBindingTests
     }
 
     /// <summary>
-    /// Waits for a condition the handlers produce, rather than sleeping a fixed interval.
-    /// The handlers are fire-and-forget behind a gate, so a fixed delay is a guess: on a
-    /// busy or paused runner the gate may not have run yet, and the assertion then reads
-    /// stale state and fails for reasons unrelated to the behaviour under test.
+    /// Waits until every handler the events so far have queued has run, so the assertions
+    /// that follow read settled state, including when the expectation is that nothing
+    /// happened. The handlers are fire-and-forget behind a gate that is not FIFO, so neither
+    /// a fixed delay nor a no-op queued behind them is a barrier; the service's own count of
+    /// outstanding work is. The bound only turns a hang into a failure.
     /// </summary>
-    private static async Task WaitForAsync(Func<bool> condition, string what)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (condition()) return;
-            await Task.Delay(5);
-        }
-
-        Assert.Fail($"timed out waiting for {what}");
-    }
-
-    /// <summary>
-    /// Waits for the handlers to have drained when the expectation is that NOTHING
-    /// happens. There is no condition to wait on, so this yields the gate a bounded number
-    /// of times instead - enough for a queued handler to have run and been observed.
-    /// </summary>
-    private static async Task SettleAsync()
-    {
-        for (int i = 0; i < 20; i++) await Task.Delay(5);
-    }
+    private static Task DrainedAsync(Harness h) =>
+        h.Service.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
 
     [Fact]
     public async Task Appeared_ListsTheBoardWithoutOpeningIt()
@@ -123,8 +105,7 @@ public class HotplugEdgeBindingTests
         await h.Service.StartAsync();
 
         h.Monitor.Appeared(Board(isActive: false));
-        await WaitForAsync(() => h.Service.State.Find(BoardId) is not null, "the board to be listed");
-        await SettleAsync();
+        await DrainedAsync(h);
 
         Assert.NotNull(h.Service.State.Find(BoardId));
         Assert.Empty(h.VersionReads);
@@ -137,7 +118,7 @@ public class HotplugEdgeBindingTests
         await h.Service.StartAsync();
 
         h.Monitor.Activated(Board(isActive: true));
-        await WaitForAsync(() => h.VersionReads.Count > 0, "the version read");
+        await DrainedAsync(h);
 
         Assert.NotNull(h.Service.State.Find(BoardId));
         Assert.Equal([BoardId], h.VersionReads);
@@ -154,12 +135,12 @@ public class HotplugEdgeBindingTests
         await h.Service.StartAsync();
 
         h.Monitor.Appeared(Board(isActive: false));
-        await WaitForAsync(() => h.Service.State.Find(BoardId) is not null, "the board to be listed");
-        await SettleAsync();
+        await DrainedAsync(h);
+        Assert.NotNull(h.Service.State.Find(BoardId));
         Assert.Empty(h.VersionReads);
 
         h.Monitor.Activated(Board(isActive: true));
-        await WaitForAsync(() => h.VersionReads.Count > 0, "the version read");
+        await DrainedAsync(h);
 
         Assert.Equal([BoardId], h.VersionReads);
     }
@@ -176,16 +157,18 @@ public class HotplugEdgeBindingTests
 
         h.Monitor.Appeared(Board(isActive: false));
         h.Monitor.Activated(Board(isActive: true));
-        await WaitForAsync(() => h.VersionReads.Count > 0, "the board to be activated");
+        await DrainedAsync(h);
+        Assert.Equal([BoardId], h.VersionReads);
 
         h.StillPresent = true;              // mid-re-enumeration
         h.Monitor.Disappeared(Board(isActive: false));
-        await SettleAsync();
+        await DrainedAsync(h);
         Assert.NotNull(h.Service.State.Find(BoardId));
 
         h.StillPresent = false;             // actually unplugged
         h.Monitor.Disappeared(Board(isActive: false));
-        await WaitForAsync(() => h.Service.State.Find(BoardId) is null, "the board to be removed");
+        await DrainedAsync(h);
+        Assert.Null(h.Service.State.Find(BoardId));
     }
 
     /// <summary>
@@ -209,10 +192,11 @@ public class HotplugEdgeBindingTests
 
         h.Monitor.Appeared(Board(isActive: false));
         h.Monitor.Activated(Board(isActive: true));
-        await WaitForAsync(() => h.VersionReads.Count > 0, "the board to be activated");
+        await DrainedAsync(h);
+        Assert.Equal([BoardId], h.VersionReads);
 
         h.Monitor.Deactivated(Board(isActive: false));
-        await SettleAsync();
+        await DrainedAsync(h);
 
         Assert.NotNull(h.Service.State.Find(BoardId));
     }
