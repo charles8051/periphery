@@ -711,14 +711,15 @@ public class DeviceProxyBaseTests
         SimulateConnect(tracker, MakeDevice());
 
         // A deferred reset waits out the defer delay. A reset that went ahead would call the
-        // mechanism and then wait on its reopen poll, so the first timer armed shows which way the
-        // gate decision went. The second round is the loop deciding again after the delay.
-        for (int round = 0; round < 2; round++)
-        {
-            Assert.Equal(resetDeferDelay, await NextTimerArmedAsync(time));
-            Assert.Equal(0, reset.ResetCalls);   // the gate blocked the mechanism
-            time.Advance(resetDeferDelay);
-        }
+        // mechanism and then wait on its reopen poll, so the timer armed shows which way the gate
+        // decision went.
+        Assert.Equal(resetDeferDelay, await NextTimerArmedAsync(time));
+        Assert.Equal(0, reset.ResetCalls);   // the gate blocked the mechanism
+
+        // After the delay the loop decides again, and the gate denies it again.
+        time.Advance(resetDeferDelay);
+        Assert.Equal(resetDeferDelay, await NextTimerArmedAsync(time));
+        Assert.Equal(0, reset.ResetCalls);
 
         Assert.False(handle.IsOpen);
     }
