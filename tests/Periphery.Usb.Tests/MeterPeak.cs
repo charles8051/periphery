@@ -33,17 +33,21 @@ internal sealed class MeterPeak : IDisposable
             if (inst.Meter.Name == "Periphery.Usb" && instruments.Contains(inst.Name))
                 l.EnableMeasurementEvents(inst);
         };
-        _listener.SetMeasurementEventCallback<int>((inst, value, _, _) =>
-        {
-            lock (_gate)
-            {
-                int now = _current.GetValueOrDefault(inst.Name) + value;
-                _current[inst.Name] = now;
-                _peak[inst.Name] = Math.Max(_peak.GetValueOrDefault(inst.Name), now);
-                _waiters.RemoveAll(w => w.Instrument == inst.Name && w.Value == now && w.Reached.TrySetResult());
-            }
-        });
+        _listener.SetMeasurementEventCallback<int>((inst, value, _, _) => Record(inst.Name, value));
+        // The monotonic counters (transfers_total, teardown_not_quiesced_total) are Counter<long>.
+        _listener.SetMeasurementEventCallback<long>((inst, value, _, _) => Record(inst.Name, checked((int)value)));
         _listener.Start();
+    }
+
+    private void Record(string instrument, int delta)
+    {
+        lock (_gate)
+        {
+            int now = _current.GetValueOrDefault(instrument) + delta;
+            _current[instrument] = now;
+            _peak[instrument] = Math.Max(_peak.GetValueOrDefault(instrument), now);
+            _waiters.RemoveAll(w => w.Instrument == instrument && w.Value == now && w.Reached.TrySetResult());
+        }
     }
 
     public int Peak(string instrument)
