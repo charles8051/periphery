@@ -7,6 +7,14 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!--
+      Opted out of the wall-clock ratchet in tests/Directory.Build.targets (ADR-0089).
+      Temporary, tracked in #244; comes off when the last violation is gone.
+      Fifteen negative assertions follow a fixed Task.Delay, and the probe and flash
+      doubles widen their calls with real delays. FlashAnythingService exposes no signal
+      that its flash queue is idle.
+    -->
+    <PeripheryBanWallClockInTests>false</PeripheryBanWallClockInTests>
   </PropertyGroup>
 
   <ItemGroup>
