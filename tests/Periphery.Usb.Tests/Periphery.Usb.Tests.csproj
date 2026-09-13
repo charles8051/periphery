@@ -10,9 +10,8 @@
     <!--
       Opted out of the wall-clock ratchet in tests/Directory.Build.targets (ADR-0089).
       Temporary, tracked in #244; comes off when the last violation is gone.
-      TestUsbBackend parks wedged transfers on Task.Delay(Timeout.Infinite, ct), MeterPeak
-      polls on Environment.TickCount64, and LinuxUsbIntegrationTests bounds a cancel and a
-      dispose with a Stopwatch.
+      LinuxUsbIntegrationTests bounds a cancel and a dispose with a Stopwatch. Converting
+      them needs a run on the Linux device rig, which is a separate change.
     -->
     <PeripheryBanWallClockInTests>false</PeripheryBanWallClockInTests>
   </PropertyGroup>
