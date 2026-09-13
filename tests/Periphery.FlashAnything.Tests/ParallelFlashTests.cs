@@ -84,7 +84,9 @@ public class ParallelFlashTests
     [Fact]
     public async Task Respects_a_concurrency_cap_of_one()
     {
-        // maxFlashConcurrency: 1 => a single worker => two flashes can never overlap.
+        // maxFlashConcurrency: 1 => a single worker => two flashes can never overlap. Nothing
+        // outside the service can see a second worker declining to start, so the bound is read
+        // from the pool itself; the run shows a one-worker pool still drains the queue.
         var probe = new ConcurrencyProbe();
         Func<DeviceInfo, IFirmwareProgrammer> open = d => new ProbeProgrammer(d, probe);
 
@@ -102,8 +104,8 @@ public class ParallelFlashTests
 
             await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 2);
 
-            Assert.Equal(2, svc.State.AutoflashTally.Flashed); // both did flash...
-            Assert.Equal(1, probe.Peak);                       // ...but never two at once
+            Assert.Equal(2, svc.State.AutoflashTally.Flashed);             // both did flash...
+            Assert.Equal(1, ServiceInternals.AutoflashWorkerCount(svc));   // ...from a pool of one
         }
         finally { File.Delete(fw); }
     }
@@ -166,11 +168,11 @@ public class ParallelFlashTests
         => new() { Id = app.Id + "-boot", VendorId = Vid, ProductId = BootPid, SerialNumber = app.SerialNumber, LocationPath = app.LocationPath };
 
     private static (BootloaderRegistry Registry, BootloaderEntryRegistry Entries) AppModeFakes(
-        FakeMonitor monitor, ConcurrencyProbe probe)
+        FakeMonitor monitor, ConcurrencyProbe probe, Func<CancellationToken, Task> whileInFlight)
     {
         var registry = new BootloaderRegistry();
         registry.Register(new FakeBootloaderProvider("EFM8",
-            d => d.ProductId == BootPid, d => new ProbeProgrammer(d, probe)));
+            d => d.ProductId == BootPid, d => new ProbeProgrammer(d, probe, whileInFlight)));
 
         var entries = new BootloaderEntryRegistry();
         entries.Register(new FakeBootloaderEntry(NoSerialFamily,
@@ -181,14 +183,32 @@ public class ParallelFlashTests
         return (registry, entries);
     }
 
+    // Keeps a flash in flight until a second one joins it, so a test that expects overlap sees it
+    // every run. If the flashes were serialized the second never joins, and the flash fails when the
+    // bound runs out.
+    private static Func<CancellationToken, Task> UntilASecondFlashJoins(ConcurrencyProbe probe) =>
+        ct => probe.Overlapped.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
     [Fact]
     public async Task No_serial_family_app_flashes_run_strictly_sequentially()
     {
         // Default entry options => FirstAppearance correlation (no-serial). Default pool (4) would run
-        // both at once; the per-family gate must hold them to one-at-a-time regardless.
+        // both at once; the per-family gate must hold them to one-at-a-time regardless. A worker
+        // waiting on that gate reports nothing, so the test holds the first flash inside the gated
+        // window and reads the gate: it has to be taken.
         var probe = new ConcurrencyProbe();
         var monitor = new FakeMonitor();
-        var (registry, entries) = AppModeFakes(monitor, probe);
+        var firstInFlight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int flashes = 0;
+        var (registry, entries) = AppModeFakes(monitor, probe, async ct =>
+        {
+            if (Interlocked.Increment(ref flashes) == 1)
+            {
+                firstInFlight.TrySetResult();
+                await releaseFirst.Task.WaitAsync(ct);
+            }
+        });
 
         await using var svc = new FlashAnythingService(registry, FakeDevices.Watcher(monitor), entries: entries);
         await svc.RefreshAsync();
@@ -201,12 +221,19 @@ public class ParallelFlashTests
             monitor.Plug(App("appA"));
             monitor.Plug(App("appB"));
 
+            // One board is mid-flash, inside the reboot-to-flash window the family gate covers.
+            await firstInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var gate = ServiceInternals.SerializationGateFor(svc, NoSerialFamily);
+            Assert.NotNull(gate);
+            Assert.Equal(0, gate!.CurrentCount);
+
+            releaseFirst.TrySetResult();
             await WaitUntil(svc, s => s.AutoflashTally.Flashed >= 2);
 
             Assert.Equal(2, svc.State.AutoflashTally.Flashed); // both boards did flash...
-            Assert.Equal(1, probe.Peak);                       // ...but never two in flight at once
+            Assert.Equal(1, probe.Peak);                       // ...and the second only after the first
         }
-        finally { File.Delete(fw); }
+        finally { releaseFirst.TrySetResult(); File.Delete(fw); }
     }
 
     [Fact]
@@ -217,7 +244,7 @@ public class ParallelFlashTests
         // apply here — the pool runs both at once.
         var probe = new ConcurrencyProbe();
         var monitor = new FakeMonitor();
-        var (registry, entries) = AppModeFakes(monitor, probe);
+        var (registry, entries) = AppModeFakes(monitor, probe, UntilASecondFlashJoins(probe));
 
         var bySerial = new BootloaderEntryOptions { Correlation = DeviceCorrelationMode.BySerial };
         await using var svc = new FlashAnythingService(
@@ -236,6 +263,7 @@ public class ParallelFlashTests
 
             Assert.Equal(2, svc.State.AutoflashTally.Flashed);
             Assert.Equal(2, probe.Peak); // serial families are not gated: both flashed at once
+            Assert.Null(ServiceInternals.SerializationGateFor(svc, NoSerialFamily));
         }
         finally { File.Delete(fw); }
     }
@@ -250,7 +278,7 @@ public class ParallelFlashTests
         // would (a) serialize the family and (b) collapse both waits onto the first-appearing bootloader.
         var probe = new ConcurrencyProbe();
         var monitor = new FakeMonitor();
-        var (registry, entries) = AppModeFakes(monitor, probe);
+        var (registry, entries) = AppModeFakes(monitor, probe, UntilASecondFlashJoins(probe));
 
         var byLocation = new BootloaderEntryOptions { Correlation = DeviceCorrelationMode.ByLocationPath };
         await using var svc = new FlashAnythingService(
@@ -270,6 +298,7 @@ public class ParallelFlashTests
 
             Assert.Equal(2, svc.State.AutoflashTally.Flashed); // both boards flashed...
             Assert.Equal(2, probe.Peak);                       // ...and genuinely at the same time (not serialized)
+            Assert.Null(ServiceInternals.SerializationGateFor(svc, NoSerialFamily));
         }
         finally { File.Delete(fw); }
     }
@@ -292,8 +321,12 @@ public class ParallelFlashTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    /// <summary>A programmer that records the high-water mark of simultaneously-active flashes.</summary>
-    private sealed class ProbeProgrammer(DeviceInfo device, ConcurrencyProbe probe) : IFirmwareProgrammer
+    /// <summary>
+    /// A programmer that records the high-water mark of simultaneously-active flashes, and runs
+    /// <paramref name="whileInFlight"/> between entering and leaving.
+    /// </summary>
+    private sealed class ProbeProgrammer(
+        DeviceInfo device, ConcurrencyProbe probe, Func<CancellationToken, Task>? whileInFlight = null) : IFirmwareProgrammer
     {
         public DeviceInfo Device { get; } = device;
         public ImmutableArray<FirmwareFormat> AcceptedFormats { get; } = ImmutableArray.Create(FirmwareFormat.RawBinary);
@@ -303,7 +336,11 @@ public class ParallelFlashTests
             FirmwarePayload payload, FlashOptions options, IProgress<FlashProgress>? progress = null, CancellationToken ct = default)
         {
             probe.Enter();
-            try { await Task.Delay(50, ct).ConfigureAwait(false); } // hold the slot long enough that a second worker would overlap
+            try
+            {
+                if (whileInFlight is not null)
+                    await whileInFlight(ct).ConfigureAwait(false);
+            }
             finally { probe.Leave(); }
             return FlashResult.Ok(payload.ByteLength, verified: true);
         }
@@ -316,10 +353,24 @@ public class ParallelFlashTests
     private sealed class ConcurrencyProbe
     {
         private readonly object _lock = new();
+        private readonly TaskCompletionSource _overlapped = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _current;
         private int _peak;
         public int Peak { get { lock (_lock) return _peak; } }
-        public void Enter() { lock (_lock) { _current++; if (_current > _peak) _peak = _current; } }
+
+        /// <summary>Completes the first time two flashes are in flight together.</summary>
+        public Task Overlapped => _overlapped.Task;
+
+        public void Enter()
+        {
+            lock (_lock)
+            {
+                _current++;
+                if (_current > _peak) _peak = _current;
+                if (_current >= 2) _overlapped.TrySetResult();
+            }
+        }
+
         public void Leave() { lock (_lock) _current--; }
     }
 }
