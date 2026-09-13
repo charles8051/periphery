@@ -121,13 +121,13 @@ public class LinuxUsbIntegrationTests
         // endpoint stays silent; the read must block until cancellation and
         // then wake via libusb_cancel_transfer.
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => device.BulkReadAsync(interruptIn.EndpointAddress, interruptIn.MaxPacketSize, cts.Token));
-        sw.Stop();
 
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
-            $"cancellation took {sw.Elapsed} — libusb_cancel_transfer path is broken");
+        // A broken wake path never returns, so the bound turns that hang into a failure: a
+        // TimeoutException is not an OperationCanceledException. It only bounds a failure
+        // (ADR-0089 D5), so it is not a measure of how prompt the wake was.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => device.BulkReadAsync(interruptIn.EndpointAddress, interruptIn.MaxPacketSize, cts.Token)
+                .WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -178,10 +178,11 @@ public class LinuxUsbIntegrationTests
             // the fix this read never completes at all and the wait inside times out.
             Assert.IsAssignableFrom<OperationCanceledException>(result.ReadOutcome);
 
-            // Well inside QuiesceTimeout: a cancelled URB comes back in microseconds, so
-            // anything near the bound means the drain fell through to its give-up path.
-            Assert.True(result.DisposeElapsed < TimeSpan.FromSeconds(2),
-                $"disposal took {result.DisposeElapsed} — the drain did not quiesce promptly");
+            // Which path the drain took, not how long it took (ADR-0089 D3). A drain that gives
+            // up at QuiesceTimeout counts itself on teardown_not_quiesced_total before disposal
+            // completes, so by the time DisposeAsync returns the count is final.
+            Assert.True(result.TeardownsNotQuiesced == 0,
+                "the drain fell through to its give-up path instead of quiescing");
             return;
         }
     }
@@ -191,7 +192,7 @@ public class LinuxUsbIntegrationTests
     /// read never reached libusb before disposal closed registration — that attempt proved
     /// nothing and is retried, rather than being reported as a failure of the drain.
     /// </summary>
-    private static async Task<(Exception? ReadOutcome, TimeSpan DisposeElapsed)?>
+    private static async Task<(Exception? ReadOutcome, int TeardownsNotQuiesced)?>
         TryDisposeWithAnInterruptReadInFlightAsync()
     {
         using var openCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -201,7 +202,8 @@ public class LinuxUsbIntegrationTests
             e.TransferType == UsbTransferType.Interrupt
             && e.Direction == UsbTransferDirection.DeviceToHost);
 
-        using var meters = new MeterPeak("periphery.usb.in_flight_transfers");
+        using var meters = new MeterPeak(
+            "periphery.usb.in_flight_transfers", "periphery.usb.teardown_not_quiesced_total");
 
         // Nobody is typing on the emulated keyboard, so this parks with the URB submitted
         // and libusb owning both the transfer struct and its buffer.
@@ -215,9 +217,8 @@ public class LinuxUsbIntegrationTests
         Assert.False(read.IsCompleted, "the interrupt read completed on its own — the "
             + "emulated keyboard is not silent, so this test cannot observe what it exists for");
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
         await device.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15));
-        sw.Stop();
+        int notQuiesced = meters.Current("periphery.usb.teardown_not_quiesced_total");
 
         var outcome = await Record.ExceptionAsync(() => read.WaitAsync(TimeSpan.FromSeconds(5)));
 
@@ -226,6 +227,6 @@ public class LinuxUsbIntegrationTests
         if (outcome is ObjectDisposedException)
             return null;
 
-        return (outcome, sw.Elapsed);
+        return (outcome, notQuiesced);
     }
 }

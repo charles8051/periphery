@@ -7,13 +7,6 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!--
-      Opted out of the wall-clock ratchet in tests/Directory.Build.targets (ADR-0089).
-      Temporary, tracked in #244; comes off when the last violation is gone.
-      LinuxUsbIntegrationTests bounds a cancel and a dispose with a Stopwatch. Converting
-      them needs a run on the Linux device rig, which is a separate change.
-    -->
-    <PeripheryBanWallClockInTests>false</PeripheryBanWallClockInTests>
   </PropertyGroup>
 
   <ItemGroup>
