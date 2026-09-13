@@ -561,11 +561,54 @@ public sealed class TreehopperControlService : IAsyncDisposable
 
     private async Task RunExclusiveAsync(Func<Task> action, CancellationToken ct)
     {
-        try { await _gate.WaitAsync(ct).ConfigureAwait(false); }
-        catch (OperationCanceledException) { return; }
-        try { await action().ConfigureAwait(false); }
-        catch (OperationCanceledException) { /* shutting down */ }
-        finally { _gate.Release(); }
+        // Counted before the first await, so a hotplug handler has registered its work by
+        // the time the event it is handling returns to whoever raised it.
+        lock (_stateLock)
+        {
+            if (_pendingExclusive++ == 0)
+                _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        try
+        {
+            try { await _gate.WaitAsync(ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return; }
+            try { await action().ConfigureAwait(false); }
+            catch (OperationCanceledException) { /* shutting down */ }
+            finally { _gate.Release(); }
+        }
+        finally
+        {
+            TaskCompletionSource? drained = null;
+            lock (_stateLock)
+            {
+                if (--_pendingExclusive == 0) drained = _idle;
+            }
+            drained?.TrySetResult();
+        }
+    }
+
+    // Work queued behind _gate or running, guarded by _stateLock. Hotplug handlers enqueue
+    // and return, and the gate is not FIFO, so a no-op queued behind them is not a barrier;
+    // this count is.
+    private int _pendingExclusive;
+    private TaskCompletionSource _idle = CompletedIdle();
+
+    private static TaskCompletionSource CompletedIdle()
+    {
+        var idle = new TaskCompletionSource();
+        idle.SetResult();
+        return idle;
+    }
+
+    /// <summary>
+    /// Completes when no gated work is queued or running: every hotplug handler raised so far,
+    /// and every operation started so far, has finished. A test raises a device event, awaits
+    /// this, then asserts, including that something did not happen.
+    /// </summary>
+    internal Task WhenIdleAsync()
+    {
+        lock (_stateLock) return _idle.Task;
     }
 
     private int RemovalGenerationOf(DeviceId id)
@@ -607,8 +650,18 @@ public sealed class TreehopperControlService : IAsyncDisposable
         }
 
         await CloseSessionAsync().ConfigureAwait(false);
-        _gate.Dispose();
-        _cts.Dispose();
+
+        // Deliberately NOT disposing _gate or _cts, for the reason DeviceProxyBase.DisposeAsync gives.
+        //
+        // Gated work can still be running here: a hotplug handler queued before the watcher was
+        // unsubscribed, or an operation that has not yet observed the cancellation above. When it
+        // finishes, RunExclusiveAsync releases _gate, and a queued handler reads _cts.Token.
+        // Disposing either underneath it turns an ordinary teardown into an
+        // ObjectDisposedException inside a task nobody awaits.
+        //
+        // Neither dispose buys anything. SemaphoreSlim.Dispose is only needed once
+        // AvailableWaitHandle has been touched, which nothing here does, and _cts is already
+        // cancelled and has no timer.
     }
 
     private sealed class Session(DeviceId id, TreehopperBoard board, CancellationTokenSource cts)
