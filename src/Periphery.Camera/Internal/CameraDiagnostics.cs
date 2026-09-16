@@ -92,6 +92,19 @@ internal static class CameraDiagnostics
     /// <see cref="TeardownsAbandoned"/> and not here; the gap between the two is
     /// the count of drivers that stayed wedged.
     /// </summary>
+    /// <summary>
+    /// Opens allowed through over an abandoned teardown whose refusal window had
+    /// expired (<see cref="PendingTeardowns.RefusalWindow"/>). Each one is a real
+    /// native open against a device a background thread may still hold, so a run
+    /// of these beside a run of open failures is the #123 cascade rather than a
+    /// camera that cannot produce the format. Zero is the healthy value; nonzero
+    /// means a teardown has been parked for longer than the window.
+    /// </summary>
+    internal static readonly Counter<long> TeardownRefusalsExpired = Meter.CreateCounter<long>(
+        name: "periphery.camera.teardown_refusals_expired",
+        unit: "{open}",
+        description: "Camera opens allowed through over an abandoned teardown past its refusal window.");
+
     internal static readonly Histogram<double> AbandonedTeardownDuration = Meter.CreateHistogram<double>(
         name: "periphery.camera.abandoned_teardown_ms",
         unit: "ms",

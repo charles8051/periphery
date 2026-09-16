@@ -313,6 +313,132 @@ public sealed class AbandonedTeardownTests : IDisposable
     /// names which steps rather than reporting that 2 is not 1.
     /// </para>
     /// </remarks>
+    // ── Refusal window (issue #221 item 1) ───────────────────────────
+    //
+    // A refusal used to have no expiry, so a step whose native call never
+    // returned locked its device out for the life of the process: the reported
+    // case ran 6,989 consecutive refused opens over 14h33m. These pin that the
+    // refusal ends and the record does not.
+
+    [Fact]
+    public void RefusalHolds_UntilTheWindowExpires()
+    {
+        var clock = new FakeTimeProvider();
+        var id = "TEST\\CAM\\WINDOW\\HOLD";
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, new TaskCompletionSource().Task, clock);
+
+        // Right up to the boundary the device is still refused.
+        clock.Advance(PendingTeardowns.RefusalWindow - TimeSpan.FromMilliseconds(1));
+        Assert.Throws<CameraTeardownPendingException>(() => PendingTeardowns.ThrowIfPending(id));
+
+        // On the boundary it is not.
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        PendingTeardowns.ThrowIfPending(id);
+    }
+
+    [Fact]
+    public async Task PastTheWindow_TheOpenIsAllowedThrough()
+    {
+        var clock = new FakeTimeProvider();
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WINDOW\\OPEN");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingTeardowns.Register(device.Id, BoundedTeardown.Steps.BackendDispose, gate.Task, clock);
+
+        try
+        {
+            // Inside the window: refused, as before.
+            await Assert.ThrowsAsync<CameraTeardownPendingException>(
+                () => CameraDevice.OpenAsync(device));
+
+            clock.Advance(PendingTeardowns.RefusalWindow);
+
+            using var scope = CameraTestScope.Install(_ => new InMemoryCameraBackend());
+            await using var reopened = await CameraDevice.OpenAsync(device);
+            Assert.Equal(device.Id, reopened.DeviceInfo.Id);
+        }
+        finally
+        {
+            gate.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public async Task AdmittingPastTheWindow_IsCountedOncePerOpen()
+    {
+        var admitted = 0L;
+        using var listener = StartListener<long>(
+            "periphery.camera.teardown_refusals_expired", v => Interlocked.Add(ref admitted, v));
+
+        var clock = new FakeTimeProvider();
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WINDOW\\COUNT");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingTeardowns.Register(device.Id, BoundedTeardown.Steps.BackendDispose, gate.Task, clock);
+
+        try
+        {
+            // A refusal is not an admission.
+            await Assert.ThrowsAsync<CameraTeardownPendingException>(
+                () => CameraDevice.OpenAsync(device));
+            Assert.Equal(0, Interlocked.Read(ref admitted));
+
+            clock.Advance(PendingTeardowns.RefusalWindow);
+
+            using var scope = CameraTestScope.Install(_ => new InMemoryCameraBackend());
+            await using var reopened = await CameraDevice.OpenAsync(device);
+
+            // One open, one count. The open path checks the registry three times;
+            // only the admission records, or one open would report as three.
+            Assert.Equal(1, Interlocked.Read(ref admitted));
+        }
+        finally
+        {
+            gate.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public void TheRecordOutlivesTheRefusal()
+    {
+        var clock = new FakeTimeProvider();
+        var id = "TEST\\CAM\\WINDOW\\RECORD";
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.ProducerExit, gate.Task, clock);
+
+        clock.Advance(PendingTeardowns.RefusalWindow);
+        PendingTeardowns.ThrowIfPending(id);
+
+        // Expiry stops the refusal and keeps the record: the diagnostic is the
+        // part of #123 that cost the time, and a caller that chose to wait for
+        // the teardown rather than race it must still be able to.
+        var pending = PendingTeardowns.Find(id);
+        Assert.NotNull(pending);
+        Assert.Equal([BoundedTeardown.Steps.ProducerExit], pending.Steps);
+        var cleared = PendingTeardowns.WhenClearedAsync(id);
+        Assert.False(cleared.IsCompleted);
+
+        gate.SetResult();
+        Assert.True(cleared.Wait(TestHelpers.Patience));
+        Assert.Null(PendingTeardowns.Find(id));
+    }
+
+    [Fact]
+    public void TheRefusalMessage_DoesNotAdviseAReplug()
+    {
+        var clock = new FakeTimeProvider();
+        var id = "TEST\\CAM\\WINDOW\\MESSAGE";
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, new TaskCompletionSource().Task, clock);
+
+        var ex = Assert.Throws<CameraTeardownPendingException>(() => PendingTeardowns.ThrowIfPending(id));
+
+        // The advice was to replug, which cannot lift this: the entry is keyed by
+        // device id and the OS commonly hands the same id back, so the returning
+        // device is refused on arrival (issue #221 item 1). Saying so is the point
+        // -- a caller who reads "replug" does the one thing that does not work.
+        Assert.DoesNotContain("replug the camera if", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Replugging the camera does not clear it", ex.Message);
+        Assert.Contains("lifts on its own", ex.Message);
+    }
+
     private static MeterListener StartListener<T>(string instrumentName, Action<T> onMeasurement)
         where T : struct
     {
