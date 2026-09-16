@@ -32,7 +32,7 @@ public sealed class AbandonedTeardownTests : IDisposable
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         var abandoned = 0L;
         using var listener = StartListener<long>(
-            "periphery.camera.teardowns_abandoned", device.Id, v => Interlocked.Add(ref abandoned, v));
+            "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
         var time = new TimerSignalingFakeTimeProvider();
         var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -49,7 +49,13 @@ public sealed class AbandonedTeardownTests : IDisposable
             // Dispose races the abandoned stop; advancing past the 2s budget trips it.
             await DisposeAbandoningAsync(session, time, BoundedTeardown.StopCaptureBudget);
 
-            Assert.Equal(1, Interlocked.Read(ref abandoned));
+            // The counter moved. Exactly which abandonments it counted is not
+            // knowable from a process-global meter, so the exact claim is the
+            // registry's: one step on THIS device, and it is the stop.
+            Assert.True(Interlocked.Read(ref abandoned) >= 1);
+            Assert.Equal(
+                [BoundedTeardown.Steps.StopCapture],
+                PendingTeardowns.Find(device.Id)!.Steps);
 
             // The next open of the SAME device is refused, naming it and the step.
             var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
@@ -126,10 +132,6 @@ public sealed class AbandonedTeardownTests : IDisposable
     public async Task CleanDisposalRegistersNothing_AndDoesNotRefuseReopen()
     {
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\CLEAN");
-        var abandoned = 0L;
-        using var listener = StartListener<long>(
-            "periphery.camera.teardowns_abandoned", device.Id, v => Interlocked.Add(ref abandoned, v));
-
         var backend = new InMemoryCameraBackend();
 
         var session = await TestHelpers.CreateSessionWithBackend(backend, device: device);
@@ -137,7 +139,9 @@ public sealed class AbandonedTeardownTests : IDisposable
         using (var frame = await session.ReadFrameAsync()) { }
         await session.DisposeAsync();
 
-        Assert.Equal(0, Interlocked.Read(ref abandoned));
+        // No meter assertion here. "Nothing was abandoned" cannot be read off a
+        // process-global counter, which another test can move inside the window.
+        // The registry carries the same claim keyed by device, where it is exact.
         Assert.Null(PendingTeardowns.Find(device.Id));
 
         // Reopen is not refused.
@@ -152,7 +156,7 @@ public sealed class AbandonedTeardownTests : IDisposable
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\DISPOSEWEDGE");
         var abandoned = 0L;
         using var listener = StartListener<long>(
-            "periphery.camera.teardowns_abandoned", device.Id, v => Interlocked.Add(ref abandoned, v));
+            "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
         var time = new TimerSignalingFakeTimeProvider();
         var disposeGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -166,7 +170,11 @@ public sealed class AbandonedTeardownTests : IDisposable
             using (var frame = await session.ReadFrameAsync()) { }
             await DisposeAbandoningAsync(session, time, BoundedTeardown.BackendDisposeBudget);
 
-            Assert.Equal(1, Interlocked.Read(ref abandoned));
+            Assert.True(Interlocked.Read(ref abandoned) >= 1);
+            Assert.Equal(
+                [BoundedTeardown.Steps.BackendDispose],
+                PendingTeardowns.Find(device.Id)!.Steps);
+
             var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
                 () => CameraDevice.OpenAsync(device));
             Assert.Contains(BoundedTeardown.Steps.BackendDispose, ex.Message);
@@ -273,21 +281,27 @@ public sealed class AbandonedTeardownTests : IDisposable
     }
 
     /// <summary>
-    /// Listens to one instrument on the process-global camera meter, counting only
-    /// measurements tagged with <paramref name="deviceId"/>.
+    /// Listens to one instrument on the process-global camera meter.
     /// </summary>
     /// <remarks>
-    /// The device filter is what makes an exact-count assertion safe here.
-    /// <c>CameraDiagnostics.Meter</c> is process-global, and an abandoned teardown
-    /// emits from a background thread at a time no test controls, so a bare global
-    /// count reads whatever else the assembly happened to abandon inside this
-    /// listener's window. That is the same hazard <c>AssemblyInfo.cs</c> documents
-    /// for the meter, and it failed once on Linux CI as a 2 where the test asserts
-    /// 1 (issue #221 item 4). Each test here uses a device id of its own, so
-    /// filtering on the tag isolates the count to the abandonment the test caused.
+    /// What this can and cannot witness (issue #221 item 4).
+    /// <c>CameraDiagnostics.Meter</c> is process-global and an abandonment emits
+    /// from a background thread at a time no test controls, so the count read here
+    /// includes whatever else the assembly abandoned inside the listener's window.
+    /// That is the hazard <c>AssemblyInfo.cs</c> documents for the meter, and it
+    /// failed once on Linux CI as a 2 where a test asserted 1.
+    /// <para>
+    /// The instruments carry no device dimension to filter on, and adding one would
+    /// put a device instance id in a metric label, which is the wrong trade for a
+    /// test's benefit. So these tests assert what the meter can honestly support --
+    /// that the counter moved at all -- and take the exact, per-device claim from
+    /// <see cref="PendingTeardowns"/>, which is device-keyed and settles
+    /// synchronously with the abandonment. Deleting the production
+    /// <c>TeardownsAbandoned.Add</c> still turns these red, because the
+    /// contamination they tolerate comes from that same call site.
+    /// </para>
     /// </remarks>
-    private static MeterListener StartListener<T>(
-        string instrumentName, string deviceId, Action<T> onMeasurement)
+    private static MeterListener StartListener<T>(string instrumentName, Action<T> onMeasurement)
         where T : struct
     {
         var listener = new MeterListener
@@ -298,18 +312,7 @@ public sealed class AbandonedTeardownTests : IDisposable
                     l.EnableMeasurementEvents(instrument);
             },
         };
-        listener.SetMeasurementEventCallback<T>((_, value, tags, _) =>
-        {
-            foreach (var tag in tags)
-            {
-                if (tag.Key == BoundedTeardown.DeviceTag
-                    && string.Equals(tag.Value as string, deviceId, StringComparison.OrdinalIgnoreCase))
-                {
-                    onMeasurement(value);
-                    return;
-                }
-            }
-        });
+        listener.SetMeasurementEventCallback<T>((_, value, _, _) => onMeasurement(value));
         listener.Start();
         return listener;
     }
