@@ -124,7 +124,8 @@ public sealed class InMemoryCameraBackend : ICameraBackend
     /// backend disposed — models a backend whose native cleanup (Media
     /// Foundation Shutdown, V4L2 close) never returns. Leave it incomplete and
     /// the owning device abandons the disposal once its budget elapses; a reopen
-    /// of the same <c>DeviceInfo</c> is then refused until it completes.</summary>
+    /// of the same <c>DeviceInfo</c> is then refused until it completes, or until
+    /// the refusal expires.</summary>
     public Task? BlockDisposeUntil { get; set; }
 
     /// <summary>Produce this many frames, then park forever on subsequent reads.

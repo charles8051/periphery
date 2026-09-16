@@ -101,8 +101,11 @@ public sealed class CameraTimeoutException : CameraException
 /// <see cref="Completion"/> completes when the abandoned work does, so a caller
 /// that would rather wait than fail can
 /// <c>await ex.Completion.WaitAsync(timeout, ct)</c> and retry. It may never
-/// complete if the driver is truly wedged; replugging the camera is then the
-/// only recovery.
+/// complete if the driver is truly wedged, so the refusal also expires on its own
+/// and the open is then allowed through; the message carries how long is left.
+/// Replugging is not reliable recovery: the registration is keyed by device id,
+/// and on Windows that id commonly survives a re-enumeration, so the returning
+/// camera hashes to the same entry and is refused on arrival.
 /// </para>
 /// </remarks>
 public sealed class CameraTeardownPendingException : CameraException

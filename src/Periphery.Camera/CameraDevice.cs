@@ -207,7 +207,7 @@ public sealed class CameraDevice : IAsyncDisposable
         // returned. The backend is in an unknown state until that thread
         // finishes, so a new session is refused rather than started on top of
         // it (issue #123).
-        PendingTeardowns.AdmitOrThrow(DeviceInfo.Id, _logger);
+        PendingTeardowns.AdmitOrThrow(DeviceInfo.Id, (ILogger?)logger ?? _logger);
 
         await _backend.ConfigureAsync(configuration, ct).ConfigureAwait(false);
         // Recheck after Configure, the one device access this path makes, so a
