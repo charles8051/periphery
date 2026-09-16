@@ -474,6 +474,47 @@ public sealed class AbandonedTeardownTests : IDisposable
     }
 
     [Fact]
+    public async Task AnOpenAdmittedPastTheWindow_IsStillRefusedWhenATeardownRegistersDuringIt()
+    {
+        // The interleaving a reviewer raised against the window: admission samples
+        // an expired entry and returns, and a fresh teardown registers on the same
+        // device before the open finishes. Admission is a read rather than a
+        // reservation, by a decision predating this change, so the recheck after
+        // the native work is what closes it -- and it closes here because the
+        // window runs from the newest abandoned step, so the composite the recheck
+        // sees is seconds old rather than inheriting the expired one's age.
+        var clock = new FakeTimeProvider();
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WINDOW\\RACE");
+        var stale = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RegisterOnOpenBackend? captured = null;
+
+        // An entry past its window: this open is admitted, not refused.
+        PendingTeardowns.Register(device.Id, BoundedTeardown.Steps.StopCapture, stale.Task, clock);
+        clock.Advance(PendingTeardowns.RefusalWindow);
+
+        var previous = CameraDevice.BackendFactory;
+        CameraDevice.BackendFactory = _ =>
+        {
+            captured = new RegisterOnOpenBackend(device.Id, fresh.Task, clock);
+            return captured;
+        };
+        try
+        {
+            var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
+                () => CameraDevice.OpenAsync(device));
+            Assert.Equal(device.Id, ex.DeviceId);
+            Assert.True(captured!.InnerDisposed, "the backend opened during the race must be disposed");
+        }
+        finally
+        {
+            CameraDevice.BackendFactory = previous;
+            stale.TrySetResult();
+            fresh.TrySetResult();
+        }
+    }
+
+    [Fact]
     public void TheRefusalMessage_DoesNotAdviseAReplug()
     {
         var clock = new FakeTimeProvider();
