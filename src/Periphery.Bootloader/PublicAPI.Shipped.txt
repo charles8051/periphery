@@ -13,6 +13,8 @@ Periphery.Bootloader.BootloaderEntryOptions.Correlation.get -> Periphery.Bootloa
 Periphery.Bootloader.BootloaderEntryOptions.Correlation.init -> void
 Periphery.Bootloader.BootloaderEntryOptions.Recovery.get -> Periphery.Bootloader.BootloaderEntryRecovery?
 Periphery.Bootloader.BootloaderEntryOptions.Recovery.init -> void
+Periphery.Bootloader.BootloaderEntryOptions.TimeProvider.get -> System.TimeProvider!
+Periphery.Bootloader.BootloaderEntryOptions.TimeProvider.init -> void
 Periphery.Bootloader.BootloaderEntryOrchestrator
 Periphery.Bootloader.BootloaderEntryPhase
 Periphery.Bootloader.BootloaderEntryPhase.Entering = 0 -> Periphery.Bootloader.BootloaderEntryPhase

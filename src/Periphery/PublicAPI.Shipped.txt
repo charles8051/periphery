@@ -1034,4 +1034,5 @@ virtual Periphery.DeviceProxyBase<TDevice, TException>.OnDeactivatedAsync(TDevic
 virtual Periphery.DeviceProxyBase<TDevice, TException>.ResetReopenPollInterval.get -> System.TimeSpan
 virtual Periphery.DeviceProxyBase<TDevice, TException>.ResetReopenTimeout.get -> System.TimeSpan
 virtual Periphery.DeviceProxyBase<TDevice, TException>.StableOpenDwell.get -> System.TimeSpan
+virtual Periphery.DeviceProxyBase<TDevice, TException>.TimeProvider.get -> System.TimeProvider!
 virtual Periphery.DeviceProxyBase<TDevice, TException>.WhileOpenAsync(TDevice! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!

@@ -23,6 +23,8 @@ Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncSettleBudget.get -> Sys
 Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncSettleBudget.init -> void
 Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncTimeout.get -> System.TimeSpan
 Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.SyncTimeout.init -> void
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.TimeProvider.get -> System.TimeProvider!
+Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.TimeProvider.init -> void
 Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.WriteChunkSize.get -> int
 Periphery.Bootloader.Stm32.Serial.Stm32SerialOptions.WriteChunkSize.init -> void
 Periphery.Bootloader.Stm32.Serial.Stm32SerialProgrammer
