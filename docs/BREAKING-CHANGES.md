@@ -9,7 +9,7 @@ change does not, so behaviour changes are listed too. [CHANGELOG.md](../CHANGELO
 is the full record of each release. Releases before `v4.2.0-alpha.1` are described only
 there.
 
-## Unreleased
+## `v4.2.0` — since `v4.2.0-alpha.1`
 
 ### 1. A proxy whose session keeps refaulting now gives up
 
@@ -38,6 +38,40 @@ Bluetooth LE peripheral is among them.
 looking for `BusType.Unknown` stops finding them. `DeviceCategory` was already correct
 and is unchanged, so a filter on `OfCategory(DeviceCategory.Bluetooth)` alone sees no
 difference.
+
+### 3. A wedged camera teardown no longer refuses the device forever
+
+`PendingTeardowns` refused every open of a device whose previous teardown had been
+abandoned, until that teardown completed. A native call that never returns never
+completes, so the device stayed refused for the life of the process (issue #221).
+
+The refusal now expires: 60 seconds from the most recently abandoned step, and at most
+5 minutes from the first. Past that the open is allowed through, and
+`CameraTeardownPendingException` is not raised.
+
+> **This one does not announce itself.** Code that treated the exception as terminal —
+> logging it and abandoning the device, or reporting the camera as failed — now sees the
+> open proceed instead, and whatever the still-wedged driver does with it. That is the
+> intended outcome, because the alternative was an outage no caller could end, but an
+> open that used to fail fast and cheaply can now block in the driver.
+
+`Completion` is unchanged: the registry entry outlives the refusal, so a caller that
+awaits it still waits for the real teardown. An open allowed through past the refusal
+increments `periphery.camera.teardown_refusals_expired` and logs at Warning naming the
+parked steps, which is how to tell this case from a camera that cannot produce the
+format.
+
+The exception's message no longer advises replugging the camera. On Windows the device
+instance id commonly survives a re-enumeration, so the returning camera hashes to the
+same registration and is refused on arrival.
+
+### 4. `CameraSession.OpenAsync` can refuse after configuring the device
+
+It was the only open path that did not recheck the registry after its last device
+access, so a teardown abandoned during `ConfigureAsync` could still hand back a session.
+It now throws `CameraTeardownPendingException` there, as `CameraDevice.OpenSessionAsync`
+already did. `CameraSessionBuilder`, and therefore `CameraDeviceProxy`, take this path.
+
 
 ## `v4.2.0-alpha.1` — since `v4.1.0-alpha.2`
 
