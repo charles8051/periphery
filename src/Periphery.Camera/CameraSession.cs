@@ -178,6 +178,14 @@ public sealed partial class CameraSession : IAsyncDisposable
         try
         {
             await cameraDevice._backend.ConfigureAsync(configuration, ct).ConfigureAwait(false);
+            // Recheck after Configure, the last device access on this path. The
+            // sibling path, CameraDevice.OpenSessionAsync, has always done this;
+            // this one was the gap, and it is the one CameraSessionBuilder and so
+            // CameraDeviceProxy go through. It matters more now that a refusal can
+            // expire: an open admitted past the window has no other point at which
+            // a teardown abandoned during Configure would be caught before a
+            // session is handed back (issues #123, #221).
+            PendingTeardowns.ThrowIfPending(device.Id);
             var session = new CameraSession(cameraDevice, ownsDevice: true, cameraDevice._backend,
                 configuration, sessionOptions ?? new(), logger, timeProvider);
             session.LogSessionOpened();

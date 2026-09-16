@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Periphery.Camera.Internal;
 
@@ -21,8 +22,10 @@ namespace Periphery.Camera.Internal;
 /// So an abandoned step is registered here against its device id, and every
 /// open path (<see cref="CameraDevice.OpenAsync(DeviceInfo, CancellationToken, Microsoft.Extensions.Logging.ILogger{CameraDevice}?)"/>,
 /// <see cref="CameraDevice.ReadSnapshotAsync(DeviceInfo, System.Threading.CancellationToken)"/>,
-/// <see cref="CameraDevice.OpenSessionAsync"/>) refuses the device with
-/// <see cref="CameraTeardownPendingException"/> until the work completes.
+/// <see cref="CameraDevice.OpenSessionAsync"/>, <see cref="CameraSession.OpenAsync"/>)
+/// refuses the device with <see cref="CameraTeardownPendingException"/> until the
+/// work completes, or until the refusal expires — see <see cref="RefusalWindow"/>
+/// and <see cref="RefusalCeiling"/>.
 /// </para>
 /// <para>
 /// Keyed by <see cref="DeviceInfo.Id"/>, compared
@@ -63,27 +66,91 @@ namespace Periphery.Camera.Internal;
 /// one recoverable fault into another.
 /// </para>
 /// <para>
-/// <b>A refusal has no expiry, and that is unresolved rather than settled.</b>
-/// This registry never sees PnP edges, so nothing here observes a replug. If an
-/// abandoned step's native call genuinely never returns, its device stays
-/// refused for the life of the process and the exception's own advice — replug
-/// the camera — would not lift it. A bounded refusal window was written for that
-/// and reverted before merge, because the premise is unmeasured and the cost is
-/// not: past such a window a proxy on the default backoff retries forever, and
-/// each retry becomes a real native open against a driver that may still be
-/// wedged, which is the #123 cascade with a scheduler behind it. The cheap typed
-/// refusal is the better failure while the premise is unproven. What would settle
-/// it is a bench measurement on a genuinely wedged driver — does surprise-removal
-/// unblock the parked call? The platform backends already classify the
-/// device-removed errno (<c>ENODEV</c> on a yanked V4L2 camera), which is weak
-/// evidence that it does, and a fake gated on a <c>TaskCompletionSource</c>
-/// cannot answer it either way.
+/// <b>A refusal expires after <see cref="RefusalWindow"/>, and the entry does
+/// not.</b> The premise the earlier bounded window was reverted over is now
+/// measured (issue #221 item 1): on a re-enumerating UVC camera the parked calls
+/// were still parked 14 hours later, and the process was refused across 6,989
+/// consecutive opens before an unrelated restart cleared it. So a permanent
+/// refusal is not a conservative failure — it is an outage that no caller can
+/// end, on a device every other process on the machine can open.
+/// </para>
+/// <para>
+/// The objection that reverted it was real and is answered by shape rather than
+/// by argument. Past the window a proxy on the default backoff retries forever,
+/// and each retry is a real native open against a driver that may still be
+/// wedged. But the measured alternative is the same caller retrying forever
+/// against a refusal that provably cannot lift, so the choice is between retries
+/// that can eventually succeed and retries that cannot. What the window must not
+/// do is destroy the diagnostic, which is the part of #123 that actually cost the
+/// time: so expiry stops the <em>refusal</em> and keeps the <em>record</em>. The
+/// entry stays until its work completes, <see cref="WhenClearedAsync"/> still
+/// resolves against it, and each open that proceeds over an expired entry
+/// increments <see cref="CameraDiagnostics.TeardownRefusalsExpired"/> and logs at
+/// Warning naming the steps and how long they have been parked. A failure after
+/// that reads as "opened over an abandoned teardown" rather than as a fresh
+/// format negotiation failure.
+/// </para>
+/// <para>
+/// The window length is a policy choice, not a derived number, and is documented
+/// as one on <see cref="RefusalWindow"/>. What would let it be derived is a bench
+/// measurement on a genuinely wedged driver; the histogram
+/// <see cref="CameraDiagnostics.AbandonedTeardownDuration"/> collects the
+/// distribution for the steps that do come back.
+/// </para>
+/// <para>
+/// This registry still never sees PnP edges, and observing them would not replace
+/// the window. Windows commonly preserves the device instance id across a
+/// re-enumeration, so the returning device hashes to the same key; and the
+/// provider's stale-removal guard deliberately drops a removal whose instance is
+/// started again by the time it is processed, which is exactly the fast bounce
+/// that produced the measurement above.
 /// </para>
 /// </remarks>
-internal static class PendingTeardowns
+internal static partial class PendingTeardowns
 {
     private static readonly ConcurrentDictionary<string, PendingTeardown> s_pending =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// How long a device stays refused after its most recently abandoned teardown
+    /// step. Past this the open is allowed through, and the record is kept.
+    /// </summary>
+    /// <remarks>
+    /// A policy choice rather than a derived number, and deliberately far above
+    /// the budgets it backstops: the longest is
+    /// <see cref="BoundedTeardown.BackendDisposeBudget"/> at 3 seconds, so a step
+    /// that reaches this one has been parked for twenty times the budget it
+    /// overran. That gap is the point. The window exists to end a permanent
+    /// lockout, not to hurry a teardown that is merely slow, and a driver call
+    /// that has not returned in a minute is not going to be rescued by refusing
+    /// one more open. Deriving this properly needs the duration distribution for
+    /// steps that do eventually come back, which
+    /// <see cref="CameraDiagnostics.AbandonedTeardownDuration"/> records.
+    /// </remarks>
+    internal static readonly TimeSpan RefusalWindow = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The longest a device is refused in total, however many steps pile up on
+    /// it. Measured from the first abandonment rather than the newest.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RefusalWindow"/> alone is not a bound, because a refused caller
+    /// can extend it. An open that is admitted and then wedges on the same driver
+    /// abandons a step of its own, which restarts the window; a retry loop on any
+    /// backoff repeats that indefinitely and the lockout never ends. The
+    /// composed open paths make this the normal case rather than an exotic one:
+    /// <see cref="CameraSessionBuilder"/> opens twice, a snapshot pass and then
+    /// the capture, so on a wedged driver the snapshot's own bounded disposal
+    /// re-arms the window milliseconds before the capture open asks.
+    /// <para>
+    /// So the window bounds one parked call's refusal and this bounds the device's.
+    /// Five minutes is a policy choice like the window: far enough above it that a
+    /// device accumulating genuinely distinct wedges still gets a fresh refusal
+    /// each time, and near enough that a caller which has waited it out has waited
+    /// minutes rather than the 14 hours that motivated all of this.
+    /// </para>
+    /// </remarks>
+    internal static readonly TimeSpan RefusalCeiling = TimeSpan.FromMinutes(5);
 
     /// <summary>Devices with at least one abandoned teardown step still running.</summary>
     internal static int Count => s_pending.Count;
@@ -98,7 +165,7 @@ internal static class PendingTeardowns
         var settled = Settle(work);
         var entry = s_pending.AddOrUpdate(
             deviceId,
-            _ => new PendingTeardown(deviceId, [step], settled, clock.GetTimestamp(), clock),
+            _ => NewEntry(deviceId, step, settled, clock),
             (_, existing) => existing.With(step, settled));
 
         // Remove the entry once its composite completes, and only if it is still
@@ -119,21 +186,87 @@ internal static class PendingTeardowns
         return entry;
     }
 
+    // One clock read for both anchors on a device's first abandonment: two reads
+    // would make SinceLastAbandoned differ from PendingFor by the gap between them.
+    private static PendingTeardown NewEntry(string deviceId, string step, Task settled, TimeProvider clock)
+    {
+        long at = clock.GetTimestamp();
+        return new PendingTeardown(deviceId, [step], settled, at, at, clock);
+    }
+
     /// <summary>The pending teardown on <paramref name="deviceId"/>, or null when none is.</summary>
     internal static PendingTeardown? Find(string deviceId) =>
         s_pending.TryGetValue(deviceId, out var entry) && !entry.Completion.IsCompleted ? entry : null;
 
     /// <summary>
-    /// Refuses an open on a device whose previous teardown has not finished.
+    /// Refuses an open on a device whose previous teardown has not finished, for
+    /// up to <see cref="RefusalWindow"/> after its newest step was abandoned.
     /// </summary>
+    /// <remarks>
+    /// The recheck form. Each open path calls this again after its native work,
+    /// so it stays silent when it admits: <see cref="AdmitOrThrow"/> has already
+    /// counted and warned for this open, and counting here as well would report
+    /// three admissions for one.
+    /// </remarks>
     /// <exception cref="CameraTeardownPendingException">
-    /// An abandoned teardown step on <paramref name="deviceId"/> is still running.
+    /// A step on <paramref name="deviceId"/> is still running and was abandoned
+    /// less than <see cref="RefusalWindow"/> ago.
     /// </exception>
     internal static void ThrowIfPending(string deviceId)
     {
-        if (Find(deviceId) is { } pending)
-            throw pending.ToException();
+        if (Find(deviceId) is not { } pending)
+            return;
+
+        // One sample decides and reports. Reading the clock again inside
+        // ToException let the boundary move between the two, so a refusal could
+        // be raised carrying a remaining time of zero or less.
+        var remaining = pending.RemainingRefusal;
+        if (remaining > TimeSpan.Zero)
+            throw pending.ToException(remaining);
     }
+
+    /// <summary>
+    /// The same refusal at the top of an open path, recorded when it admits.
+    /// </summary>
+    /// <remarks>
+    /// Admitting past the window is the interesting event, not the refusal: it is
+    /// a real native open against a device a background thread may still hold. One
+    /// counter increment and one Warning per open carry that, so a failure
+    /// downstream reads as "opened over an abandoned teardown" rather than as a
+    /// camera that cannot produce the format, which is how the #123 cascade was
+    /// misread for nineteen consecutive failures.
+    /// </remarks>
+    /// <param name="deviceId">The device about to be opened.</param>
+    /// <param name="logger">The opening caller's logger.</param>
+    /// <exception cref="CameraTeardownPendingException">
+    /// A step on <paramref name="deviceId"/> is still running and was abandoned
+    /// less than <see cref="RefusalWindow"/> ago.
+    /// </exception>
+    internal static void AdmitOrThrow(string deviceId, ILogger logger)
+    {
+        if (Find(deviceId) is not { } pending)
+            return;
+
+        if (pending.RemainingRefusal > TimeSpan.Zero)
+            throw pending.ToException(pending.RemainingRefusal);
+
+        CameraDiagnostics.TeardownRefusalsExpired.Add(1);
+        LogRefusalExpired(
+            logger,
+            deviceId,
+            string.Join(", ", pending.Steps),
+            pending.PendingFor.TotalSeconds,
+            RefusalWindow.TotalSeconds);
+    }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Opening camera {DeviceId} over an abandoned teardown ({Steps}) that has been "
+            + "running for {PendingSec:F1}s, past the {WindowSec:F0}s refusal window. The thread may "
+            + "still hold the device, so this open can fail or return a faulting session; a failure "
+            + "here is not evidence about the camera's formats or capabilities.")]
+    private static partial void LogRefusalExpired(
+        ILogger logger, string deviceId, string steps, double pendingSec, double windowSec);
 
     /// <summary>
     /// Completes when the device has no abandoned teardown step still running.
@@ -179,15 +312,22 @@ internal static class PendingTeardowns
 internal sealed class PendingTeardown
 {
     private readonly long _firstAbandonedAt;
+    private readonly long _lastAbandonedAt;
     private readonly TimeProvider _clock;
 
     internal PendingTeardown(
-        string deviceId, IReadOnlyList<string> steps, Task completion, long firstAbandonedAt, TimeProvider clock)
+        string deviceId,
+        IReadOnlyList<string> steps,
+        Task completion,
+        long firstAbandonedAt,
+        long lastAbandonedAt,
+        TimeProvider clock)
     {
         DeviceId = deviceId;
         Steps = steps;
         Completion = completion;
         _firstAbandonedAt = firstAbandonedAt;
+        _lastAbandonedAt = lastAbandonedAt;
         _clock = clock;
     }
 
@@ -200,23 +340,111 @@ internal sealed class PendingTeardown
     internal Task Completion { get; }
 
     /// <summary>Time since the first step on this device was abandoned, on the clock that abandoned it.</summary>
+    /// <remarks>
+    /// Reported, not decided on. This is the number a caller watches grow and the
+    /// one the field report sampled, so it stays anchored to the first step even
+    /// as later ones join the composite.
+    /// </remarks>
     internal TimeSpan PendingFor => _clock.GetElapsedTime(_firstAbandonedAt);
 
-    internal PendingTeardown With(string step, Task settledWork) =>
-        new(DeviceId, [.. Steps, step], Task.WhenAll(Completion, settledWork), _firstAbandonedAt, _clock);
+    /// <summary>Time since the most recent step on this device was abandoned.</summary>
+    internal TimeSpan SinceLastAbandoned => _clock.GetElapsedTime(_lastAbandonedAt);
 
-    internal CameraTeardownPendingException ToException()
+    /// <summary>
+    /// How much longer this device is refused. Zero or less means it is not.
+    /// </summary>
+    /// <remarks>
+    /// Two bounds, and the shorter one wins, because each answers a failure the
+    /// other allows.
+    /// <para>
+    /// <see cref="PendingTeardowns.RefusalWindow"/> runs from the newest
+    /// abandonment. Anchoring it to the first would hand a newly wedged step no
+    /// refusal at all whenever an older one on the same device had already aged
+    /// out: the composite would be born expired, and a call parked for one
+    /// millisecond would be admitted over.
+    /// </para>
+    /// <para>
+    /// <see cref="PendingTeardowns.RefusalCeiling"/> runs from the first, and is
+    /// what keeps the window from being extended indefinitely by the callers it
+    /// refuses. Without it a retry that wedges on the same driver restarts the
+    /// window with its own abandoned step, forever.
+    /// </para>
+    /// <para>
+    /// Both elapsed times come from one clock read, so the value that decides a
+    /// refusal is the value written into its message.
+    /// </para>
+    /// </remarks>
+    internal TimeSpan RemainingRefusal
+    {
+        get
+        {
+            long now = _clock.GetTimestamp();
+            var byWindow = PendingTeardowns.RefusalWindow - _clock.GetElapsedTime(_lastAbandonedAt, now);
+            var byCeiling = PendingTeardowns.RefusalCeiling - _clock.GetElapsedTime(_firstAbandonedAt, now);
+            return byWindow < byCeiling ? byWindow : byCeiling;
+        }
+    }
+
+    /// <summary>
+    /// This entry plus a newly abandoned <paramref name="step"/>.
+    /// </summary>
+    /// <remarks>
+    /// Both accumulations are bounded, because a refusal that expires makes an
+    /// admitted open able to wedge and register in turn. A driver that stays
+    /// wedged for hours while a proxy retries on a backoff produces hundreds of
+    /// registrations on one device, and this used to grow a step name and a nested
+    /// <see cref="Task.WhenAll(Task[])"/> for every one of them. The step list
+    /// feeds the operator's Warning and the exception message, so it would have
+    /// printed the same three names hundreds of times over.
+    /// <para>
+    /// Steps are therefore distinct by name: there are only three, and which ones
+    /// are parked is the diagnostic, not how many times each was retried. The
+    /// completion chain drops an already-completed link rather than nesting under
+    /// it, so its depth tracks the calls parked at the same time rather than the
+    /// calls ever parked.
+    /// </para>
+    /// </remarks>
+    internal PendingTeardown With(string step, Task settledWork)
+    {
+        IReadOnlyList<string> steps = Steps.Contains(step) ? Steps : [.. Steps, step];
+        var completion = Completion.IsCompleted ? settledWork : Task.WhenAll(Completion, settledWork);
+        return new(DeviceId, steps, completion, _firstAbandonedAt, _clock.GetTimestamp(), _clock);
+    }
+
+    /// <param name="remaining">
+    /// The sample the refusal was decided on, so the remaining time in the message
+    /// cannot disagree with it.
+    /// </param>
+    internal CameraTeardownPendingException ToException(TimeSpan remaining)
     {
         var pendingFor = PendingFor;
         // The exception's Completion is resolved against the registry, not from
         // this entry's snapshot: a step abandoned after this instance was read
         // replaces the entry with a wider composite, and a caller awaiting the
         // signal must wait for that step too (issue #123 review).
+        // No unconditional replug advice. On Windows the registration usually
+        // survives one: the key is the device instance id, which the OS commonly
+        // preserves across a re-enumeration, so the returning device hashes to this
+        // same entry and is refused on arrival. That was the measured case in
+        // issue #221 item 1, and telling the caller to replug named the one action
+        // that could not help.
+        //
+        // It is not universal, so the message does not claim it is. On Linux the
+        // key is the udev syspath, whose leaf is the V4L2 node: a device that comes
+        // back while a thread still holds the old minor is given a different one,
+        // which is a different key and therefore no refusal. Saying "replugging
+        // never works" there would withhold a recovery that does.
+        //
+        // Round up, so a refusal with 400ms left does not advise waiting "0s".
+        var remainingSec = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
         return new CameraTeardownPendingException(
             $"Camera '{DeviceId}' cannot be opened: a previous session's teardown " +
             $"({string.Join(", ", Steps)}) overran its budget {pendingFor.TotalSeconds:F1}s ago and is " +
-            "still running in the background, holding the device. Await Completion and retry, or " +
-            "replug the camera if the driver is wedged.",
+            "still running in the background, holding the device. Await Completion and retry. " +
+            $"Failing that, the refusal lifts on its own in {remainingSec}s and the open is allowed " +
+            "through. Replugging may not clear it: the registration is keyed by device id, and on " +
+            "Windows that id commonly survives a re-enumeration, so the returning camera is refused " +
+            "on arrival.",
             DeviceId, PendingTeardowns.WhenClearedAsync(DeviceId), pendingFor);
     }
 }

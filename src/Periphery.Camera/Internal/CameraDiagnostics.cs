@@ -87,6 +87,25 @@ internal static class CameraDiagnostics
         description: "Camera teardown steps that overran their budget and were abandoned.");
 
     /// <summary>
+    /// Opens allowed through over an abandoned teardown whose refusal had expired
+    /// (<see cref="PendingTeardowns.RefusalWindow"/>,
+    /// <see cref="PendingTeardowns.RefusalCeiling"/>). Each one is a real native
+    /// open against a device a background thread may still hold, so a run of these
+    /// beside a run of open failures is the #123 cascade rather than a camera that
+    /// cannot produce the format. Zero is the healthy value.
+    /// </summary>
+    /// <remarks>
+    /// Counted per native open, not per caller request, so a composed path that
+    /// opens more than once ticks more than once:
+    /// <see cref="CameraSessionBuilder"/>'s snapshot pass and its capture open are
+    /// two.
+    /// </remarks>
+    internal static readonly Counter<long> TeardownRefusalsExpired = Meter.CreateCounter<long>(
+        name: "periphery.camera.teardown_refusals_expired",
+        unit: "{open}",
+        description: "Camera opens allowed through over an abandoned teardown past its refusal window.");
+
+    /// <summary>
     /// How long an abandoned teardown step ran on past its budget before it
     /// completed. Recorded on completion, so a step that never returns is in
     /// <see cref="TeardownsAbandoned"/> and not here; the gap between the two is

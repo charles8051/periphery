@@ -90,7 +90,7 @@ public sealed class CameraDevice : IAsyncDisposable
         DeviceInfo device, ILogger logger, TimeProvider timeProvider, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(device);
-        PendingTeardowns.ThrowIfPending(device.Id);
+        PendingTeardowns.AdmitOrThrow(device.Id, logger);
 
         var backend = CreateBackend(device);
         try
@@ -207,7 +207,7 @@ public sealed class CameraDevice : IAsyncDisposable
         // returned. The backend is in an unknown state until that thread
         // finishes, so a new session is refused rather than started on top of
         // it (issue #123).
-        PendingTeardowns.ThrowIfPending(DeviceInfo.Id);
+        PendingTeardowns.AdmitOrThrow(DeviceInfo.Id, (ILogger?)logger ?? _logger);
 
         await _backend.ConfigureAsync(configuration, ct).ConfigureAwait(false);
         // Recheck after Configure, the one device access this path makes, so a
@@ -250,7 +250,7 @@ public sealed class CameraDevice : IAsyncDisposable
         // Refuse to open into a teardown that never finished. The thread that
         // abandoned it may still hold the device, and contending with it is how
         // one wedge became nineteen failures (issue #123).
-        PendingTeardowns.ThrowIfPending(device.Id);
+        PendingTeardowns.AdmitOrThrow(device.Id, logger);
 
         var backend = CreateBackend(device);
         try

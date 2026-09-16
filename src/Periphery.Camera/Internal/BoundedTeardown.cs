@@ -143,7 +143,7 @@ internal static partial class BoundedTeardown
         Level = LogLevel.Warning,
         Message = "Camera teardown step {Step} on {DeviceId} did not complete within {BudgetSec:F1}s; "
             + "abandoned to a background thread that still holds the device ({PendingSteps} step(s) pending). "
-            + "Opens of this device are refused until it completes.")]
+            + "Opens of this device are refused until it completes or the refusal expires.")]
     private static partial void LogTeardownAbandoned(
         ILogger logger, string step, string deviceId, double budgetSec, int pendingSteps);
 

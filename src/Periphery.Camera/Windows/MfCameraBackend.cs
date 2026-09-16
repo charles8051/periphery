@@ -836,7 +836,7 @@ internal sealed class MfCameraBackend : ICameraBackend
         // ~20 frames where Flush itself never returns. The budget that keeps
         // disposal bounded lives one layer up, in CameraDevice, which abandons
         // this task on overrun and records it so a reopen of the same device is
-        // refused until it completes (issue #123).
+        // refused until it completes or the refusal expires (issues #123, #221).
         //
         // MfRuntime.Release runs after Cleanup on whichever thread finishes it,
         // never before. It used to run as soon as the budget expired, which on
