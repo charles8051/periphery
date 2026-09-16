@@ -110,8 +110,8 @@ internal static partial class PendingTeardowns
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// How long a device stays refused after its first teardown step was
-    /// abandoned. Past this the open is allowed through, and the record is kept.
+    /// How long a device stays refused after its most recently abandoned teardown
+    /// step. Past this the open is allowed through, and the record is kept.
     /// </summary>
     /// <remarks>
     /// A policy choice rather than a derived number, and deliberately far above
@@ -140,7 +140,7 @@ internal static partial class PendingTeardowns
         var settled = Settle(work);
         var entry = s_pending.AddOrUpdate(
             deviceId,
-            _ => new PendingTeardown(deviceId, [step], settled, clock.GetTimestamp(), clock),
+            _ => NewEntry(deviceId, step, settled, clock),
             (_, existing) => existing.With(step, settled));
 
         // Remove the entry once its composite completes, and only if it is still
@@ -161,13 +161,21 @@ internal static partial class PendingTeardowns
         return entry;
     }
 
+    // One clock read for both anchors on a device's first abandonment: two reads
+    // would make SinceLastAbandoned differ from PendingFor by the gap between them.
+    private static PendingTeardown NewEntry(string deviceId, string step, Task settled, TimeProvider clock)
+    {
+        long at = clock.GetTimestamp();
+        return new PendingTeardown(deviceId, [step], settled, at, at, clock);
+    }
+
     /// <summary>The pending teardown on <paramref name="deviceId"/>, or null when none is.</summary>
     internal static PendingTeardown? Find(string deviceId) =>
         s_pending.TryGetValue(deviceId, out var entry) && !entry.Completion.IsCompleted ? entry : null;
 
     /// <summary>
     /// Refuses an open on a device whose previous teardown has not finished, for
-    /// up to <see cref="RefusalWindow"/> after the first step was abandoned.
+    /// up to <see cref="RefusalWindow"/> after its newest step was abandoned.
     /// </summary>
     /// <remarks>
     /// The recheck form. Each open path calls this again after its native work,
@@ -176,13 +184,20 @@ internal static partial class PendingTeardowns
     /// three admissions for one.
     /// </remarks>
     /// <exception cref="CameraTeardownPendingException">
-    /// An abandoned teardown step on <paramref name="deviceId"/> is still running,
-    /// and was abandoned less than <see cref="RefusalWindow"/> ago.
+    /// A step on <paramref name="deviceId"/> is still running and was abandoned
+    /// less than <see cref="RefusalWindow"/> ago.
     /// </exception>
     internal static void ThrowIfPending(string deviceId)
     {
-        if (Find(deviceId) is { } pending && pending.PendingFor < RefusalWindow)
-            throw pending.ToException();
+        if (Find(deviceId) is not { } pending)
+            return;
+
+        // One sample decides and reports. Reading the clock again inside
+        // ToException let the boundary move between the two, so a refusal could
+        // be raised carrying a remaining time of zero or less.
+        var sinceLast = pending.SinceLastAbandoned;
+        if (sinceLast < RefusalWindow)
+            throw pending.ToException(sinceLast);
     }
 
     /// <summary>
@@ -199,24 +214,24 @@ internal static partial class PendingTeardowns
     /// <param name="deviceId">The device about to be opened.</param>
     /// <param name="logger">The opening caller's logger.</param>
     /// <exception cref="CameraTeardownPendingException">
-    /// An abandoned teardown step on <paramref name="deviceId"/> is still running,
-    /// and was abandoned less than <see cref="RefusalWindow"/> ago.
+    /// A step on <paramref name="deviceId"/> is still running and was abandoned
+    /// less than <see cref="RefusalWindow"/> ago.
     /// </exception>
     internal static void AdmitOrThrow(string deviceId, ILogger logger)
     {
         if (Find(deviceId) is not { } pending)
             return;
 
-        var pendingFor = pending.PendingFor;
-        if (pendingFor < RefusalWindow)
-            throw pending.ToException();
+        var sinceLast = pending.SinceLastAbandoned;
+        if (sinceLast < RefusalWindow)
+            throw pending.ToException(sinceLast);
 
         CameraDiagnostics.TeardownRefusalsExpired.Add(1);
         LogRefusalExpired(
             logger,
             deviceId,
             string.Join(", ", pending.Steps),
-            pendingFor.TotalSeconds,
+            pending.PendingFor.TotalSeconds,
             RefusalWindow.TotalSeconds);
     }
 
@@ -273,15 +288,22 @@ internal static partial class PendingTeardowns
 internal sealed class PendingTeardown
 {
     private readonly long _firstAbandonedAt;
+    private readonly long _lastAbandonedAt;
     private readonly TimeProvider _clock;
 
     internal PendingTeardown(
-        string deviceId, IReadOnlyList<string> steps, Task completion, long firstAbandonedAt, TimeProvider clock)
+        string deviceId,
+        IReadOnlyList<string> steps,
+        Task completion,
+        long firstAbandonedAt,
+        long lastAbandonedAt,
+        TimeProvider clock)
     {
         DeviceId = deviceId;
         Steps = steps;
         Completion = completion;
         _firstAbandonedAt = firstAbandonedAt;
+        _lastAbandonedAt = lastAbandonedAt;
         _clock = clock;
     }
 
@@ -294,12 +316,38 @@ internal sealed class PendingTeardown
     internal Task Completion { get; }
 
     /// <summary>Time since the first step on this device was abandoned, on the clock that abandoned it.</summary>
+    /// <remarks>
+    /// Reported, not decided on. This is the number a caller watches grow and the
+    /// one the field report sampled, so it stays anchored to the first step even
+    /// as later ones join the composite.
+    /// </remarks>
     internal TimeSpan PendingFor => _clock.GetElapsedTime(_firstAbandonedAt);
 
-    internal PendingTeardown With(string step, Task settledWork) =>
-        new(DeviceId, [.. Steps, step], Task.WhenAll(Completion, settledWork), _firstAbandonedAt, _clock);
+    /// <summary>Time since the most recent step on this device was abandoned.</summary>
+    /// <remarks>
+    /// What <see cref="PendingTeardowns.RefusalWindow"/> is measured against.
+    /// Anchoring expiry to the first step instead would hand a newly abandoned
+    /// step no refusal at all whenever an older one on the same device had already
+    /// outlived the window: the composite would be born expired, and a step that
+    /// wedged one millisecond ago would be admitted over. The window is a claim
+    /// about one parked call's age, so each new call restarts it.
+    /// </remarks>
+    internal TimeSpan SinceLastAbandoned => _clock.GetElapsedTime(_lastAbandonedAt);
 
-    internal CameraTeardownPendingException ToException()
+    internal PendingTeardown With(string step, Task settledWork) =>
+        new(
+            DeviceId,
+            [.. Steps, step],
+            Task.WhenAll(Completion, settledWork),
+            _firstAbandonedAt,
+            _clock.GetTimestamp(),
+            _clock);
+
+    /// <param name="sinceLastAbandoned">
+    /// The sample the refusal was decided on, so the remaining time in the message
+    /// cannot disagree with it.
+    /// </param>
+    internal CameraTeardownPendingException ToException(TimeSpan sinceLastAbandoned)
     {
         var pendingFor = PendingFor;
         // The exception's Completion is resolved against the registry, not from
@@ -312,7 +360,7 @@ internal sealed class PendingTeardown
         // refused on arrival: the message would be naming the one action that
         // cannot help (issue #221 item 1). What does lift it is the work
         // completing, or the refusal window expiring.
-        var remaining = PendingTeardowns.RefusalWindow - pendingFor;
+        var remaining = PendingTeardowns.RefusalWindow - sinceLastAbandoned;
         return new CameraTeardownPendingException(
             $"Camera '{DeviceId}' cannot be opened: a previous session's teardown " +
             $"({string.Join(", ", Steps)}) overran its budget {pendingFor.TotalSeconds:F1}s ago and is " +

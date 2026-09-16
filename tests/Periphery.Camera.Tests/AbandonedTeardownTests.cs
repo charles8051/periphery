@@ -203,7 +203,8 @@ public sealed class AbandonedTeardownTests : IDisposable
 
         // First step abandons; the exception is built from that snapshot.
         PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, stopGate.Task, clock);
-        var ex = PendingTeardowns.Find(id)!.ToException();
+        var pending = PendingTeardowns.Find(id)!;
+        var ex = pending.ToException(pending.SinceLastAbandoned);
 
         // A second step abandons before the first completes.
         PendingTeardowns.Register(id, BoundedTeardown.Steps.ProducerExit, producerGate.Task, clock);
@@ -419,6 +420,57 @@ public sealed class AbandonedTeardownTests : IDisposable
         gate.SetResult();
         Assert.True(cleared.Wait(TestHelpers.Patience));
         Assert.Null(PendingTeardowns.Find(id));
+    }
+
+    [Fact]
+    public void ANewlyAbandonedStep_GetsItsOwnWindow_EvenBehindAnExpiredOne()
+    {
+        var clock = new FakeTimeProvider();
+        var id = "TEST\\CAM\\WINDOW\\SECONDSTEP";
+        var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, first.Task, clock);
+        clock.Advance(PendingTeardowns.RefusalWindow);
+
+        // The first step has outlived its window, so the device is admitted.
+        PendingTeardowns.ThrowIfPending(id);
+
+        // Now a second step wedges. Anchoring the window to the FIRST abandonment
+        // would make this composite born expired: a call parked for zero seconds
+        // would get no refusal at all, because an older one on the same device had
+        // already aged out. The window is a claim about one parked call's age.
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.BackendDispose, second.Task, clock);
+
+        var ex = Assert.Throws<CameraTeardownPendingException>(() => PendingTeardowns.ThrowIfPending(id));
+        Assert.Contains(BoundedTeardown.Steps.BackendDispose, ex.Message);
+
+        // And it is a full window, not the remainder of the first step's.
+        clock.Advance(PendingTeardowns.RefusalWindow - TimeSpan.FromMilliseconds(1));
+        Assert.Throws<CameraTeardownPendingException>(() => PendingTeardowns.ThrowIfPending(id));
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        PendingTeardowns.ThrowIfPending(id);
+
+        first.SetResult();
+        second.SetResult();
+    }
+
+    [Fact]
+    public void TheRefusalMessage_NeverReportsATimeAlreadyElapsed()
+    {
+        var clock = new FakeTimeProvider();
+        var id = "TEST\\CAM\\WINDOW\\REMAINING";
+        PendingTeardowns.Register(id, BoundedTeardown.Steps.StopCapture, new TaskCompletionSource().Task, clock);
+
+        // One clock sample has to decide the refusal and write the remaining time
+        // into it. Two samples let the boundary move between them, and the message
+        // then advises waiting out a window that has already gone.
+        clock.Advance(PendingTeardowns.RefusalWindow - TimeSpan.FromSeconds(1));
+        var ex = Assert.Throws<CameraTeardownPendingException>(() => PendingTeardowns.ThrowIfPending(id));
+
+        Assert.Contains("lifts on its own in 1s", ex.Message);
+        Assert.DoesNotContain("in 0s", ex.Message);
+        Assert.DoesNotContain("in -", ex.Message);
     }
 
     [Fact]
