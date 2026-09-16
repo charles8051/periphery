@@ -57,6 +57,14 @@ internal static partial class BoundedTeardown
     internal const string StepTag = "periphery.camera.teardown_step";
 
     /// <summary>
+    /// Tag on both teardown instruments naming the device the step was holding.
+    /// A run of abandonments on one device is the #123 cascade, and the step tag
+    /// alone cannot separate that from one abandonment on each of three cameras.
+    /// Cardinality is the number of cameras attached to the host.
+    /// </summary>
+    internal const string DeviceTag = "periphery.camera.device_id";
+
+    /// <summary>
     /// Runs <paramref name="work"/> on the thread pool and waits up to
     /// <paramref name="budget"/> for it.
     /// </summary>
@@ -117,8 +125,9 @@ internal static partial class BoundedTeardown
         Task work, TimeSpan budget, string deviceId, string step, ILogger logger, TimeProvider clock)
     {
         var tag = new KeyValuePair<string, object?>(StepTag, step);
+        var device = new KeyValuePair<string, object?>(DeviceTag, deviceId);
         var pending = PendingTeardowns.Register(deviceId, step, work, clock);
-        CameraDiagnostics.TeardownsAbandoned.Add(1, tag);
+        CameraDiagnostics.TeardownsAbandoned.Add(1, tag, device);
         LogTeardownAbandoned(logger, step, deviceId, budget.TotalSeconds, pending.Steps.Count);
 
         long abandonedAt = clock.GetTimestamp();
@@ -126,7 +135,7 @@ internal static partial class BoundedTeardown
             t =>
             {
                 var elapsed = clock.GetElapsedTime(abandonedAt);
-                CameraDiagnostics.AbandonedTeardownDuration.Record(elapsed.TotalMilliseconds, tag);
+                CameraDiagnostics.AbandonedTeardownDuration.Record(elapsed.TotalMilliseconds, tag, device);
                 if (t.IsFaulted)
                     LogAbandonedTeardownFaulted(logger, step, deviceId, elapsed.TotalSeconds, t.Exception!.GetBaseException());
                 else

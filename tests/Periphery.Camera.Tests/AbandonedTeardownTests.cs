@@ -29,13 +29,13 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task StopThatOverrunsIsCounted_AndReopenIsRefusedNamingTheDevice()
     {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         var abandoned = 0L;
         using var listener = StartListener<long>(
-            "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
+            "periphery.camera.teardowns_abandoned", device.Id, v => Interlocked.Add(ref abandoned, v));
 
         var time = new TimerSignalingFakeTimeProvider();
         var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         // The backend's StopCaptureAsync parks on the gate forever — a driver
         // whose Flush never returns.
         var backend = new InMemoryCameraBackend { BlockStopUntil = stopGate.Task };
@@ -125,11 +125,11 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task CleanDisposalRegistersNothing_AndDoesNotRefuseReopen()
     {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\CLEAN");
         var abandoned = 0L;
         using var listener = StartListener<long>(
-            "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
+            "periphery.camera.teardowns_abandoned", device.Id, v => Interlocked.Add(ref abandoned, v));
 
-        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\CLEAN");
         var backend = new InMemoryCameraBackend();
 
         var session = await TestHelpers.CreateSessionWithBackend(backend, device: device);
@@ -149,13 +149,13 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task BackendDisposalThatOverrunsIsAbandoned_AndRefusesReopen()
     {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\DISPOSEWEDGE");
         var abandoned = 0L;
         using var listener = StartListener<long>(
-            "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
+            "periphery.camera.teardowns_abandoned", device.Id, v => Interlocked.Add(ref abandoned, v));
 
         var time = new TimerSignalingFakeTimeProvider();
         var disposeGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\DISPOSEWEDGE");
         // Stop returns fine; the backend's own disposal (Shutdown/close) is what wedges.
         var backend = new InMemoryCameraBackend { BlockDisposeUntil = disposeGate.Task };
 
@@ -272,7 +272,22 @@ public sealed class AbandonedTeardownTests : IDisposable
         await dispose.WaitAsync(TestHelpers.Patience);
     }
 
-    private static MeterListener StartListener<T>(string instrumentName, Action<T> onMeasurement)
+    /// <summary>
+    /// Listens to one instrument on the process-global camera meter, counting only
+    /// measurements tagged with <paramref name="deviceId"/>.
+    /// </summary>
+    /// <remarks>
+    /// The device filter is what makes an exact-count assertion safe here.
+    /// <c>CameraDiagnostics.Meter</c> is process-global, and an abandoned teardown
+    /// emits from a background thread at a time no test controls, so a bare global
+    /// count reads whatever else the assembly happened to abandon inside this
+    /// listener's window. That is the same hazard <c>AssemblyInfo.cs</c> documents
+    /// for the meter, and it failed once on Linux CI as a 2 where the test asserts
+    /// 1 (issue #221 item 4). Each test here uses a device id of its own, so
+    /// filtering on the tag isolates the count to the abandonment the test caused.
+    /// </remarks>
+    private static MeterListener StartListener<T>(
+        string instrumentName, string deviceId, Action<T> onMeasurement)
         where T : struct
     {
         var listener = new MeterListener
@@ -283,7 +298,18 @@ public sealed class AbandonedTeardownTests : IDisposable
                     l.EnableMeasurementEvents(instrument);
             },
         };
-        listener.SetMeasurementEventCallback<T>((_, value, _, _) => onMeasurement(value));
+        listener.SetMeasurementEventCallback<T>((_, value, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == BoundedTeardown.DeviceTag
+                    && string.Equals(tag.Value as string, deviceId, StringComparison.OrdinalIgnoreCase))
+                {
+                    onMeasurement(value);
+                    return;
+                }
+            }
+        });
         listener.Start();
         return listener;
     }

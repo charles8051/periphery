@@ -77,9 +77,11 @@ internal static class CameraDiagnostics
     /// <summary>
     /// Teardown steps that overran their budget and were abandoned to a
     /// background thread still holding the device (issue #123). Tagged with
-    /// <see cref="BoundedTeardown.StepTag"/>. One of these is the earliest
+    /// <see cref="BoundedTeardown.StepTag"/> and
+    /// <see cref="BoundedTeardown.DeviceTag"/>. One of these is the earliest
     /// signal of a wedged driver; a run of them on one device is the cascade
-    /// the issue measured.
+    /// the issue measured, which is what the device tag makes separable from
+    /// one abandonment on each of several cameras.
     /// </summary>
     internal static readonly Counter<long> TeardownsAbandoned = Meter.CreateCounter<long>(
         name: "periphery.camera.teardowns_abandoned",

@@ -74,4 +74,65 @@ public sealed class MfRuntimeTeardownTests
             MfRuntime.Release();
         }
     }
+
+    [Fact]
+    public async Task OpenAfterDispose_IsRefused()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var backend = new MfCameraBackend(CameraTestFormats.CreateDeviceInfo(
+            id: "periphery-no-such-camera-" + Guid.NewGuid().ToString("N"),
+            name: "nonexistent"));
+
+        // Never opened, so disposal takes no MF reference and this touches no
+        // native code. The point is the refusal, not the teardown.
+        await backend.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => backend.OpenAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ConcurrentDispose_ReleasesRuntimeExactlyOnce()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        // Same stand-in client as above: it is what a double release would shut
+        // Media Foundation down underneath.
+        MfRuntime.EnsureStarted();
+        int aliveWithOneClient = MfRuntime.RefCount;
+        try
+        {
+            // The claim is a compare-and-set, so a single pass proves nothing: two
+            // sequential disposals are correct even with a plain check-then-set,
+            // and only two that interleave inside the check are not. Racing a fresh
+            // backend repeatedly makes the interleaving likely without making the
+            // pass direction probabilistic -- under a correct claim the count is
+            // exact on every iteration, so this test cannot fail spuriously.
+            for (int i = 0; i < 32; i++)
+            {
+                var backend = new MfCameraBackend(CameraTestFormats.CreateDeviceInfo(
+                    id: "periphery-no-such-camera-" + Guid.NewGuid().ToString("N"),
+                    name: "nonexistent"));
+
+                // A failed open still took one EnsureStarted before it failed, which
+                // is the reference the racing disposals compete to release.
+                await Assert.ThrowsAnyAsync<CameraException>(
+                    () => backend.OpenAsync(CancellationToken.None));
+
+                using var start = new Barrier(2);
+                await Task.WhenAll(
+                    Task.Run(async () => { start.SignalAndWait(); await backend.DisposeAsync(); }),
+                    Task.Run(async () => { start.SignalAndWait(); await backend.DisposeAsync(); }));
+
+                Assert.Equal(aliveWithOneClient, MfRuntime.RefCount);
+            }
+        }
+        finally
+        {
+            MfRuntime.Release();
+        }
+    }
 }
