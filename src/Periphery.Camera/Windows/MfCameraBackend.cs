@@ -31,7 +31,15 @@ internal sealed class MfCameraBackend : ICameraBackend
     private IAMVideoProcAmp? _videoProcAmp;
     private CameraConfiguration? _configuration;
     private volatile bool _isCapturing;
-    private bool _disposed;
+
+    // 0 until disposal claims it, 1 after. An int rather than a bool because the
+    // claim is an Interlocked.Exchange: two concurrent DisposeAsync calls both
+    // reading a bool see false, both run Cleanup, and both call MfRuntime.Release
+    // for one EnsureStarted — decrementing the process-wide ref-count twice and
+    // calling MFShutdown under another live backend (issue #221).
+    private int _disposed;
+
+    private bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     // True once this backend's OpenAsync incremented the MF runtime ref-count.
     // DisposeAsync releases exactly what was acquired: EnsureStarted throws
@@ -60,6 +68,29 @@ internal sealed class MfCameraBackend : ICameraBackend
 
     public Task OpenAsync(CancellationToken ct)
     {
+        // A backend is opened once and disposed once. CameraDevice creates a fresh
+        // one per open and never reuses either a disposed or an already-opened
+        // instance, so nothing in-tree reaches these two checks. They are here
+        // because the leak does not depend on the caller being disposed first
+        // (#221).
+        //
+        // A second open overwrites _source and _reader with no Shutdown or Release
+        // on the pair it replaces, so the first source is orphaned still holding
+        // the device -- the #123 wedge, arrived at without a wedged driver. And it
+        // takes a second EnsureStarted that _mfStarted, being a bool, does not
+        // record: DisposeAsync then releases one of the two and MFShutdown never
+        // runs for the life of the process.
+        //
+        // _mfStarted rather than _reader is the right claim because it marks the
+        // reference this backend took. An open that failed after EnsureStarted
+        // leaves _reader null but the reference held, and a retry on that instance
+        // would double-acquire exactly as a retry on a fully-open one does.
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+        if (_mfStarted)
+            throw new InvalidOperationException(
+                "Backend has already been opened. Create a new backend per open; "
+                + "this one is spent whether the open succeeded or failed.");
+
         ct.ThrowIfCancellationRequested();
 
         MfRuntime.EnsureStarted();
@@ -751,7 +782,7 @@ internal sealed class MfCameraBackend : ICameraBackend
 
     private void ThrowIfNotOpen()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         if (_reader is null)
             throw new InvalidOperationException("Backend is not open.");
     }
@@ -793,8 +824,10 @@ internal sealed class MfCameraBackend : ICameraBackend
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
+        // Exactly one caller claims disposal. A non-atomic check-then-set lets two
+        // concurrent calls both observe "not disposed", each run Cleanup and each
+        // release the MF runtime ref-count this backend took once (#221).
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _isCapturing = false;
 
         // COM cleanup runs on a background thread because a wedged USB camera

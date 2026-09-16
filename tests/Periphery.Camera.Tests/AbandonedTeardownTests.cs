@@ -29,13 +29,13 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task StopThatOverrunsIsCounted_AndReopenIsRefusedNamingTheDevice()
     {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         var abandoned = 0L;
         using var listener = StartListener<long>(
             "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
         var time = new TimerSignalingFakeTimeProvider();
         var stopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\WEDGED");
         // The backend's StopCaptureAsync parks on the gate forever — a driver
         // whose Flush never returns.
         var backend = new InMemoryCameraBackend { BlockStopUntil = stopGate.Task };
@@ -49,7 +49,12 @@ public sealed class AbandonedTeardownTests : IDisposable
             // Dispose races the abandoned stop; advancing past the 2s budget trips it.
             await DisposeAbandoningAsync(session, time, BoundedTeardown.StopCaptureBudget);
 
+            // One abandonment, counted once. The registry says which step, on this
+            // device; the meter says the counter fired exactly once for it.
             Assert.Equal(1, Interlocked.Read(ref abandoned));
+            Assert.Equal(
+                [BoundedTeardown.Steps.StopCapture],
+                PendingTeardowns.Find(device.Id)!.Steps);
 
             // The next open of the SAME device is refused, naming it and the step.
             var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
@@ -125,11 +130,11 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task CleanDisposalRegistersNothing_AndDoesNotRefuseReopen()
     {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\CLEAN");
         var abandoned = 0L;
         using var listener = StartListener<long>(
             "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
-        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\CLEAN");
         var backend = new InMemoryCameraBackend();
 
         var session = await TestHelpers.CreateSessionWithBackend(backend, device: device);
@@ -137,6 +142,8 @@ public sealed class AbandonedTeardownTests : IDisposable
         using (var frame = await session.ReadFrameAsync()) { }
         await session.DisposeAsync();
 
+        // The zero is the only thing in the suite that fails when the counter is
+        // moved to a path every bounded step reaches, abandoned or not.
         Assert.Equal(0, Interlocked.Read(ref abandoned));
         Assert.Null(PendingTeardowns.Find(device.Id));
 
@@ -149,13 +156,13 @@ public sealed class AbandonedTeardownTests : IDisposable
     [Fact]
     public async Task BackendDisposalThatOverrunsIsAbandoned_AndRefusesReopen()
     {
+        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\DISPOSEWEDGE");
         var abandoned = 0L;
         using var listener = StartListener<long>(
             "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
 
         var time = new TimerSignalingFakeTimeProvider();
         var disposeGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\DISPOSEWEDGE");
         // Stop returns fine; the backend's own disposal (Shutdown/close) is what wedges.
         var backend = new InMemoryCameraBackend { BlockDisposeUntil = disposeGate.Task };
 
@@ -167,6 +174,10 @@ public sealed class AbandonedTeardownTests : IDisposable
             await DisposeAbandoningAsync(session, time, BoundedTeardown.BackendDisposeBudget);
 
             Assert.Equal(1, Interlocked.Read(ref abandoned));
+            Assert.Equal(
+                [BoundedTeardown.Steps.BackendDispose],
+                PendingTeardowns.Find(device.Id)!.Steps);
+
             var ex = await Assert.ThrowsAsync<CameraTeardownPendingException>(
                 () => CameraDevice.OpenAsync(device));
             Assert.Contains(BoundedTeardown.Steps.BackendDispose, ex.Message);
@@ -272,6 +283,36 @@ public sealed class AbandonedTeardownTests : IDisposable
         await dispose.WaitAsync(TestHelpers.Patience);
     }
 
+    /// <summary>
+    /// Listens to one instrument on the process-global camera meter.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The counts asserted through this are exact, and stay exact. #221 item 4
+    /// proposed relaxing them after one Linux CI failure (a 2 where a test asserts
+    /// 1), on the premise that another test's abandonment emits into this
+    /// listener's window from a background thread. That premise does not hold here.
+    /// <c>TeardownsAbandoned.Add</c> is emitted synchronously inside
+    /// <see cref="BoundedTeardown"/>'s abandon path, which every caller awaits, and
+    /// <c>AssemblyInfo.cs</c> has disabled parallelization for this assembly since
+    /// before the failure was seen, so no other test is running to contaminate it.
+    /// The instrument that does emit from an uncontrolled background thread is
+    /// <c>AbandonedTeardownDuration</c>, which no test here listens to.
+    /// </para>
+    /// <para>
+    /// Relaxing to a lower bound was tried and reverted: it let a counter that
+    /// double-reports every abandonment, and one that fires on clean teardowns too,
+    /// both pass. Those are the mutations an exact count exists to catch, and they
+    /// leave <see cref="PendingTeardowns"/> correct, so the registry assertions
+    /// beside these do not cover them.
+    /// </para>
+    /// <para>
+    /// The cause of that one failure is therefore still unidentified. What the
+    /// tests gained instead is the <c>Steps</c> assertion on the registry: if a
+    /// second step really is being abandoned on the same device, a recurrence now
+    /// names which steps rather than reporting that 2 is not 1.
+    /// </para>
+    /// </remarks>
     private static MeterListener StartListener<T>(string instrumentName, Action<T> onMeasurement)
         where T : struct
     {
