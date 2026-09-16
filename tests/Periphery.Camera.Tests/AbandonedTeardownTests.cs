@@ -49,10 +49,9 @@ public sealed class AbandonedTeardownTests : IDisposable
             // Dispose races the abandoned stop; advancing past the 2s budget trips it.
             await DisposeAbandoningAsync(session, time, BoundedTeardown.StopCaptureBudget);
 
-            // The counter moved. Exactly which abandonments it counted is not
-            // knowable from a process-global meter, so the exact claim is the
-            // registry's: one step on THIS device, and it is the stop.
-            Assert.True(Interlocked.Read(ref abandoned) >= 1);
+            // One abandonment, counted once. The registry says which step, on this
+            // device; the meter says the counter fired exactly once for it.
+            Assert.Equal(1, Interlocked.Read(ref abandoned));
             Assert.Equal(
                 [BoundedTeardown.Steps.StopCapture],
                 PendingTeardowns.Find(device.Id)!.Steps);
@@ -132,6 +131,10 @@ public sealed class AbandonedTeardownTests : IDisposable
     public async Task CleanDisposalRegistersNothing_AndDoesNotRefuseReopen()
     {
         var device = TestHelpers.CreateDeviceInfo("TEST\\CAM\\CLEAN");
+        var abandoned = 0L;
+        using var listener = StartListener<long>(
+            "periphery.camera.teardowns_abandoned", v => Interlocked.Add(ref abandoned, v));
+
         var backend = new InMemoryCameraBackend();
 
         var session = await TestHelpers.CreateSessionWithBackend(backend, device: device);
@@ -139,9 +142,9 @@ public sealed class AbandonedTeardownTests : IDisposable
         using (var frame = await session.ReadFrameAsync()) { }
         await session.DisposeAsync();
 
-        // No meter assertion here. "Nothing was abandoned" cannot be read off a
-        // process-global counter, which another test can move inside the window.
-        // The registry carries the same claim keyed by device, where it is exact.
+        // The zero is the only thing in the suite that fails when the counter is
+        // moved to a path every bounded step reaches, abandoned or not.
+        Assert.Equal(0, Interlocked.Read(ref abandoned));
         Assert.Null(PendingTeardowns.Find(device.Id));
 
         // Reopen is not refused.
@@ -170,7 +173,7 @@ public sealed class AbandonedTeardownTests : IDisposable
             using (var frame = await session.ReadFrameAsync()) { }
             await DisposeAbandoningAsync(session, time, BoundedTeardown.BackendDisposeBudget);
 
-            Assert.True(Interlocked.Read(ref abandoned) >= 1);
+            Assert.Equal(1, Interlocked.Read(ref abandoned));
             Assert.Equal(
                 [BoundedTeardown.Steps.BackendDispose],
                 PendingTeardowns.Find(device.Id)!.Steps);
@@ -284,21 +287,30 @@ public sealed class AbandonedTeardownTests : IDisposable
     /// Listens to one instrument on the process-global camera meter.
     /// </summary>
     /// <remarks>
-    /// What this can and cannot witness (issue #221 item 4).
-    /// <c>CameraDiagnostics.Meter</c> is process-global and an abandonment emits
-    /// from a background thread at a time no test controls, so the count read here
-    /// includes whatever else the assembly abandoned inside the listener's window.
-    /// That is the hazard <c>AssemblyInfo.cs</c> documents for the meter, and it
-    /// failed once on Linux CI as a 2 where a test asserted 1.
     /// <para>
-    /// The instruments carry no device dimension to filter on, and adding one would
-    /// put a device instance id in a metric label, which is the wrong trade for a
-    /// test's benefit. So these tests assert what the meter can honestly support --
-    /// that the counter moved at all -- and take the exact, per-device claim from
-    /// <see cref="PendingTeardowns"/>, which is device-keyed and settles
-    /// synchronously with the abandonment. Deleting the production
-    /// <c>TeardownsAbandoned.Add</c> still turns these red, because the
-    /// contamination they tolerate comes from that same call site.
+    /// The counts asserted through this are exact, and stay exact. #221 item 4
+    /// proposed relaxing them after one Linux CI failure (a 2 where a test asserts
+    /// 1), on the premise that another test's abandonment emits into this
+    /// listener's window from a background thread. That premise does not hold here.
+    /// <c>TeardownsAbandoned.Add</c> is emitted synchronously inside
+    /// <see cref="BoundedTeardown"/>'s abandon path, which every caller awaits, and
+    /// <c>AssemblyInfo.cs</c> has disabled parallelization for this assembly since
+    /// before the failure was seen, so no other test is running to contaminate it.
+    /// The instrument that does emit from an uncontrolled background thread is
+    /// <c>AbandonedTeardownDuration</c>, which no test here listens to.
+    /// </para>
+    /// <para>
+    /// Relaxing to a lower bound was tried and reverted: it let a counter that
+    /// double-reports every abandonment, and one that fires on clean teardowns too,
+    /// both pass. Those are the mutations an exact count exists to catch, and they
+    /// leave <see cref="PendingTeardowns"/> correct, so the registry assertions
+    /// beside these do not cover them.
+    /// </para>
+    /// <para>
+    /// The cause of that one failure is therefore still unidentified. What the
+    /// tests gained instead is the <c>Steps</c> assertion on the registry: if a
+    /// second step really is being abandoned on the same device, a recurrence now
+    /// names which steps rather than reporting that 2 is not 1.
     /// </para>
     /// </remarks>
     private static MeterListener StartListener<T>(string instrumentName, Action<T> onMeasurement)

@@ -68,13 +68,29 @@ internal sealed class MfCameraBackend : ICameraBackend
 
     public Task OpenAsync(CancellationToken ct)
     {
-        // A backend is opened once and disposed once; CameraDevice creates a fresh
-        // one per open and never reuses a disposed instance, so nothing in-tree
-        // reaches this. The check is here because the disposal contract holds
-        // regardless of caller discipline: a second open would call MFStartup again
-        // and overwrite _source/_reader, orphaning the first native resources, and
-        // _mfStarted is a bool so the extra EnsureStarted is never released (#221).
+        // A backend is opened once and disposed once. CameraDevice creates a fresh
+        // one per open and never reuses either a disposed or an already-opened
+        // instance, so nothing in-tree reaches these two checks. They are here
+        // because the leak does not depend on the caller being disposed first
+        // (#221).
+        //
+        // A second open overwrites _source and _reader with no Shutdown or Release
+        // on the pair it replaces, so the first source is orphaned still holding
+        // the device -- the #123 wedge, arrived at without a wedged driver. And it
+        // takes a second EnsureStarted that _mfStarted, being a bool, does not
+        // record: DisposeAsync then releases one of the two and MFShutdown never
+        // runs for the life of the process.
+        //
+        // _mfStarted rather than _reader is the right claim because it marks the
+        // reference this backend took. An open that failed after EnsureStarted
+        // leaves _reader null but the reference held, and a retry on that instance
+        // would double-acquire exactly as a retry on a fully-open one does.
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        if (_mfStarted)
+            throw new InvalidOperationException(
+                "Backend has already been opened. Create a new backend per open; "
+                + "this one is spent whether the open succeeded or failed.");
+
         ct.ThrowIfCancellationRequested();
 
         MfRuntime.EnsureStarted();
