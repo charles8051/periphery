@@ -30,16 +30,17 @@ Ranked by how directly each one blocks a backend that core would accept.
 | # | Finding | Evidence | Resolves with |
 |---|---|---|---|
 | 1 | Enumerate-all does not exist. Every Web device API returns only devices the user has already granted, one click per device. `Devices.FindAsync()` cannot mean what it means on a desktop. | Documented | Nothing. It is the browser's permission model. |
-| 2 | Topology has no source. No parent, no port number, no hub chain. `ParentId`, `PortNumber`, `LocationPath` and `PortPath` (ADR-0078/0079/0080) cannot be populated, so the rooted forest cannot be built. | Documented | Nothing. |
-| 3 | Web Serial exposes VID and PID and nothing else. Two identical bridges are indistinguishable, so `DeviceInfo.Id` has no durable source on that API. | Measured | Key on the `SerialPort` object reference, which survives within one document. Lost on reload. |
-| 4 | `EnrichmentPipeline.RunRegisteredSync` blocks on `GetAwaiter().GetResult()`. On the single WASM thread an enricher that awaits a JS promise deadlocks the app. | Source | Give the browser provider an async-only enrichment path, or register no async enricher. |
-| 5 | `DeviceWatcher` offloads startup with `Task.Run` to spare a UI thread. WASM has no thread pool, so the offload is a no-op and the documented "events fire on thread-pool threads" contract stops holding. | Source | Document the browser exception, or gate the offload on `Environment.ProcessorCount`/OS check. |
-| 6 | Driver state has no analogue: `Status`, `Driver`, `DriverVersion`, `ClassGuid`, `ClassName`, and everything `DeviceFaultClassifier` reads. | Documented | Nothing. The browser does not model a driver. |
-| 7 | `ContainerId` has no analogue. A composite device's interfaces cannot be grouped. | Documented | Nothing. |
-| 8 | Reset has no analogue beyond WebUSB's `reset()`. No port cycle, no forced re-enumerate. | Documented | Nothing for `ResetStrategy`'s power rung. |
-| 9 | Grant-scoped enumeration and lifecycle map onto the contract cleanly, including live arrival and departure edges. | Measured | Already answered. See [Tier 1](#tier-1--grant-scoped-enumeration-and-lifecycle). |
-| 10 | An embedded Chromium without a port chooser has `navigator.serial` and still cannot grant. `requestPort()` rejects `NotFoundError` with a user gesture present. | Measured | Nothing in code. A chooser is the host browser's to provide. |
-| 11 | JS interop cannot cross a thread even with multithreading enabled, and .NET 11 does not change this. | Documented | Not before .NET 12, and not promised there. See [Runtime timeline](#runtime-timeline). |
+| 2 | There is no unsolicited appeared edge. An ungranted device is invisible, and a grant revoked in browser settings is withdrawn silently. `DeviceAppeared` can only ever fire from the backend's own request resolving. | Documented | Nothing. |
+| 3 | Topology has no source. No parent, no port number, no hub chain. `ParentId`, `PortNumber`, `LocationPath` and `PortPath` (ADR-0078/0079/0080) cannot be populated, so the rooted forest cannot be built. | Documented | Nothing. |
+| 4 | For a USB serial port, `getInfo()` returns VID and PID only. `SerialPortInfo` also defines `bluetoothServiceClassId`, which was absent on the measured device. Two identical bridges are indistinguishable either way, so `DeviceInfo.Id` has no durable source on this API. | Measured, Documented | Nothing keys it reliably. Object reference holds across two enumerations in one document and is unproven across a replug. |
+| 5 | `EnrichmentPipeline.RunRegisteredSync` blocks on `GetAwaiter().GetResult()`. On the single WASM thread an enricher that awaits a JS promise deadlocks the app. | Source | Give the browser provider an async-only enrichment path, or register no async enricher. |
+| 6 | `DeviceWatcher` offloads startup with `Task.Run` to spare a UI thread. WASM has no thread pool, so the offload is a no-op and the documented "events fire on thread-pool threads" contract stops holding. | Source | Document the browser exception, or gate the offload on `Environment.ProcessorCount`/OS check. |
+| 7 | Driver state has no analogue: `Status`, `Driver`, `DriverVersion`, `ClassGuid`, `ClassName`, and everything `DeviceFaultClassifier` reads. | Documented | Nothing. The browser does not model a driver. |
+| 8 | `ContainerId` has no analogue. A composite device's interfaces cannot be grouped. | Documented | Nothing. |
+| 9 | Reset has no analogue beyond WebUSB's `reset()`. No port cycle, no forced re-enumerate. | Documented | Nothing for `ResetStrategy`'s power rung. |
+| 10 | Grant-scoped enumeration maps onto `EnumerateAsync`, and physical arrival and departure map onto activated/deactivated. The two contract transitions land on separate sources: the grant is the device-tree analogue, `connect`/`disconnect` is presence. | Measured, Documented | Already answered. See [Tier 1](#tier-1---grant-scoped-enumeration-and-lifecycle). |
+| 11 | An embedded Chromium without a port chooser has `navigator.serial` and still cannot grant. `requestPort()` rejects `NotFoundError` with a user gesture present. | Measured | Nothing in code. A chooser is the host browser's to provide. |
+| 12 | JS interop cannot cross a thread even with multithreading enabled, and .NET 11 does not change this. | Documented | Not before .NET 12, and not promised there. See [Runtime timeline](#runtime-timeline). |
 
 ---
 
@@ -133,23 +134,37 @@ Read from the granted port at runtime:
 }
 ```
 
-`4292` is `0x10C4` and `60000` is `0xEA60`. `port.connected` read `true`; `getSignals()` threw
-`InvalidStateError` on a closed port. (Measured.)
+`4292` is `0x10C4` and `60000` is `0xEA60`. `port.connected` read `true` while `getSignals()` threw
+`InvalidStateError` on the same port, in a document that had never opened it. `connected` therefore
+tracks the port's link to its device, not whether script has called `open()`. (Measured.)
 
-That maps onto the contract without distortion:
+`connect` and `disconnect` exist in two places. Both `navigator.serial` and `SerialPort` carry
+`onconnect` and `ondisconnect`, and `SerialPort` carries `connected`. (Measured on
+`SerialPort.prototype`; Documented on MDN.) A backend listens on the container, because a port it
+has never seen has no object to attach a handler to.
 
-| Contract member | Browser source |
-|---|---|
-| `EnumerateAsync` | `navigator.{serial.getPorts, usb.getDevices, hid.getDevices, bluetooth.getDevices}()` |
-| `DeviceAppeared` / `DeviceDisappeared` | container-level `connect` / `disconnect` events |
-| `IsActive` | `port.connected` |
-| `DeviceActivated` / `DeviceDeactivated` | per-port `connect` / `disconnect` events |
-| `DevicePropertyChanged` | no source; a granted device's descriptor does not change under you |
+The contract keeps two transitions orthogonal: appeared and disappeared mean the device entered or
+left the OS device tree, activated and deactivated mean it became physically active or inactive. The
+browser does not supply both from one source, and an earlier draft of this table wrongly mapped the
+same event pair to both rows.
 
-Within grant scope the browser raises arrival edges for a live plug-in. Worth recording because the
-Windows provider does not: its `Appeared` fires only from the startup snapshot. A browser backend
-would be the first one where a live arrival is a push edge rather than a poll. (Measured for the
-browser; Source for Windows.)
+| Contract member | Browser source | Note |
+|---|---|---|
+| `EnumerateAsync` | `navigator.{serial.getPorts, usb.getDevices, hid.getDevices, bluetooth.getDevices}()` | granted devices only |
+| `DeviceAppeared` | a grant arriving, which is only ever the backend's own `requestPort()` / `requestDevice()` resolving | no event exists; the browser never announces a grant |
+| `DeviceDisappeared` | `forget()` | the backend's own call. A grant revoked through browser settings is withdrawn silently |
+| `DeviceActivated` / `DeviceDeactivated` | `connect` / `disconnect` | physical arrival and departure of a granted device |
+| `IsActive` | `port.connected` | independent of open state (Measured) |
+| `DevicePropertyChanged` | no source | a granted device's descriptor does not change under you |
+
+The grant is the browser's analogue of the OS device tree, so the two transitions do land on
+distinct sources. What no browser API offers is an *unsolicited* appeared edge: a device the user has
+never granted is invisible, and a revocation raises nothing.
+
+Whether a live plug-in actually dispatches the container event was not observed here. Only the
+handler surface was. The Windows provider raises no live arrival at all, its `Appeared` firing only
+from the startup snapshot, so if the browser does dispatch, a browser backend would be the first one
+where arrival is a push edge. (Documented, with the dispatch unmeasured; Source for Windows.)
 
 ---
 
@@ -169,9 +184,19 @@ browser; Source for Windows.)
 | `IsActive` | `opened` | `opened` | `connected` | `gatt.connected` |
 | `BusType` | USB, constant | USB, constant | unknown | Bluetooth, constant |
 
-Web Serial is the thinnest of the four and it is the one the flashing path uses. The WebUSB and
-WebHID columns are Documented, not Measured: the profile carried zero USB and zero HID grants, so
-neither could be sampled. The Web Serial column is Measured.
+The `IsActive` row is not one concept across the four. Web Serial's `connected` is device presence,
+measured true on a port this document never opened. WebUSB's and WebHID's `opened` is whether script
+holds the device open, which is a different axis and closer to nothing in the contract. A backend
+would have to derive `IsActive` per API rather than reading one property name.
+
+Web Serial is the thinnest of the four and it is the one the flashing path uses. `SerialPortInfo`
+also defines `bluetoothServiceClassId`, for a port backed by a Bluetooth RFCOMM service rather than
+USB; `getInfo()` on the measured USB port returned the two USB keys and nothing else, so the
+"nothing else" here is about that device, not about the API. (Measured for the port; Documented for
+the dictionary.)
+
+The WebUSB and WebHID columns are Documented, not Measured: the profile carried zero USB and zero
+HID grants, so neither could be sampled. The Web Serial column is Measured.
 
 `MediaDevices.enumerateDevices()` is a fifth source, covering cameras and microphones with a
 `devicechange` event, and is the only one with no user-gesture gate for the device list itself.
@@ -186,14 +211,21 @@ reconnect of the same device. Three cases:
 
 - **WebUSB.** `serialNumber` when the device provides one. A device that ships a blank or duplicated
   serial descriptor gives a colliding id, the same hazard the desktop providers already have.
-- **Web Serial.** Nothing. Two identical bridges return the same `getInfo()`. (Measured.)
-- **All APIs.** `getPorts()` and `getDevices()` return the same JS object for the same underlying
-  device within one document, so a synthesized id keyed on object reference is stable across an
-  unplug and replug within a page session, and is gone on reload.
+  (Documented.)
+- **Web Serial.** Nothing usable. Two identical bridges return the same `getInfo()`. (Measured.)
 
-A browser backend therefore satisfies `DeviceId`'s invariant only within a document's lifetime. That
-is a weaker guarantee than the interface documents, and it is the thing an ADR would have to decide:
-narrow the contract, or let the browser provider state the exception.
+Object reference is the obvious next candidate, and it does not survive scrutiny as a resolution.
+Two `getPorts()` calls in one document returned the identical `SerialPort` object, `a[0] === b[0]`.
+(Measured.) That is the whole of the evidence. It says nothing about the three other APIs, and
+nothing about an unplug and replug, which was never performed. No Web API documents wrapper-object
+identity as a durable device identifier across reconnection, so a backend keyed this way can report
+a replugged device as a new one.
+
+The honest position is that a browser backend cannot satisfy `DeviceId`'s documented invariant.
+Whatever it synthesizes is at best stable within a document and is gone on reload, so a caller that
+persists an association against an id will lose it. An ADR has to either narrow the contract or let
+the browser provider declare the exception; it cannot rely on object identity to paper over the gap.
+Both experiments that would move this are in the closing table.
 
 ---
 
@@ -327,3 +359,6 @@ not.
 | Does finding 4 actually deadlock, rather than merely stall? | Register an enricher that awaits a `[JSImport]` promise, enumerate, and observe. |
 | Is the two-call read still required on .NET 11? | Rebuild the spike against the .NET 11 SDK and restore the `Task<byte[]>` signature. |
 | Does a grant survive a browser restart? | Reload after restarting Chromium and call `getPorts()`. |
+| Does the same JS object come back after a physical replug? | Hold the `SerialPort` from `getPorts()`, unplug the bridge, replug it, call `getPorts()` again and compare by reference. Repeat on WebUSB and WebHID, which were never sampled. |
+| Does a live plug-in actually dispatch the container `connect` event? | Register `navigator.serial.onconnect`, then plug in a granted bridge. Only the handler surface was observed here, never a dispatch. |
+| Does a grant revoked in browser settings raise anything? | Revoke the site's serial permission from Chromium settings with the page open and watch for any event. |
