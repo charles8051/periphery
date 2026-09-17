@@ -207,7 +207,7 @@ Labels require permission. (Documented.)
 ## Identity
 
 `DeviceInfo.Id` is `required`, and `DeviceId` documents it as stable across a disconnect and
-reconnect of the same device. Three cases:
+reconnect of the same device. Two cases have a candidate source:
 
 - **WebUSB.** `serialNumber` when the device provides one. A device that ships a blank or duplicated
   serial descriptor gives a colliding id, the same hazard the desktop providers already have.
@@ -225,7 +225,8 @@ The honest position is that a browser backend cannot satisfy `DeviceId`'s docume
 Whatever it synthesizes is at best stable within a document and is gone on reload, so a caller that
 persists an association against an id will lose it. An ADR has to either narrow the contract or let
 the browser provider declare the exception; it cannot rely on object identity to paper over the gap.
-Both experiments that would move this are in the closing table.
+The experiments that would move this are in the closing table: the replug comparison across all four
+APIs, and whether a grant survives a browser restart.
 
 ---
 
