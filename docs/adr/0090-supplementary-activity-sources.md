@@ -1,7 +1,7 @@
 ---
 title: "ADR-0090: A supplementary activity source reports levels into the watcher, and never touches presence"
 status: "Proposed"
-status_note: "No code. Written to discharge the dependency ADR-0085 D7 §2 creates and does not settle: core has no extension point through which a non-OS source can contribute activity edges. Tracked as issue #274."
+status_note: "No code. Written to discharge the dependency ADR-0085 D7 §2 creates and does not settle: core has no extension point through which a non-OS source can contribute activity edges. Amended 2026-09-18: D2 gains the edge-not-value rule, which closes the EnumerateAsync open question. Tracked as issue #274."
 date: "2026-09-18"
 authors: "@charles8051"
 tags: ["architecture", "decision", "device-watcher", "activity", "state-model", "bluetooth", "extension-package", "adr-0087"]
@@ -124,6 +124,36 @@ makes a correct source small enough to be worth writing.
 
 This is ADR-0073's shape: the source reports the observation, the watcher renders the verdict.
 
+#### A source contributes an edge, never a value (amendment, 2026-09-18)
+
+`EnumerateAsync` is unaffected by this ADR, and gains no reconcile step.
+
+ADR-0085 Context §1 measured a paired BR/EDR keyboard over a power-off/power-on cycle:
+`DeviceInfo.IsActive` on the `BTHENUM\DEV_…` node tracked the link correctly **in both
+directions**, agreeing with `BluetoothDeviceInfo.Connected` within ~2 s, while `DeviceWatcher`
+raised zero edges. The stored value was right. Only the notification was missing.
+
+Enumeration re-reads the OS on every call, so an enumeration is already a poll, and already
+returns the answer a supplementary source would have supplied. There is no divergence to
+reconcile and none to document.
+
+That is the general rule, not an observation about one transport. A source exists to supply the
+**edge** the OS does not push. It does not exist to correct a **value** the OS reports wrongly,
+and a source built to do the second thing is solving a different problem with the wrong seam.
+
+The rule also tightens D3. A source contradicting a value the OS would return on a fresh read is
+more likely to be the stale party than the OS is, which is an argument for keeping declared
+scopes narrow rather than convenient.
+
+**What would reopen this.** The measurement is BR/EDR. ADR-0085's "LE agreement" open question
+is still unanswered: whether `BluetoothDeviceInfo.Connected` agrees with `IsActive` on an LE
+peripheral was not measurable with the classic package, which does not enumerate one. If an LE
+devnode's `IsActive` turns out to be stale on read, enumeration *is* affected — and the fix is a
+value-contributing seam, which is [ADR-0026](0026-enricher-io-boundary.md)'s enricher path rather
+than a reconcile step here. ADR-0026 Option A bars an enricher from opening a device handle, so
+whether a `Refresh()` plus `Connected` query clears that bar is its own question, and one this
+ADR does not need to answer unless the LE measurement comes back badly.
+
 ### D3 — Scoped authority, not global precedence
 
 A source is registered with a `DeviceFilter` naming the devices it speaks for. Inside that scope
@@ -220,10 +250,11 @@ done. It does not reach the two consumers that make the signal worth having.
 
 ## Open questions
 
-- **Does a supplementary observation affect `EnumerateAsync`?** Enumeration does not pass through
-  the watcher, so a snapshot's `IsActive` would still come from the platform provider while the
-  watcher's belief differs. Either that divergence is documented as acceptable, or enumeration
-  grows a reconcile step it does not have today.
+- **Closed 2026-09-18 — `EnumerateAsync` is unaffected.** The draft asked whether a snapshot's
+  `IsActive` diverges from the watcher's belief. It does not: ADR-0085 Context §1 measured the
+  devnode value as correct on read in both directions while zero edges fired, so enumeration is
+  itself a poll. See [D2](#a-source-contributes-an-edge-never-a-value-amendment-2026-09-18),
+  which also records what would reopen it.
 - **Runtime registration.** D4 settles construction-time only. Whether a source can be added or
   removed while the watcher runs is deferred, because it interacts with the startup-walk ordering
   D5 currently sidesteps.
