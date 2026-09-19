@@ -19,7 +19,7 @@ which is itself Proposed with no code.
 |--------------|--------------------------------------------------|
 | Author       | Charles Lee                                      |
 | Created      | 2026-09-18                                       |
-| Last Updated | 2026-09-18                                       |
+| Last Updated | 2026-09-19                                       |
 | Project      | `Periphery.Bootloader.Nordic`                    |
 | Branch       | `claude/nordic-bootloader-protocols-9c2756`      |
 
@@ -82,9 +82,38 @@ device at all — not "you can flash this today". **No path has a verified end-t
 | **A — UART** | any nRF running the SDK serial bootloader | SLIP over a UART bridge | `Periphery.Serial` | `Probe` | **Yes.** `Periphery.Serial` ships ([`BclSerialDuplexPipe`](../../../../src/Periphery.Serial/BclSerialDuplexPipe.cs)) |
 | **B — USB CDC ACM** | nRF52840 Dongle and any nRF52840 running the USB serial bootloader | SLIP over a CDC ACM port | `Periphery.Serial` (the CDC device enumerates as a port) | `Passive` **once the ids are measured** — see OQ-2 | **Yes**, unmeasured |
 | **C — BLE GATT** | any nRF running the BLE bootloader | GATT, no SLIP | none | n/a | **No.** Periphery has no GATT client |
+| **D — BLE GATT in a browser** | same as C | same as C | Web Bluetooth, via a WASM host | opaque per-origin `id` | **Not attempted.** The API exists and is not blocked; nothing has been built or run |
 
 Paths A and B are the same protocol over the same framing reaching the same `IDuplexPipe`.
 They differ only in identification, which is why they are one package and not two.
+
+### Path D — what is and is not known (added 2026-09-19)
+
+Chromium's Web Bluetooth is a GATT client: central role only, no peripheral role, no advertising.
+That is the whole of what path C needs, so the question is only whether Chromium permits it.
+
+**It does, for this protocol.** Chromium refuses a set of GATT services outright via the
+[Web Bluetooth GATT blocklist][gatt-blocklist]. Checked 2026-09-19, the file carries Nordic's
+**legacy** DFU service `00001530-1212-efde-1523-785feabcd123` as fully blocked, alongside TI's
+OTA and Cypress's Bootloader services. Neither `0xFE59` nor the MCUboot SMP service appears
+anywhere in it. So the pre-SDK-12 protocol is barred from the browser and the two current ones
+are not.
+
+Two constraints apply to any implementation. `0xFE59` must be named in `optionalServices` at
+`requestDevice()` time or it is invisible after connecting. And `requestDevice()` needs a user
+gesture and shows a chooser, so path D is inherently operator-driven, never unattended.
+
+`INordicDfuTransport` absorbs this without a shape change: a browser transport implements the
+same three members over `BluetoothRemoteGATTCharacteristic` instead of over 32feet. The
+[browser/WASM exploration](../../../explorations/browser-wasm-device-backend-2026-09.md) already
+measured the serial half of this repository's flashing stack running in Blazor WebAssembly
+against live hardware, so the core would not be the novel part.
+
+One inversion worth recording against OQ-5. `BluetoothDevice.id` is opaque but stable per origin,
+so the rebind problem that defers `BleDeviceProxy` on the desktop (ADR-0083) does not arise the
+same way in a browser. Path D is blocked on nobody having tried it, not on an identity gap.
+
+[gatt-blocklist]: https://github.com/WebBluetoothCG/registries/blob/master/gatt_blocklist.txt
 
 ---
 
@@ -438,6 +467,14 @@ dongle over USB CDC.
   the codec cannot be created until after `MTU Get` completes. Check that against
   `CallAndResponse`'s framing lifecycle; if a codec must exist before the first exchange, the
   handshake needs a second codec instance or a mutable bound.
+- **OQ-10 — is path D worth pursuing before path C?** Added 2026-09-19. Web Bluetooth reaches
+  `0xFE59` and is not blocklisted, `BluetoothDevice.id` sidesteps OQ-5's rebind problem, and the
+  [browser/WASM exploration](../../../explorations/browser-wasm-device-backend-2026-09.md) has
+  already run this repository's serial flashing stack in Blazor WebAssembly against live
+  hardware. So the browser may be the cheaper route to a *working* BLE flash than the desktop
+  one, which is blocked on ADR-0085 shipping and on OQ-5. It is also a different product: a page
+  an operator opens, not a library a consumer references. Decide whether that is in scope for
+  this repository before anyone starts on it.
 
 ---
 
