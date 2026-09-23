@@ -364,6 +364,7 @@ Periphery.DeviceTracker.DeviceTracker(System.Action<Periphery.DeviceFilter!>! co
 Periphery.DeviceTracker.DeviceTracker(string? name, params Periphery.DeviceProfile![]! profiles) -> void
 Periphery.DeviceTracker.Disappeared -> System.EventHandler<Periphery.DeviceTrackerTransition>?
 Periphery.DeviceTracker.IsActive.get -> bool
+Periphery.DeviceTracker.IsConfigured.get -> bool
 Periphery.DeviceTracker.IsPresent.get -> bool
 Periphery.DeviceTracker.Name.get -> string?
 Periphery.DeviceTracker.PropertyChanged -> System.EventHandler<Periphery.DevicePropertyChangedEventArgs!>?
@@ -380,6 +381,8 @@ Periphery.DeviceTrackerState.Device.get -> Periphery.DeviceInfo?
 Periphery.DeviceTrackerState.Device.init -> void
 Periphery.DeviceTrackerState.DeviceTrackerState(Periphery.DeviceInfo? Device, Periphery.DeviceActivityStatus ActivityStatus, Periphery.DeviceProfile? ActiveProfile) -> void
 Periphery.DeviceTrackerState.IsActive.get -> bool
+Periphery.DeviceTrackerState.IsConfigured.get -> bool
+Periphery.DeviceTrackerState.IsConfigured.init -> void
 Periphery.DeviceTrackerState.IsPresent.get -> bool
 Periphery.DeviceTrackerTransition
 Periphery.DeviceTrackerTransition.After.get -> Periphery.DeviceTrackerState!

@@ -9,6 +9,23 @@ change does not, so behaviour changes are listed too. [CHANGELOG.md](../CHANGELO
 is the full record of each release. Releases before `v4.2.0-alpha.1` are described only
 there.
 
+## `v4.3.0` — since `v4.2.0`
+
+### 1. An empty profile list no longer throws
+
+`new DeviceTracker(name, profiles)` and `DeviceTracker.ReplaceProfiles(profiles)` threw
+`ArgumentException` when `profiles` was empty. They now accept it and give an unassigned
+tracker: it matches nothing, stays `Absent`, and reports `IsConfigured` as `false`.
+
+> **This one does not announce itself.** Code that builds the profile list from
+> configuration and relied on the exception to reject an empty list now gets a tracker
+> that never binds, with no error.
+
+If an empty list is a configuration mistake in your application, check for it before
+constructing the tracker, or check `tracker.IsConfigured` afterwards.
+`DeviceTracker.Reconfigure` and `new DeviceProfile` still reject a filter with no
+criteria.
+
 ## `v4.2.0` — since `v4.2.0-alpha.1`
 
 ### 1. A proxy whose session keeps refaulting now gives up
