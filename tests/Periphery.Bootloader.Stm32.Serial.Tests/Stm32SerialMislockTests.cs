@@ -71,43 +71,43 @@ public class Stm32SerialMislockTests
     }
 
     [Fact]
-    public async Task Sync_reports_the_mislock_rather_than_a_missing_part()
+    public Task Sync_reports_the_mislock_rather_than_a_missing_part() => Simulation.RunAsync(async time =>
     {
-        await using var device = new FakeStm32Bootloader
+        await using var device = new FakeStm32Bootloader(timeProvider: time)
         {
             StartSynced = true,
             MislockedBaudRate = MislockedBaud,
         };
 
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-            () => Stm32SerialProgrammer.ConnectAsync(
-                Device, device, Quick, setBaudRate: b => device.HostBaudRate = b));
+            () => Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(
+                Device, device, Quick with { TimeProvider = time }, setBaudRate: b => device.HostBaudRate = b)));
 
         Assert.Contains($"autobauded to {MislockedBaud}", ex.Message);
         Assert.Contains("reset the part", ex.Message);
-    }
+    });
 
     [Fact]
-    public async Task Sync_puts_the_port_back_on_the_intended_rate()
+    public Task Sync_puts_the_port_back_on_the_intended_rate() => Simulation.RunAsync(async time =>
     {
-        await using var device = new FakeStm32Bootloader
+        await using var device = new FakeStm32Bootloader(timeProvider: time)
         {
             StartSynced = true,
             MislockedBaudRate = MislockedBaud,
         };
 
         await Assert.ThrowsAsync<Stm32SerialException>(
-            () => Stm32SerialProgrammer.ConnectAsync(
-                Device, device, Quick, setBaudRate: b => { device.BaudRatesSeen.Add(b); device.HostBaudRate = b; }));
+            () => Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(
+                Device, device, Quick with { TimeProvider = time }, setBaudRate: b => { device.BaudRatesSeen.Add(b); device.HostBaudRate = b; })));
 
         // It has to probe the suspect rate to prove anything, but the caller owns this port and
         // did not ask for it to be left retuned.
         Assert.Contains(MislockedBaud, device.BaudRatesSeen);
         Assert.Equal(Quick.BaudRate, device.HostBaudRate);
-    }
+    });
 
     [Fact]
-    public async Task Sync_reports_a_missing_part_when_nothing_answers_at_either_rate()
+    public Task Sync_reports_a_missing_part_when_nothing_answers_at_either_rate() => Simulation.RunAsync(async time =>
     {
         // The check must not turn every silence into a mis-lock diagnosis. A part that is simply
         // not there answers at neither rate, and the generic failure is the honest one.
@@ -121,37 +121,37 @@ public class Stm32SerialMislockTests
         await using var device = new SilentDevice();
 
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-            () => Stm32SerialProgrammer.ConnectAsync(
-                Device, device, Quick, setBaudRate: retunes.Add));
+            () => Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(
+                Device, device, Quick with { TimeProvider = time }, setBaudRate: retunes.Add)));
 
         Assert.Contains("no answer to the AN3155 sync byte", ex.Message);
         Assert.DoesNotContain("autobauded", ex.Message);
         Assert.Empty(retunes);
-    }
+    });
 
     [Fact]
-    public async Task Sync_reports_a_missing_part_when_the_caller_gave_no_way_to_retune()
+    public Task Sync_reports_a_missing_part_when_the_caller_gave_no_way_to_retune() => Simulation.RunAsync(async time =>
     {
         // A caller that owns only a pipe cannot change the rate, so the check cannot run. Saying
         // so by falling back to the generic failure beats guessing.
-        await using var device = new FakeStm32Bootloader
+        await using var device = new FakeStm32Bootloader(timeProvider: time)
         {
             StartSynced = true,
             MislockedBaudRate = MislockedBaud,
         };
 
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-            () => Stm32SerialProgrammer.ConnectAsync(Device, device, Quick));
+            () => Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(Device, device, Quick with { TimeProvider = time })));
 
         Assert.Contains("no answer to the AN3155 sync byte", ex.Message);
-    }
+    });
 
     [Fact]
-    public async Task Garbled_bytes_on_the_line_do_not_pass_for_a_reply()
+    public Task Garbled_bytes_on_the_line_do_not_pass_for_a_reply() => Simulation.RunAsync(async time =>
     {
         // The mis-locked part is not quiet — it is talking, and what arrives is the wreckage of a
         // real Get reply. None of it may be mistaken for an answer at the rate we are driving.
-        await using var device = new FakeStm32Bootloader
+        await using var device = new FakeStm32Bootloader(timeProvider: time)
         {
             StartSynced = true,
             MislockedBaudRate = MislockedBaud,
@@ -161,17 +161,17 @@ public class Stm32SerialMislockTests
             0xF1, 0x13, 0x61, 0x00, 0x01, 0x02, 0x21, 0x41, 0x61, 0x8C, 0xC3, 0xE3, 0x02, 0x22, 0xF1);
 
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-            () => Stm32SerialProgrammer.ConnectAsync(
-                Device, device, Quick, setBaudRate: b => device.HostBaudRate = b));
+            () => Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(
+                Device, device, Quick with { TimeProvider = time }, setBaudRate: b => device.HostBaudRate = b)));
 
         Assert.Contains("autobauded", ex.Message);
-    }
+    });
 
     /// <summary>A port with nothing on the far end: reads never complete, writes go nowhere.</summary>
     private sealed class SilentDevice : IDuplexPipe, IAsyncDisposable
     {
-        private readonly Pipe _toHost = new();
-        private readonly Pipe _toDevice = new();
+        private readonly Pipe _toHost = new(Simulation.InlinePipes);
+        private readonly Pipe _toDevice = new(Simulation.InlinePipes);
 
         public PipeReader Input => _toHost.Reader;
         public PipeWriter Output => _toDevice.Writer;

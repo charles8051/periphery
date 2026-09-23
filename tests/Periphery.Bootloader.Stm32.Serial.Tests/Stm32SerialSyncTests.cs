@@ -22,88 +22,64 @@ public class Stm32SerialSyncTests
         PortName = new SerialPortName("COM7"),
     };
 
-    // Short: the already-synced path is proven by a sync-byte timeout, and it is paid every time.
+    // Short: the already-synced path is proven by a sync-byte timeout.
     private static readonly Stm32SerialOptions Quick = Stm32SerialOptions.Default with
     {
         SyncTimeout = TimeSpan.FromMilliseconds(250),
         CommandTimeout = TimeSpan.FromMilliseconds(250),
     };
 
-    /// <summary>
-    /// Runs <paramref name="body"/> as a deterministic simulation on a fake clock, for a programmer
-    /// talking to a fake built on the same clock (ADR-0089).
-    /// </summary>
-    /// <remarks>
-    /// The fake's pipes continue inline, so a call into the programmer returns only once the
-    /// programmer and the fake are both waiting on a timer or done. That needs no
-    /// <see cref="SynchronizationContext"/> on the thread: .NET does not inline a task's awaiting
-    /// continuation while one is current, and xUnit installs one, so the body runs on the thread pool.
-    /// </remarks>
-    private static Task SimulateAsync(Func<Task> body) => Task.Run(body);
-
-    /// <summary>
-    /// Advances the clock to the earliest pending timer until <paramref name="run"/> completes. Inside
-    /// <see cref="SimulateAsync"/> nothing runnable is left whenever this checks, so that is exactly
-    /// what a patient clock does next, and the handshake sees the same order of events on every run.
-    /// </summary>
-    private static async Task DriveAsync(TimerSignalingFakeTimeProvider time, Task run)
-    {
-        while (!run.IsCompleted)
-            Assert.True(time.AdvanceToNextPendingTimer(), "the handshake is waiting on something other than a timer");
-        await run;
-    }
-
     [Fact]
-    public async Task Sync_succeeds_on_a_part_that_has_not_synced_since_reset()
+    public Task Sync_succeeds_on_a_part_that_has_not_synced_since_reset() => Simulation.RunAsync(async time =>
     {
         // The easy case, and the only one that ever worked: 0x7F drives autobaud, part ACKs.
-        await using var device = new FakeStm32Bootloader();
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time);
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        await programmer.SyncAsync(CancellationToken.None);
-    }
+        await Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
+    });
 
     [Fact]
-    public async Task Sync_succeeds_on_a_part_that_is_already_in_its_command_loop()
+    public Task Sync_succeeds_on_a_part_that_is_already_in_its_command_loop() => Simulation.RunAsync(async time =>
     {
         // The case that failed on hardware. The part is synced, so it takes 0x7F as an opcode and
         // says nothing, waiting for the complement. The old shell timed out here and reported the
         // part missing — on a part that was answering Get and Get ID perfectly.
-        await using var device = new FakeStm32Bootloader { StartSynced = true };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { StartSynced = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        await programmer.SyncAsync(CancellationToken.None);
-    }
+        await Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
+    });
 
     [Fact]
-    public async Task Sync_leaves_an_already_synced_part_on_a_clean_command_boundary()
+    public Task Sync_leaves_an_already_synced_part_on_a_clean_command_boundary() => Simulation.RunAsync(async time =>
     {
         // The repair, and the reason completing the frame matters more than reporting success:
         // the pending opcode has to be consumed, or the next command's first byte completes it
         // instead and every reply after that is off by a frame.
-        await using var device = new FakeStm32Bootloader { StartSynced = true, ProductId = 0x0468 };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { StartSynced = true, ProductId = 0x0468 };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        await programmer.SyncAsync(CancellationToken.None);
-        var identity = await programmer.IdentifyAsync();
+        await Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
+        var identity = await Simulation.DriveAsync(time, programmer.IdentifyAsync());
 
         Assert.Equal("0x468", identity.Chip);
         Assert.Equal("3.1", identity.BootloaderVersion);
-    }
+    });
 
     [Fact]
-    public async Task Sync_fails_when_nothing_answers_either_byte()
+    public Task Sync_fails_when_nothing_answers_either_byte() => Simulation.RunAsync(async time =>
     {
         // A dead line: not in the bootloader, wrong port, or RX/TX swapped. Silence to the sync
         // byte AND to the completed frame is the only thing that may fail.
         var pipe = new SilentPipe();
-        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Quick);
+        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Quick with { TimeProvider = time });
 
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-            () => programmer.SyncAsync(CancellationToken.None));
+            () => Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None)));
 
         Assert.Contains("did not answer Get", ex.Message);
-    }
+    });
 
     [Fact]
     public async Task Sync_survives_an_ACK_that_lands_after_the_deadline()
@@ -113,16 +89,15 @@ public class Stm32SerialSyncTests
         // next single byte got this wrong in the dangerous direction: it reported success while a
         // byte sat pending, and the next command desynchronised. Proving the boundary with Get
         // makes the distinction unnecessary.
-        await SimulateAsync(async () =>
+        await Simulation.RunAsync(async time =>
         {
-            var time = new TimerSignalingFakeTimeProvider();
             await using var device = new FakeStm32Bootloader(timeProvider: time)
             {
                 SyncAckDelay = TimeSpan.FromMilliseconds(400),   // vs the 250 ms sync deadline below
             };
             await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-            await DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
+            await Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
 
             // The scenario, not an accident of scheduling: the sync deadline was armed on this clock
             // before the part began holding its ACK back, so the ACK really was late.
@@ -130,7 +105,7 @@ public class Stm32SerialSyncTests
 
             // The proof that matters is not that Sync returned — it is that the session is usable.
             var identify = programmer.IdentifyAsync();
-            await DriveAsync(time, identify);
+            await Simulation.DriveAsync(time, identify);
             Assert.Equal("3.1", (await identify).BootloaderVersion);
         });
     }
@@ -143,9 +118,8 @@ public class Stm32SerialSyncTests
         // front of that drain and its tail behind it, and the tail is then read as the answer to
         // whatever goes out next. Draining until a whole window passes with nothing arriving is
         // evidence of a quiet line; an elapsed interval is only an assumption.
-        await SimulateAsync(async () =>
+        await Simulation.RunAsync(async time =>
         {
-            var time = new TimerSignalingFakeTimeProvider();
             await using var device = new FakeStm32Bootloader(timeProvider: time) { StartSynced = true, ProductId = 0x0468 };
             await using var programmer = new Stm32SerialProgrammer(Device, device, Stm32SerialOptions.Default with
             {
@@ -172,7 +146,7 @@ public class Stm32SerialSyncTests
                 }
             }
 
-            await DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
+            await Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None));
             trickling.Cancel();
             try { await trickle; } catch (OperationCanceledException) { }
 
@@ -183,7 +157,7 @@ public class Stm32SerialSyncTests
 
             // What matters is that the session is usable afterwards, not that Sync returned.
             var identify = programmer.IdentifyAsync();
-            await DriveAsync(time, identify);
+            await Simulation.DriveAsync(time, identify);
             Assert.Equal("0x468", (await identify).Chip);
         });
     }
@@ -196,9 +170,8 @@ public class Stm32SerialSyncTests
         // interleaving the settle exists to prevent, and no answer coming back could then be
         // attributed to what we sent. Refusing is the only honest option; the error names the
         // likely causes rather than blaming the part for not answering.
-        await SimulateAsync(async () =>
+        await Simulation.RunAsync(async time =>
         {
-            var time = new TimerSignalingFakeTimeProvider();
             await using var pipe = new ChatteringPipe(time, silenceAfterFirstWrite: TimeSpan.FromMilliseconds(250));
             await using var programmer = new Stm32SerialProgrammer(Device, pipe, Stm32SerialOptions.Default with
             {
@@ -216,7 +189,7 @@ public class Stm32SerialSyncTests
             // after the 200 ms sync deadline on every run, so the failure is the settle giving up, and
             // the message can say so.
             var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-                () => DriveAsync(time, programmer.SyncAsync(CancellationToken.None)));
+                () => Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None)));
             Assert.Contains("never fell quiet", ex.Message);
         });
     }
@@ -238,29 +211,33 @@ public class Stm32SerialSyncTests
     }
 
     [Fact]
-    public async Task Sync_fails_on_a_junk_answer()
+    public Task Sync_fails_on_a_junk_answer() => Simulation.RunAsync(async time =>
     {
         // Something is talking, but it is not an AN3155 bootloader at this baud. Note this needs a
         // device that *answers* junk: bytes already sitting on the line when we open are drained
         // by WithTimeout, deliberately, so pre-existing noise never reaches the sync read.
         await using var pipe = new AnsweringPipe(0x5A);
-        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Quick);
+        await using var programmer = new Stm32SerialProgrammer(Device, pipe, Quick with { TimeProvider = time });
 
         var ex = await Assert.ThrowsAsync<Stm32SerialException>(
-            () => programmer.SyncAsync(CancellationToken.None));
+            () => Simulation.DriveAsync(time, programmer.SyncAsync(CancellationToken.None)));
 
         Assert.Contains("0x5A", ex.Message);
-    }
+    });
 
     /// <summary>A pipe that answers one fixed byte to every byte written — a talkative non-target.</summary>
     private sealed class AnsweringPipe : IDuplexPipe, IAsyncDisposable
     {
-        private readonly Pipe _in = new();
-        private readonly Pipe _out = new();
+        private readonly Pipe _in = new(Simulation.InlinePipes);
+        private readonly Pipe _out = new(Simulation.InlinePipes);
         private readonly CancellationTokenSource _cts = new();
         private readonly Task _loop;
 
-        public AnsweringPipe(byte answer) => _loop = Task.Run(async () =>
+        // Started on the calling thread, like FakeStm32Bootloader on a clock: with inline pipes each
+        // answer is written before the write that prompted it returns.
+        public AnsweringPipe(byte answer) => _loop = AnswerAsync(answer);
+
+        private async Task AnswerAsync(byte answer)
         {
             try
             {
@@ -281,7 +258,7 @@ public class Stm32SerialSyncTests
                 }
             }
             catch (OperationCanceledException) { }
-        });
+        }
 
         public PipeReader Input => _in.Reader;
         public PipeWriter Output => _out.Writer;
@@ -365,8 +342,8 @@ public class Stm32SerialSyncTests
     /// <summary>A pipe that accepts writes and never answers.</summary>
     private sealed class SilentPipe : IDuplexPipe
     {
-        private readonly Pipe _in = new();
-        private readonly Pipe _out = new();
+        private readonly Pipe _in = new(Simulation.InlinePipes);
+        private readonly Pipe _out = new(Simulation.InlinePipes);
         public PipeReader Input => _in.Reader;
         public PipeWriter Output => _out.Writer;
     }

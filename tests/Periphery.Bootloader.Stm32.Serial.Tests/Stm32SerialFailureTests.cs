@@ -15,7 +15,8 @@ public class Stm32SerialFailureTests
         PortName = new SerialPortName("COM7"),
     };
 
-    // Short deadlines: the refusal cases are proven by a timeout, and the default is 5 s.
+    // Short deadlines: the refusal cases are proven by a timeout. They run on a fake clock, so the
+    // length sets the order of events rather than how long a test takes.
     private static readonly Stm32SerialOptions Quick = Stm32SerialOptions.Default with
     {
         CommandTimeout = TimeSpan.FromMilliseconds(250),
@@ -28,19 +29,19 @@ public class Stm32SerialFailureTests
     // ── Finding 1: a transport failure must reach the caller as a FlashResult ──
 
     [Fact]
-    public async Task Flash_returns_a_failure_when_the_transport_closes_mid_flash()
+    public Task Flash_returns_a_failure_when_the_transport_closes_mid_flash() => Simulation.RunAsync(async time =>
     {
         // The cable-unplugged case. CallAndResponse raises TransceiverTransportException, which
         // derives straight from Exception — it used to escape FlashAsync entirely, so every caller
         // treating the contract as returning a FlashResult got an unhandled exception instead.
-        await using var device = new FakeStm32Bootloader { DisconnectAfterCommands = 3 };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { DisconnectAfterCommands = 3 };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(FlashBase, 2000), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(FlashBase, 2000), FlashOptions.Default));
 
         Assert.False(result.Success);
         Assert.Contains("transport closed mid-command", result.Error);
-    }
+    });
 
     // ── Finding 2: an image outside flash must be refused, not truncated ──
 
@@ -59,17 +60,17 @@ public class Stm32SerialFailureTests
     }
 
     [Fact]
-    public async Task Flash_reports_an_out_of_range_image_as_a_failure_not_an_exception()
+    public Task Flash_reports_an_out_of_range_image_as_a_failure_not_an_exception() => Simulation.RunAsync(async time =>
     {
-        await using var device = new FakeStm32Bootloader();
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time);
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(0x1FFF7800, 16), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(0x1FFF7800, 16), FlashOptions.Default));
 
         Assert.False(result.Success);
         Assert.Contains("Extended Erase can address", result.Error);
         Assert.Empty(device.ErasedPageCounts);   // nothing was erased on the way to finding out
-    }
+    });
 
     [Fact]
     public void Plan_accepts_an_image_at_the_page_count_limit()
@@ -114,17 +115,17 @@ public class Stm32SerialFailureTests
     }
 
     [Fact]
-    public async Task Flash_refuses_a_below_base_image_without_writing_anything()
+    public Task Flash_refuses_a_below_base_image_without_writing_anything() => Simulation.RunAsync(async time =>
     {
-        await using var device = new FakeStm32Bootloader();
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time);
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(0x00000000, 16), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(0x00000000, 16), FlashOptions.Default));
 
         Assert.False(result.Success);
         Assert.Contains("below the flash base", result.Error);
         Assert.Empty(device.ErasedPageCounts);
-    }
+    });
 
     // ── Finding 3: protocol limits are enforced where the caller can see them ──
 
@@ -156,93 +157,93 @@ public class Stm32SerialFailureTests
     // ── Finding 4: a refused Go is a failure, not a successful leave ──
 
     [Fact]
-    public async Task Flash_fails_when_the_bootloader_refuses_Go()
+    public Task Flash_fails_when_the_bootloader_refuses_Go() => Simulation.RunAsync(async time =>
     {
         // The write and the verify both succeeded; only the jump was refused. Reporting success
         // here told the operator the application was running while the part sat in the bootloader.
-        await using var device = new FakeStm32Bootloader { RefuseGo = true };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { RefuseGo = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
         var data = new byte[64];
-        var result = await programmer.FlashAsync(
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(
             FirmwarePayload.FromImage(FirmwareImage.FromBytes(FlashBase, data), FirmwareFormat.RawBinary),
-            FlashOptions.Default);
+            FlashOptions.Default));
 
         Assert.False(result.Success);
         Assert.Contains("refused Go", result.Error);
 
         // ...and the bytes did land, which is what the message promises.
         Assert.True(device.Read(FlashBase, 64).SequenceEqual(data));
-    }
+    });
 
     [Fact]
-    public async Task LeaveAsync_throws_when_the_bootloader_refuses_Go()
+    public Task LeaveAsync_throws_when_the_bootloader_refuses_Go() => Simulation.RunAsync(async time =>
     {
-        await using var device = new FakeStm32Bootloader { RefuseGo = true };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { RefuseGo = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var ex = await Assert.ThrowsAsync<Stm32SerialException>(() => programmer.LeaveAsync());
+        var ex = await Assert.ThrowsAsync<Stm32SerialException>(() => Simulation.DriveAsync(time, programmer.LeaveAsync()));
 
         Assert.Contains("refused Go", ex.Message);
-    }
+    });
 
     [Fact]
-    public async Task Flash_fails_when_the_bootloader_NACKs_the_jump_address()
+    public Task Flash_fails_when_the_bootloader_NACKs_the_jump_address() => Simulation.RunAsync(async time =>
     {
         // The stage the first fix missed. AN3155 3.4 has the part answer the address frame before
         // it jumps, so a NACK there means it did not jump — and matching on ACK alone made that
         // indistinguishable from a part that jumped and stopped answering.
-        await using var device = new FakeStm32Bootloader { RefuseGoAddress = true };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { RefuseGoAddress = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default));
 
         Assert.False(result.Success);
         Assert.Contains("refused the jump address 0x08000000", result.Error);
-    }
+    });
 
     [Fact]
-    public async Task A_silent_part_after_the_address_frame_still_counts_as_a_jump()
+    public Task A_silent_part_after_the_address_frame_still_counts_as_a_jump() => Simulation.RunAsync(async time =>
     {
         // The other half of that distinction, and the reason a missing ACK is not a hard failure:
         // a part that resets promptly can lose the byte. Silence must not fail a flash that
         // actually succeeded. This device ACKs the Go command, takes the address frame, and then
         // says nothing at all.
-        await using var device = new FakeStm32Bootloader { SilentOnGoAddress = true };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { SilentOnGoAddress = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default));
 
         Assert.True(result.Success, result.Error);
-    }
+    });
 
     [Fact]
-    public async Task Flash_fails_when_the_line_drops_during_the_Go_address_stage()
+    public Task Flash_fails_when_the_line_drops_during_the_Go_address_stage() => Simulation.RunAsync(async time =>
     {
         // Silence after the address frame reads as a jump, but a transport failure is not silence.
         // The cable came out after the command was ACKed, so the part's post-Go state is unknown —
         // reporting a successful flash would be a guess. This device ACKs the Go command and then
         // closes the pipe instead of answering the address frame.
-        await using var device = new FakeStm32Bootloader { DisconnectOnGoAddress = true };
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { DisconnectOnGoAddress = true };
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default));
 
         Assert.False(result.Success);
         Assert.Contains("transport closed mid-command", result.Error);
-    }
+    });
 
     [Fact]
-    public async Task A_normal_flash_still_leaves_cleanly()
+    public Task A_normal_flash_still_leaves_cleanly() => Simulation.RunAsync(async time =>
     {
         // The counterpart: splitting Go into its two round trips must not break the happy path.
-        await using var device = new FakeStm32Bootloader();
-        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick);
+        await using var device = new FakeStm32Bootloader(timeProvider: time);
+        await using var programmer = new Stm32SerialProgrammer(Device, device, Quick with { TimeProvider = time });
 
-        var result = await programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default);
+        var result = await Simulation.DriveAsync(time, programmer.FlashAsync(Payload(FlashBase, 64), FlashOptions.Default));
 
         Assert.True(result.Success, result.Error);
-    }
+    });
 
     // ── Finding 5: OpenAsync wraps a bad port configuration ──
 
