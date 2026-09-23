@@ -23,57 +23,57 @@ public class Stm32SerialConnectTests
     };
 
     [Fact]
-    public async Task Connect_completes_the_handshake_on_a_fresh_part()
+    public Task Connect_completes_the_handshake_on_a_fresh_part() => Simulation.RunAsync(async time =>
     {
-        await using var device = new FakeStm32Bootloader { ProductId = 0x0468 };
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { ProductId = 0x0468 };
 
-        await using var programmer = await Stm32SerialProgrammer.ConnectAsync(Device, device, Quick);
+        await using var programmer = await Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(Device, device, Quick with { TimeProvider = time }));
 
-        Assert.Equal("0x468", (await programmer.IdentifyAsync()).Chip);
-    }
+        Assert.Equal("0x468", (await Simulation.DriveAsync(time, programmer.IdentifyAsync())).Chip);
+    });
 
     [Fact]
-    public async Task Connect_completes_the_handshake_on_an_already_synced_part()
+    public Task Connect_completes_the_handshake_on_an_already_synced_part() => Simulation.RunAsync(async time =>
     {
         // The state a probe loop finds on every cycle after the first.
-        await using var device = new FakeStm32Bootloader { StartSynced = true, ProductId = 0x0468 };
+        await using var device = new FakeStm32Bootloader(timeProvider: time) { StartSynced = true, ProductId = 0x0468 };
 
-        await using var programmer = await Stm32SerialProgrammer.ConnectAsync(Device, device, Quick);
+        await using var programmer = await Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(Device, device, Quick with { TimeProvider = time }));
 
-        Assert.Equal("0x468", (await programmer.IdentifyAsync()).Chip);
-    }
+        Assert.Equal("0x468", (await Simulation.DriveAsync(time, programmer.IdentifyAsync())).Chip);
+    });
 
     [Fact]
-    public async Task Connect_leaves_the_callers_transport_open()
+    public Task Connect_leaves_the_callers_transport_open() => Simulation.RunAsync(async time =>
     {
         // Ownership is unchanged: whoever created the pipe still closes it. A probe loop reusing
         // its port for the next cycle depends on this.
-        await using var device = new FakeStm32Bootloader();
+        await using var device = new FakeStm32Bootloader(timeProvider: time);
 
-        await using (var programmer = await Stm32SerialProgrammer.ConnectAsync(Device, device, Quick))
+        await using (var programmer = await Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(Device, device, Quick with { TimeProvider = time })))
         {
-            await programmer.IdentifyAsync();
+            await Simulation.DriveAsync(time, programmer.IdentifyAsync());
         }
 
         // The programmer is disposed; the transport is not, so a second connect still works.
-        await using var again = await Stm32SerialProgrammer.ConnectAsync(Device, device, Quick);
-        Assert.Equal("3.1", (await again.IdentifyAsync()).BootloaderVersion);
-    }
+        await using var again = await Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(Device, device, Quick with { TimeProvider = time }));
+        Assert.Equal("3.1", (await Simulation.DriveAsync(time, again.IdentifyAsync())).BootloaderVersion);
+    });
 
     [Fact]
-    public async Task Connect_does_not_hand_back_a_programmer_when_the_handshake_fails()
+    public Task Connect_does_not_hand_back_a_programmer_when_the_handshake_fails() => Simulation.RunAsync(async time =>
     {
         // A dead line must fail the factory, not return something that looks usable.
         var pipe = new SilentPipe();
 
         await Assert.ThrowsAsync<Stm32SerialException>(
-            () => Stm32SerialProgrammer.ConnectAsync(Device, pipe, Quick));
-    }
+            () => Simulation.DriveAsync(time, Stm32SerialProgrammer.ConnectAsync(Device, pipe, Quick with { TimeProvider = time })));
+    });
 
     private sealed class SilentPipe : System.IO.Pipelines.IDuplexPipe
     {
-        private readonly System.IO.Pipelines.Pipe _in = new();
-        private readonly System.IO.Pipelines.Pipe _out = new();
+        private readonly System.IO.Pipelines.Pipe _in = new(Simulation.InlinePipes);
+        private readonly System.IO.Pipelines.Pipe _out = new(Simulation.InlinePipes);
         public System.IO.Pipelines.PipeReader Input => _in.Reader;
         public System.IO.Pipelines.PipeWriter Output => _out.Writer;
     }
