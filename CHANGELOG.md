@@ -5,6 +5,12 @@ All notable changes to Periphery are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- **A `DeviceTracker` can start unassigned** (issue #276). `new DeviceTracker(name)` and `ReplaceProfiles()` with no profiles used to throw `ArgumentException`. They now give a tracker that matches nothing, is never notified of device events, and resolves to `Absent`. A later `ReplaceProfiles` with real profiles binds an already-present device through the existing replay path. Until now the only way to express this was a profile whose predicate always returns false, which ran on every device event and replay.
+  - **`DeviceTrackerState.IsConfigured` and `DeviceTracker.IsConfigured`** are `false` while the tracker has no profiles. Before, "nothing assigned" and "assigned device absent" were both `DeviceTrackerState(null, Absent, null)`. A change in `IsConfigured` raises `StateChanged`, so assigning a profile whose device is absent is observable. The property defaults to `true`, so a state constructed by hand reads as configured.
+
 ## 4.2.0 - 2026-09-16
 
 ### Added

@@ -133,8 +133,10 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
     /// </summary>
     /// <param name="name">Optional human-readable label for this tracker.</param>
     /// <param name="profiles">
-    /// One or more profiles in descending priority order. The first profile is
-    /// the primary candidate; subsequent profiles are fallbacks.
+    /// Profiles in descending priority order. The first profile is the primary
+    /// candidate; subsequent profiles are fallbacks. With none, the tracker is
+    /// unassigned: it matches nothing, reports <see cref="IsConfigured"/>
+    /// <c>false</c>, and binds once <see cref="ReplaceProfiles"/> assigns profiles.
     /// </param>
     /// <example>
     /// <code>
@@ -153,13 +155,13 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
     public DeviceTracker(string? name, params DeviceProfile[] profiles)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        if (profiles.Length == 0)
-            throw new ArgumentException("At least one profile is required.", nameof(profiles));
         foreach (var p in profiles)
             ArgumentNullException.ThrowIfNull(p);
         Name = name;
         _profiles = profiles.ToArray();
         InitProfileDictionaries();
+        if (_profiles.Count == 0)
+            _state = _state with { IsConfigured = false };
     }
 
     internal DeviceTracker(DeviceFilter filter, string? name = null)
@@ -230,10 +232,19 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
         get { lock (_lock) return _state.ActiveProfile; }
     }
 
+    /// <summary>
+    /// <c>false</c> when the tracker has no profiles and so matches nothing.
+    /// See <see cref="DeviceTrackerState.IsConfigured"/>.
+    /// </summary>
+    public bool IsConfigured
+    {
+        get { lock (_lock) return _state.IsConfigured; }
+    }
+
     // ── Events
 
     /// <summary>Raised when <see cref="Device"/>, <see cref="ActivityStatus"/>,
-    /// or <see cref="ActiveProfile"/> changes.
+    /// <see cref="ActiveProfile"/>, or <see cref="IsConfigured"/> changes.
     /// argument is an atomic snapshot captured at the moment of the transition —
     /// no need to re-read from the tracker.</summary>
     public event EventHandler<DeviceTrackerState>? StateChanged;
@@ -360,20 +371,17 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
     /// device cache.
     /// </summary>
     /// <param name="profiles">
-    /// One or more profiles in descending priority order, same shape as
-    /// the multi-profile constructor.
+    /// Profiles in descending priority order, same shape as the
+    /// multi-profile constructor. With none, the tracker becomes unassigned:
+    /// it releases any device, resolves to <see cref="DeviceActivityStatus.Absent"/>
+    /// with <see cref="IsConfigured"/> <c>false</c>, and evaluates nothing.
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="profiles"/> is <c>null</c>, or any element is null.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="profiles"/> is empty.
-    /// </exception>
     public void ReplaceProfiles(params DeviceProfile[] profiles)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        if (profiles.Length == 0)
-            throw new ArgumentException("At least one profile is required.", nameof(profiles));
         foreach (var p in profiles)
             ArgumentNullException.ThrowIfNull(p);
 
@@ -457,7 +465,10 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
             // resolution resolves to Absent anyway, but stating it is the
             // contract: Unbind always lands on Absent.
             InitProfileDictionaries();
-            _state = new DeviceTrackerState(null, DeviceActivityStatus.Absent, null);
+            _state = new DeviceTrackerState(null, DeviceActivityStatus.Absent, null)
+            {
+                IsConfigured = _profiles.Count > 0,
+            };
             _owner = null;
         }
         NotifyChanges(before, _state);
@@ -587,7 +598,8 @@ public sealed class DeviceTracker : IDeviceTracker, IObservable<DeviceTrackerSta
     {
         bool stateChanged = before.Device != after.Device
             || before.ActivityStatus != after.ActivityStatus
-            || !ReferenceEquals(before.ActiveProfile, after.ActiveProfile);
+            || !ReferenceEquals(before.ActiveProfile, after.ActiveProfile)
+            || before.IsConfigured != after.IsConfigured;
 
         if (stateChanged)
         {
