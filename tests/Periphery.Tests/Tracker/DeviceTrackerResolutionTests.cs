@@ -59,6 +59,29 @@ public class DeviceTrackerResolutionTests
         Assert.Null(resolved.ActiveProfile);
         Assert.False(resolved.IsPresent);
         Assert.False(resolved.IsActive);
+        Assert.True(resolved.IsConfigured);
+    }
+
+    [Fact]
+    public void NoProfiles_EveryTransitionIsANoOp_AndResolvesUnconfigured()
+    {
+        var state = DeviceTrackerResolution.Create([]);
+        var device = MakeDevice();
+
+        var after = state
+            .ApplyAppeared(device)
+            .ApplyConnected(device)
+            .ApplyReplay(device)
+            .ApplyPropertyChanged(device)
+            .ApplyDisconnected(device)
+            .ApplyDisappeared(device);
+
+        Assert.Same(state, after);
+        var resolved = after.Resolve();
+        Assert.Equal(DeviceActivityStatus.Absent, resolved.ActivityStatus);
+        Assert.Null(resolved.Device);
+        Assert.Null(resolved.ActiveProfile);
+        Assert.False(resolved.IsConfigured);
     }
 
     // ── Appeared (present dimension) ───────────────────────────────────

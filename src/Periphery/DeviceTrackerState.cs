@@ -19,4 +19,13 @@ public sealed record DeviceTrackerState(
 
     /// <summary><c>true</c> when <see cref="Device"/> is non-null.</summary>
     public bool IsPresent => Device is not null;
+
+    /// <summary>
+    /// <c>false</c> when the tracker has no profiles, so it matches nothing and
+    /// stays <see cref="DeviceActivityStatus.Absent"/> until profiles are
+    /// assigned with <see cref="DeviceTracker.ReplaceProfiles"/>. Separates an
+    /// unassigned tracker from one whose assigned device is absent. Defaults to
+    /// <c>true</c>.
+    /// </summary>
+    public bool IsConfigured { get; init; } = true;
 }

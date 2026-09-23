@@ -287,10 +287,14 @@ internal sealed class DeviceTrackerResolution
     /// <see cref="DeviceActivityStatus.Present"/>; failing that,
     /// <see cref="DeviceActivityStatus.Absent"/>. Per-profile latching
     /// guarantees at most one device per profile map, so each lookup is a
-    /// single entry.
+    /// single entry. With no profiles the result is <c>Absent</c> with
+    /// <see cref="DeviceTrackerState.IsConfigured"/> <c>false</c>.
     /// </summary>
     public DeviceTrackerState Resolve()
     {
+        if (_profiles.IsEmpty)
+            return new DeviceTrackerState(null, DeviceActivityStatus.Absent, null) { IsConfigured = false };
+
         foreach (var profile in _profiles)
         {
             if (_connectedLatch[profile] is { } connId &&

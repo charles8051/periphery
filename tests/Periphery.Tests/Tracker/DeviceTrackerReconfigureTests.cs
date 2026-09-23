@@ -60,20 +60,142 @@ public class DeviceTrackerReconfigureTests
     }
 
     [Fact]
-    public void ReplaceProfiles_Empty_Throws()
-    {
-        var tracker = new DeviceTracker(f => f.OfCategory(DeviceCategory.Usb));
-
-        Assert.Throws<ArgumentException>(() => tracker.ReplaceProfiles());
-    }
-
-    [Fact]
     public void ReplaceProfiles_NullElement_Throws()
     {
         var tracker = new DeviceTracker(f => f.OfCategory(DeviceCategory.Usb));
 
         Assert.Throws<ArgumentNullException>(() =>
             tracker.ReplaceProfiles(null!, new DeviceProfile(f => f.OfCategory(DeviceCategory.Hid))));
+    }
+
+    // ── Unassigned tracker (issue #276) ───────────────────────────────
+
+    [Fact]
+    public void Construct_WithNoProfiles_IsUnconfiguredAndUnknown()
+    {
+        var tracker = new DeviceTracker("Unassigned");
+
+        Assert.False(tracker.IsConfigured);
+        Assert.False(tracker.CurrentState.IsConfigured);
+        Assert.Equal(DeviceActivityStatus.Unknown, tracker.ActivityStatus);
+        Assert.False(tracker.Matches(MakeDevice(id: "USB\\A")));
+    }
+
+    [Fact]
+    public async Task Unassigned_ResolvesToAbsent_AfterEnumeration()
+    {
+        var (watcher, _) = CreateWatcher(MakeDevice(id: "USB\\A"));
+        var tracker = new DeviceTracker("Unassigned");
+        watcher.AddTracker(tracker);
+
+        await watcher.StartAsync();
+
+        Assert.Equal(DeviceActivityStatus.Absent, tracker.ActivityStatus);
+        Assert.Null(tracker.Device);
+        Assert.False(tracker.IsConfigured);
+        await watcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Unassigned_ThenAssigned_BindsPresentDeviceThroughReplay()
+    {
+        var idA = new Guid("11111111-1111-1111-1111-111111111111");
+        var (watcher, _) = CreateWatcher(MakeDevice(id: "USB\\A", containerId: idA));
+        var tracker = new DeviceTracker("Unassigned");
+        watcher.AddTracker(tracker);
+        await watcher.StartAsync();
+
+        var states = new List<DeviceTrackerState>();
+        tracker.StateChanged += (_, s) => states.Add(s);
+        tracker.ReplaceProfiles(new DeviceProfile(f => f.WithContainerId(idA), name: "assigned"));
+
+        var state = Assert.Single(states);
+        Assert.True(state.IsConfigured);
+        Assert.Equal("USB\\A", state.Device?.Id);
+        Assert.Equal("assigned", state.ActiveProfile?.Name);
+        Assert.True(tracker.IsConfigured);
+        await watcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Assigned_AbsentDevice_IsDistinguishableFromUnassigned()
+    {
+        // Both are Absent with no device and no profile. Only IsConfigured
+        // separates them, so assigning a profile whose device is absent must
+        // still raise StateChanged.
+        var (watcher, _) = CreateWatcher();
+        var tracker = new DeviceTracker("Unassigned");
+        watcher.AddTracker(tracker);
+        await watcher.StartAsync();
+
+        var states = new List<DeviceTrackerState>();
+        tracker.StateChanged += (_, s) => states.Add(s);
+        tracker.ReplaceProfiles(new DeviceProfile(f => f.OfCategory(DeviceCategory.Usb)));
+
+        var state = Assert.Single(states);
+        Assert.Equal(DeviceActivityStatus.Absent, state.ActivityStatus);
+        Assert.True(state.IsConfigured);
+        await watcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ReplaceProfiles_Empty_ReleasesDeviceAndUnassigns()
+    {
+        var idA = new Guid("11111111-1111-1111-1111-111111111111");
+        var (watcher, _) = CreateWatcher(MakeDevice(id: "USB\\A", containerId: idA));
+        var tracker = watcher.AddTracker(f => f.WithContainerId(idA));
+        await watcher.StartAsync();
+        Assert.True(tracker.IsActive);
+
+        var disappeared = 0;
+        var deactivated = 0;
+        tracker.Disappeared += (_, _) => disappeared++;
+        tracker.Deactivated += (_, _) => deactivated++;
+        tracker.ReplaceProfiles();
+
+        Assert.Null(tracker.Device);
+        Assert.Equal(DeviceActivityStatus.Absent, tracker.ActivityStatus);
+        Assert.False(tracker.IsConfigured);
+        Assert.False(tracker.Matches(MakeDevice(id: "USB\\A", containerId: idA)));
+        Assert.Equal(1, disappeared);
+        Assert.Equal(1, deactivated);
+        await watcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Unassigned_IgnoresLiveArrivals()
+    {
+        var monitor = new FakeDeviceMonitorProvider();
+        var watcher = new DeviceWatcher(new FakeDeviceProvider(), monitor);
+        var tracker = new DeviceTracker("Unassigned");
+        // Positive control: the same arrival binds a configured tracker, so
+        // the event reached the fan-out.
+        var control = watcher.AddTracker(f => f.OfCategory(DeviceCategory.Usb));
+        watcher.AddTracker(tracker);
+        await watcher.StartAsync();
+
+        var fires = 0;
+        tracker.StateChanged += (_, _) => fires++;
+        monitor.SimulateConnect(MakeDevice(id: "USB\\A"));
+
+        Assert.Equal("USB\\A", control.Device?.Id);
+        Assert.Equal(0, fires);
+        Assert.Null(tracker.Device);
+        await watcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Unbind_KeepsUnconfigured()
+    {
+        var (watcher, _) = CreateWatcher();
+        var tracker = new DeviceTracker("Unassigned");
+        watcher.AddTracker(tracker);
+        await watcher.StartAsync();
+
+        await watcher.DisposeAsync();
+
+        Assert.Equal(DeviceActivityStatus.Absent, tracker.ActivityStatus);
+        Assert.False(tracker.IsConfigured);
     }
 
     // ── Unbound tracker — no replay (filter swap only) ────────────────
