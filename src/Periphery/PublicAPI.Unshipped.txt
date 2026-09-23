@@ -1,4 +1,1 @@
 #nullable enable
-Periphery.DeviceTracker.IsConfigured.get -> bool
-Periphery.DeviceTrackerState.IsConfigured.get -> bool
-Periphery.DeviceTrackerState.IsConfigured.init -> void
