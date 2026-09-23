@@ -68,8 +68,10 @@ public class WindowsMonitorProviderPresenceEdgeTests
     }
 
     /// <summary>
-    /// A real devnode from this machine, excluding monitors (they take the ordered
-    /// publish path, which needs the display sink a bare provider has not started).
+    /// A real devnode from this machine that action 7 announces. Monitors are excluded
+    /// because they take the ordered publish path, which needs the display sink a bare
+    /// provider has not started. Devnodes without a class GUID are excluded because the
+    /// provider treats them as an unfinished install and does not announce them.
     /// </summary>
     private static async Task<string?> FindRealNonMonitorInstanceIdAsync()
     {
@@ -77,7 +79,7 @@ public class WindowsMonitorProviderPresenceEdgeTests
         return devices
             .Where(d => d.Category != DeviceCategory.Monitor)
             .Select(d => d.Id.Value)
-            .FirstOrDefault(id => WindowsDeviceProvider.TryBuildDeviceInfo(id) is not null);
+            .FirstOrDefault(id => WindowsDeviceProvider.TryBuildDeviceInfo(id) is { ClassGuid: not null });
     }
 
     [Fact]
