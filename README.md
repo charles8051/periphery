@@ -1,24 +1,21 @@
 # Periphery
 
-A modern, cross-platform .NET library for discovering hardware devices — USB, Bluetooth, network adapters, displays, and more — with a clean, LINQ-friendly API.
-
-> **Windows, Linux, and macOS providers are complete.**
+A cross-platform .NET library for discovering hardware devices (USB, Bluetooth, network adapters, displays, and more) with a LINQ-friendly API.
 
 ## Why Periphery?
 
-Enumerating connected hardware today means reaching for platform-specific APIs — SetupAPI on Windows, `udev` on Linux, IOKit on macOS — each with its own conventions and quirks.
-Periphery provides a **single high-level surface** that abstracts those differences away so you can:
+Each OS has its own device API: SetupAPI on Windows, `udev` on Linux, IOKit on macOS. Periphery puts one API over all three, so you can:
 
-- **Discover** devices by category (USB, Bluetooth, Display, Network, ...) with one API.
-- **Query** devices using familiar LINQ expressions.
+- **Discover** devices by category (USB, Bluetooth, Display, Network, ...).
+- **Query** devices with LINQ.
 - **Monitor** arrival, departure, activation, and deactivation via events.
-- **Write cross-platform code** that just works on Windows, Linux, and macOS.
+- **Run the same code** on Windows, Linux, and macOS.
 
-The **core library focuses on discovery** — it tells you what's plugged in. Protocol-level I/O lives in **companion extension libraries** layered on the same device model. Keeping the core enumeration-only holds its runtime dependency surface to a single abstractions package (`Microsoft.Extensions.Logging.Abstractions`); the extensions opt into real device communication when you need it.
+The core library only enumerates devices. Its one runtime dependency is `Microsoft.Extensions.Logging.Abstractions`. Device I/O lives in extension packages built on the same device model.
 
 | Package | What it does |
 |---|---|
-| [`Periphery`](https://github.com/charles8051/periphery/tree/main/src/Periphery) | Core: enumeration, watching, tracking. The only runtime dependency is `Microsoft.Extensions.Logging.Abstractions` |
+| [`Periphery`](https://github.com/charles8051/periphery/tree/main/src/Periphery) | Core: enumeration, watching, tracking |
 | [`Periphery.Camera`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera) | Frame capture (Media Foundation / V4L2) |
 | [`Periphery.Camera.Avalonia`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.Avalonia) | `CameraPreview` control for Avalonia UI |
 | [`Periphery.Camera.OpenCvSharp`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.OpenCvSharp) | Captured frames as an OpenCV `Mat`, without `VideoCapture` |
@@ -35,10 +32,9 @@ The **core library focuses on discovery** — it tells you what's plugged in. Pr
 | [`Periphery.Treehopper.Libraries`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper.Libraries) | Peripheral drivers on the Treehopper board (LED strips, displays) |
 | [`Periphery.Cli`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Cli) | `periphery` command-line device tooling |
 
-> **Extensions are Windows + Linux.** Enumeration works on all three platforms, but the
-> I/O extensions ship Windows and Linux backends only — `CameraDevice`, `HidDevice`,
-> `UsbDevice`, and `MonitorDevice` throw `PlatformNotSupportedException` on macOS. The
-> AVFoundation and IOKit HID/USB backends are planned, not written.
+> **Extensions are Windows + Linux.** On macOS, `CameraDevice`, `HidDevice`, `UsbDevice`,
+> and `MonitorDevice` throw `PlatformNotSupportedException`. The AVFoundation and IOKit
+> HID/USB backends are not written yet.
 
 ## Quick Look
 
@@ -77,9 +73,8 @@ await foreach (var device in Devices.Enumerate().OfCategory(DeviceCategory.Netwo
 await using var watcher = Devices.Watch()
     .OfCategory(DeviceCategory.Bluetooth);
 
-// Two orthogonal transitions. Presence is whether the OS knows the device at
-// all; activity is whether it is usable right now. For Bluetooth that is
-// exactly the difference between paired and connected.
+// Presence: the OS knows the device. Activity: the device is usable now.
+// For Bluetooth, that is paired vs. connected.
 watcher.Appeared    += (_, e) => Console.WriteLine($"+ paired:       {e.Device.Name}");
 watcher.Activated   += (_, e) => Console.WriteLine($"+ connected:    {e.Device.Name}");
 watcher.Deactivated += (_, e) => Console.WriteLine($"- disconnected: {e.Device.Name}");
@@ -88,27 +83,17 @@ watcher.Disappeared += (_, e) => Console.WriteLine($"- unpaired:     {e.Device.N
 await watcher.StartAsync();
 ```
 
-Most categories collapse the two. A USB device becomes present and active on the same
-plug event, so `Appeared` and `Activated` arrive together and either one will do.
-Bluetooth is where they come apart: a paired speaker that is switched off stays present
-and goes inactive, and a single `IsConnected` flag would either hide it or claim it is
-gone. Network adapters behave the same way when disabled. See
+For most categories the two coincide. A USB device becomes present and active on the
+same plug event. They diverge for Bluetooth, where a paired speaker that is switched off
+stays present but goes inactive, and for disabled network adapters. See
 [ADR-0004](https://github.com/charles8051/periphery/blob/main/docs/adr/0004-two-level-device-state-model.md).
 
-> **On Windows, read Bluetooth activity by polling, not from these two events.** The
-> state is right: a paired device that switches off stays present and its `IsActive`
-> goes `false`, and comes back `true` on reconnect. The *events* are not delivered.
-> cfgmgr32 pushes no notification when a link goes up or down on a device that is
-> already paired and installed, so `Activated` and `Deactivated` do not fire for a
-> Bluetooth link transition. Measured against a paired HID keyboard: the devnode stayed
-> enumerable across a power cycle and `IsActive` tracked the link in both directions,
-> while the watcher raised no edge either way. This is specific to the link going up and
-> down, and to Windows; Linux (udev `bind`/`unbind`) and macOS (IOKit) deliver both
-> events from OS push. See
+> **On Windows, poll for Bluetooth activity.** `IsActive` is correct, but cfgmgr32 sends
+> no notification when an already-paired device connects or disconnects. `Activated` and
+> `Deactivated` do not fire for those transitions. Linux and macOS raise both events. See
 > [ADR-0054](https://github.com/charles8051/periphery/blob/main/docs/adr/0054-windows-property-freshness-events-over-polling.md).
 >
-> `DeviceInfo` is an immutable snapshot, so a device you already hold never changes.
-> Enumerate again on each poll and compare by `Id`:
+> `DeviceInfo` is an immutable snapshot. Enumerate again on each poll and compare by `Id`:
 >
 > ```csharp
 > var wasActive = new Dictionary<DeviceId, bool>();
@@ -129,10 +114,8 @@ gone. Network adapters behave the same way when disabled. See
 > }
 > ```
 >
-> Note also that a Bluetooth peripheral enumerates as several devnodes, and only the
-> `BTHENUM\DEV_…` one carries link state. Its profile-service siblings — including the
-> `DeviceCategory.Hid` node for a keyboard — do not track the link, so filter on
-> `DeviceCategory.Bluetooth` when you want the device's own activity.
+> Filter on `DeviceCategory.Bluetooth`. A Bluetooth peripheral enumerates as several
+> devnodes, and only the `BTHENUM\DEV_…` node tracks link state.
 
 ```csharp
 // Per-device tracking — each tracker has dual state (IsPresent + IsActive)
@@ -148,13 +131,12 @@ await watcher.StartAsync();
 ```
 
 ```csharp
-// Bind a serial device by identity, not by COM number. The OS assigns the port
-// name, and it moves across reboots and re-plugs; the VID/PID and serial number
-// do not. The proxy reopens the port wherever it lands next.
+// Bind a serial device by identity, not COM number. The port name moves across
+// reboots and re-plugs; the proxy reopens the port wherever it lands.
 var scanner = new DeviceProfile(
     f => f.OfCategory(DeviceCategory.Ports)
           .WithUsbId("0403", "6001")
-          .WithSerialNumber("A9012XYZ"),   // drop this if only one such device is ever attached
+          .WithSerialNumber("A9012XYZ"),   // drop this only if no other such device is ever attached
     name: "Scanner");
 
 SerialPort? port = null;   // needs the System.IO.Ports package
@@ -190,19 +172,28 @@ await watcher.StartAsync();
 
 ## Requirements
 
-- [.NET 10](https://dotnet.microsoft.com/) or later (libraries also ship a `net8.0` target, offered best-effort — it is built but not covered by the test suite; see [ADR-0069](https://github.com/charles8051/periphery/blob/main/docs/adr/0069-restore-net8-tfm-untested.md))
-- **Windows:** No additional dependencies (uses SetupAPI and cfgmgr32 via P/Invoke)
-- **Linux:** Requires `libudev.so.1`. Systemd-based distros already have it; on a minimal image install
-  `libudev-dev` or `eudev-dev`.
-  - `Periphery.Usb` also needs `libusb-1.0.so.0` 1.0.23 or newer — `libusb-1.0-0` on Debian and Ubuntu.
-  - `Periphery.Hid` and `Periphery.Camera` need nothing extra. They call the kernel ABIs directly,
-    hidraw and V4L2.
-  - Opening a device node usually takes a udev rule or a group membership: `video` for cameras, hidraw
-    and usbfs rules for HID and USB. See
+- [.NET 10](https://dotnet.microsoft.com/) or later. Libraries also target `net8.0`, which is built but not tested ([ADR-0069](https://github.com/charles8051/periphery/blob/main/docs/adr/0069-restore-net8-tfm-untested.md)).
+- **Windows:** no additional dependencies.
+- **Linux:** `libudev.so.1`. Systemd-based distros have it; on a minimal image install `libudev-dev` or `eudev-dev`.
+  - `Periphery.Usb` also needs `libusb-1.0.so.0` 1.0.23 or newer (`libusb-1.0-0` on Debian and Ubuntu).
+  - `Periphery.Hid` and `Periphery.Camera` need nothing extra. They call hidraw and V4L2 directly.
+  - Opening a device node usually takes a udev rule or group membership: `video` for cameras,
+    hidraw and usbfs rules for HID and USB. See
     [ADR-0057](https://github.com/charles8051/periphery/blob/main/docs/adr/0057-linux-extension-backends.md).
-- **macOS:** No additional dependencies (uses IOKit.framework and CoreFoundation.framework via P/Invoke)
+- **macOS:** no additional dependencies.
 
 ## Getting Started
+
+Packages are on [nuget.org](https://www.nuget.org/profiles/clee781). Every release so far
+is a prerelease, so pass `--prerelease`:
+
+```bash
+dotnet add package Periphery --prerelease
+```
+
+Before upgrading, read [docs/BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md).
+
+To build from source:
 
 ```bash
 git clone https://github.com/charles8051/periphery.git
@@ -210,20 +201,9 @@ cd periphery
 dotnet build
 ```
 
-Packages are published to [nuget.org](https://www.nuget.org/profiles/clee781).
-Every release so far is a prerelease, so the flag is required — without it NuGet
-reports *"There are no stable versions available"* and adds nothing:
-
-```bash
-dotnet add package Periphery --prerelease
-```
-
-Before upgrading, read [docs/BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md) for what
-changed in each release and what to write instead.
-
 ## Device Categories
 
-A **category** answers *which OS subsystem surfaced this device* — it's single-valued and drives enumeration routing (SetupAPI class GUID / udev subsystem / IOKit class). All providers are complete on all three platforms.
+A **category** is the OS subsystem that surfaced the device: a SetupAPI class GUID, udev subsystem, or IOKit class. Each device has exactly one.
 
 | Category | Windows | Linux | macOS |
 |---|---|---|---|
@@ -243,7 +223,7 @@ A **category** answers *which OS subsystem surfaced this device* — it's single
 
 ## Capability Tags
 
-A **tag** answers a different question — *what can this device do?* Tags are multi-valued, cross-cutting, and added by enrichers during enumeration; query them with `WithTag(...)`. Five identifiers that used to be categories are now tags ([ADR-0051](https://github.com/charles8051/periphery/blob/main/docs/adr/0051-demote-capability-categories-to-tags.md)), because each describes a capability a device *has* rather than the subsystem that surfaced it:
+A **tag** says what a device can do. A device can carry several, added by enrichers during enumeration. Query them with `WithTag(...)`. The five tags below were categories before [ADR-0051](https://github.com/charles8051/periphery/blob/main/docs/adr/0051-demote-capability-categories-to-tags.md).
 
 ```csharp
 // "any scanner / still-image device", whichever subsystem it enumerated under
@@ -264,31 +244,26 @@ var receiptPrinter = await Devices.Enumerate()
 | `Printer` | ✅ | 🟡 | 🟡 | `Printer` / `PnpPrinters` / `PrintQueue` classes / USB class `0x07` |
 | `Biometric` | ✅ | — | — | `Biometric` class (Windows-only — USB biometric readers are vendor-specific) |
 
-> 🟡 **Windows-first.** The Windows class-GUID signals are live now, so each tag works on Windows exactly as the old category did. The Linux/macOS USB-class paths are written and dormant — they light up when cross-platform `DeviceInfo.UsbClassCode` population lands (deferred while Periphery builds out Windows depth first; see [ADR-0051](https://github.com/charles8051/periphery/blob/main/docs/adr/0051-demote-capability-categories-to-tags.md)). `Hid`, `Audio`, and `Battery` are also available as capability tags emitted by enrichers (e.g. HID battery levels via [`Periphery.Hid`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Hid)).
+> 🟡 The Linux and macOS USB-class detection is written but dormant until cross-platform
+> `DeviceInfo.UsbClassCode` population lands. Enrichers also emit `Hid`, `Audio`, and
+> `Battery` tags, for example HID battery levels from
+> [`Periphery.Hid`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Hid).
 
 ## OpenCV without `VideoCapture(0)`
 
-`VideoCapture(0)` is an index into whatever order the OS enumerated in, and it
-moves when a device is replugged or a virtual camera installs itself. On a
-machine with two identical cameras, no argument means *the one on the left*.
-Periphery answers that for every category on all three platforms;
-[`Periphery.Camera.OpenCvSharp`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.OpenCvSharp) hands the
-pixels to OpenCV without a copy.
-
-Worked examples, the three entry points, the native-payload choice and the
-lease-lifetime trap are in
+`VideoCapture(0)` indexes the OS enumeration order. That order changes when a device is
+replugged or a virtual camera installs, and it cannot tell two identical cameras apart.
+Periphery selects the camera by identity, and
+[`Periphery.Camera.OpenCvSharp`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.OpenCvSharp)
+hands its frames to OpenCV without a copy. Examples and lease-lifetime rules are in
 [that package's README](https://github.com/charles8051/periphery/blob/main/src/Periphery.Camera.OpenCvSharp/README.md).
 
 ## One camera, several consumers
 
-A preview, an inference graph and an encoder want different latency, different
-queue depths and different drop behaviour. `Periphery.Camera` ships no router, on
-purpose — it gives you refcounted frames instead, and the fan-out is a producer
-loop plus one bounded channel per consumer.
-
-The recipe, the per-consumer policy table, how to size `BufferCount` to the
-fan-out, and the retention trap that makes a replay buffer exhaust the pool are
-in
+A preview, an inference graph and an encoder each need their own latency, queue depth
+and drop policy. `Periphery.Camera` has no built-in router. It hands out refcounted
+frames; fan them out with a producer loop and one bounded channel per consumer. The
+recipe and `BufferCount` sizing are in
 [the `Periphery.Camera` README](https://github.com/charles8051/periphery/blob/main/src/Periphery.Camera/README.md).
 
 ## Repository Layout
@@ -344,30 +319,26 @@ src/Periphery/
 
 ## Design Principles
 
-1. **Discovery in the core, interaction in extensions.** The core tells you what's connected; protocol-level communication (camera capture, HID reports, raw USB, DDC/CI, …) lives in companion extension libraries layered on the core's device model.
-2. **Platform parity.** Every device category exposed in the public API must be supportable on all target platforms, even if implementations ship incrementally.
-3. **LINQ-native.** Device queries compose naturally with `Where`, `Select`, `OrderBy`, and friends.
-4. **No third-party dependencies in the core or the I/O extensions.** Platform back-ends use only built-in OS APIs (SetupAPI/cfgmgr32, udev, IOKit) via P/Invoke or native interop. `Microsoft.Extensions.Logging.Abstractions` is the one exception. An opt-in integration package is where a third-party dependency belongs: `Periphery.Camera.Avalonia` references `Avalonia` and `Periphery.Camera.OpenCvSharp` references `OpenCvSharp4`, and you take either package only if you want it. See [`docs/patterns/integration-package-placement.md`](https://github.com/charles8051/periphery/blob/main/docs/patterns/integration-package-placement.md).
-5. **Async-first.** Hardware enumeration can be slow; all public entry points return `Task` or `IAsyncEnumerable`.
+1. **Discovery in the core, I/O in extensions.** Camera capture, HID reports, raw USB and DDC/CI live in extension packages built on the core's device model.
+2. **Platform parity.** Every public device category must be supportable on every target platform.
+3. **LINQ-native.** Queries compose with `Where`, `Select`, `OrderBy`, and the rest.
+4. **No third-party dependencies in the core or the I/O extensions.** Platform backends call OS APIs through P/Invoke. `Microsoft.Extensions.Logging.Abstractions` is the one exception. Third-party dependencies go in opt-in integration packages, such as `Periphery.Camera.Avalonia` (Avalonia) and `Periphery.Camera.OpenCvSharp` (OpenCvSharp4). See [`docs/patterns/integration-package-placement.md`](https://github.com/charles8051/periphery/blob/main/docs/patterns/integration-package-placement.md).
+5. **Async-first.** Every public entry point returns `Task` or `IAsyncEnumerable`.
 
 ## Contributing
 
-Contributions are welcome. Start with [CONTRIBUTING.md](https://github.com/charles8051/periphery/blob/main/CONTRIBUTING.md) for how to
-build, test and format, and [ARCHITECTURE.md](https://github.com/charles8051/periphery/blob/main/docs/ARCHITECTURE.md) for a deeper look
-at the design before opening a PR.
+Contributions are welcome. [CONTRIBUTING.md](https://github.com/charles8051/periphery/blob/main/CONTRIBUTING.md)
+covers build, test and formatting; [ARCHITECTURE.md](https://github.com/charles8051/periphery/blob/main/docs/ARCHITECTURE.md)
+covers the design. Report security issues through [SECURITY.md](https://github.com/charles8051/periphery/blob/main/SECURITY.md),
+not the issue tracker.
 
-Security reports go through [SECURITY.md](https://github.com/charles8051/periphery/blob/main/SECURITY.md), not the issue tracker.
-
-Deferred work, bugs and design questions are tracked as
-[GitHub issues](https://github.com/charles8051/periphery/issues) — that is the
-only backlog. Architectural decisions live in [docs/adr/](https://github.com/charles8051/periphery/tree/main/docs/adr); an issue
-that needs one references it by number.
+[GitHub issues](https://github.com/charles8051/periphery/issues) are the only backlog.
+Architectural decisions live in [docs/adr/](https://github.com/charles8051/periphery/tree/main/docs/adr).
 
 ### Formatting
 
-CSharpier, pinned as a local tool. The tree is not formatted yet, so format only
-the files you touch — see [CONTRIBUTING.md](https://github.com/charles8051/periphery/blob/main/CONTRIBUTING.md#formatting) for the
-commands and why a repo-wide pass is its own change.
+CSharpier, pinned as a local tool. The tree is not formatted yet, so format only the
+files you touch. See [CONTRIBUTING.md](https://github.com/charles8051/periphery/blob/main/CONTRIBUTING.md#formatting).
 
 ## License
 
