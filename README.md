@@ -136,7 +136,7 @@ await watcher.StartAsync();
 var scanner = new DeviceProfile(
     f => f.OfCategory(DeviceCategory.Ports)
           .WithUsbId("0403", "6001")
-          .WithSerialNumber("A9012XYZ"),   // optional if only one such device is attached
+          .WithSerialNumber("A9012XYZ"),   // drop this only if no other such device is ever attached
     name: "Scanner");
 
 SerialPort? port = null;   // needs the System.IO.Ports package
@@ -176,6 +176,7 @@ await watcher.StartAsync();
 - **Windows:** no additional dependencies.
 - **Linux:** `libudev.so.1`. Systemd-based distros have it; on a minimal image install `libudev-dev` or `eudev-dev`.
   - `Periphery.Usb` also needs `libusb-1.0.so.0` 1.0.23 or newer (`libusb-1.0-0` on Debian and Ubuntu).
+  - `Periphery.Hid` and `Periphery.Camera` need nothing extra. They call hidraw and V4L2 directly.
   - Opening a device node usually takes a udev rule or group membership: `video` for cameras,
     hidraw and usbfs rules for HID and USB. See
     [ADR-0057](https://github.com/charles8051/periphery/blob/main/docs/adr/0057-linux-extension-backends.md).
