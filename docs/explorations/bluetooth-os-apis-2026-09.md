@@ -250,6 +250,15 @@ closed immediately.
 So for BR/EDR the OS does push the edge, and Periphery does not subscribe to it. Context §1's "only"
 holds for the devnode stream, not for Windows.
 
+The stack's own device list does not lag. `IOCTL_BTH_GET_DEVICE_INFO` on the radio returns a
+`BTH_DEVICE_INFO_LIST` with each known device's `BDIF_*` flags. The IOCTL is `FILE_ANY_ACCESS`, and
+it answered on a handle opened with `FILE_READ_ATTRIBUTES` from an unelevated process (Measured). In
+a second run of the same two power cycles, the list was read 0-3 ms after each HCI event:
+`BDIF_CONNECTED` matched the event on all four transitions, while the `DEV_` devnode read 28 ms
+later still reported `IsActive = true` at both disconnects (Measured). `DEVPKEY_Bluetooth_DeviceFlags`
+on the devnode is not the same source: ARCHITECTURE.md §10.6.2 measured it never changing on a
+BR/EDR node. The list was fresh for BR/EDR only; `BDIF_LE_CONNECTED` was not exercised.
+
 ### Linux
 
 `Device1.Connected` changes raise `PropertiesChanged`. `Device1.Disconnected(reason, message)`
@@ -391,6 +400,7 @@ each queued request can take that long (Documented: Microsoft Learn, Bluetooth G
 | Does CoreBluetooth on macOS hide `0x1812`? | `discoverServices(nil)` against an LE HID peripheral on a Mac. |
 | Does BlueZ restore the desktop's default agent after 32feet's `PairAsync(code)`? | Pair from 32feet in a GNOME session, then pair from Settings. |
 | What does `0x04000000` mean in `DEVPKEY_Bluetooth_DeviceFlags`? | Not defined in SDK 10.0.26100's `bthdef.h`. |
+| Does `IOCTL_BTH_GET_DEVICE_INFO` list LE peripherals, and does `BDIF_LE_CONNECTED` track their link as promptly as `BDIF_CONNECTED` does for BR/EDR? | An LE link toggle during `dotnet run --project scratch/BluetoothHciEventProbe -- 120`. |
 | Does `GUID_BLUETOOTH_HCI_EVENT` fire, with connection type LE, when an LE peripheral connects? | An LE link toggle during `dotnet run --project scratch/BluetoothHciEventProbe -- 120`. |
 | What is custom event `ab27d6ed-0e6d-4b67-9773-f1426bcea595`? | Not defined in SDK 10.0.26100. Decode its 18 bytes across several transitions. |
 
@@ -420,6 +430,7 @@ Windows
 - [`DeviceInformationCustomPairing`](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.deviceinformationcustompairing)
 - [`BluetoothLEDevice.ConnectionStatusChanged`](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.connectionstatuschanged)
 - `bthdef.h`, Windows SDK 10.0.26100, `BDIF_*`, `BTH_HCI_EVENT_INFO`, `BTH_L2CAP_EVENT_INFO` and `BTH_RADIO_IN_RANGE` definitions
+- `bthioctl.h`, Windows SDK 10.0.26100, `IOCTL_BTH_GET_DEVICE_INFO` and `BTH_DEVICE_INFO_LIST` (byte-packed)
 - [Bluetooth and WM_DEVICECHANGE Messages](https://learn.microsoft.com/en-us/windows/win32/bluetooth/bluetooth-and-wm-devicechange-messages)
 - [`CM_NOTIFY_FILTER`](https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/ns-cfgmgr32-cm_notify_filter), [`CM_NOTIFY_ACTION`](https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/ne-cfgmgr32-cm_notify_action)
 - [Microsoft Q&A: multiple Bluetooth adapters](https://learn.microsoft.com/en-us/answers/questions/4032619/can-a-windows-11-pc-use-2-bluetooth-adapters-at-on)
