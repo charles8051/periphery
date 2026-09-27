@@ -899,11 +899,11 @@ Do **not** reach for a category filter to do this. `DeviceCategory` does not sep
 
 | Peripheral | Node | Category | Liveness |
 |---|---|---|---|
-| Keyboard (BR/EDR) | `BTHENUM\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected (poll-only) |
+| Keyboard (BR/EDR) | `BTHENUM\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected, with `Activated` / `Deactivated` from the Bluetooth driver (#286) |
 | | `BTHENUM\{00001124-…}` | `Hid` | **stuck `true` while bonded** |
 | | 6 × `HID\{00001124-…}&Col0n` | `Hid` | appear / disappear with the link |
 | | 2 × `HID\{00001124-…}&Col0n` | `Keyboard` | appear / disappear with the link |
-| Mouse (LE) | `BTHLE\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected (poll-only) |
+| Mouse (LE) | `BTHLE\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected; LE link events are wired (#286) but unmeasured |
 | | `BTHLEDevice\{00001812-…}` | `Hid` | **stuck `true` while bonded** |
 | | `HID\{00001812-…}\c&…` | `Mouse` | appears / disappears with the link |
 
@@ -911,11 +911,11 @@ A `DeviceCategory.Hid` filter on the keyboard matches the stuck node *and* six m
 
 The rule that does generalise is by node role within a peripheral's container, not by category:
 
-- the one `…\DEV_…` node carries bonding (presence) and connection (`IsActive`, poll-only);
+- the one `…\DEV_…` node carries bonding (presence) and connection (`IsActive`). cfgmgr32 raises nothing when that connection changes; the provider raises `Activated` / `Deactivated` for it from the Bluetooth driver's `GUID_BLUETOOTH_HCI_EVENT` (#286);
 - the `BTHENUM\{uuid}` / `BTHLEDevice\{uuid}` service nodes carry neither, and their `IsActive` is the trap;
 - every remaining descendant is a function child and — **on the HID profiles measured** — carries connection by presence, with events.
 
-The third bullet is the one that does not generalise on this evidence. It is verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child), and **only those**. A non-HID profile whose service and function nodes Windows models differently could present a function child that persists across a link drop, or none at all; treating its absence as definitive would then report a live device as disconnected. Where there is no function child there is nothing to watch, and the `DEV_` node must be polled. Confirm the shape on the profile in front of you before relying on it.
+The third bullet is the one that does not generalise on this evidence. It is verified for one BR/EDR HID peripheral (8 children) and one LE HID peripheral (1 child), and **only those**. A non-HID profile whose service and function nodes Windows models differently could present a function child that persists across a link drop, or none at all; treating its absence as definitive would then report a live device as disconnected. Where there is no function child, watch the `DEV_` node's own activity edges. Confirm the shape on the profile in front of you before relying on it.
 
 **The three-tier shape is general; the pathology is not.** Two separate claims are in play here and they carry different evidence, so keep them apart:
 
