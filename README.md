@@ -105,10 +105,10 @@ The core package only discovers devices. Extension packages talk to them.
 | [`Periphery.Monitor`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Monitor) | Monitor brightness, power, input, resolution, and orientation |
 | [`Periphery.Usb`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Usb) | Raw USB I/O |
 | [`Periphery.Treehopper`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Treehopper) | Treehopper I/O board SDK |
-| [`Periphery.Bootloader`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Bootloader) | Firmware flashing over EFM8 and STM32 bootloaders |
+| [`Periphery.Bootloader.*`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Bootloader) | Firmware flashing: a bootloader contract, plus EFM8 and STM32 backend packages |
 | [`Periphery.Cli`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Cli) | The `periphery` command-line tool |
 
-`Periphery.Camera`, `Periphery.Hid`, `Periphery.Monitor`, and `Periphery.Usb` support Windows and Linux.
+`Periphery.Camera`, `Periphery.Hid`, `Periphery.Monitor`, and `Periphery.Usb` support Windows and Linux, not macOS.
 
 ## Requirements
 
