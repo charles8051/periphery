@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Does Windows push a notification when an already-paired Bluetooth device
+         connects or disconnects, through a registration core could make?
+
+         cfgmgr32's devnode stream raises nothing for a link change on an installed
+         devnode (ADR-0085 Context §1). The Bluetooth driver documents a separate
+         push, GUID_BLUETOOTH_HCI_EVENT, delivered on a handle to the local radio.
+         Microsoft documents it through RegisterDeviceNotification. This probe asks
+         for it through CM_Register_Notification with a device-handle filter, and
+         closes the radio handle straight after registering, which CM_NOTIFY_FILTER
+         documents as allowed.
+
+         Alongside it runs a Periphery DeviceWatcher over the Bluetooth category, and
+         re-reads the matching devnodes' IsActive on every HCI event, so one run shows
+         the push, the watcher's silence and the devnode value together.
+
+         Plain Win32 and cfgmgr32: no WinRT, no 32feet. Addresses are replaced by
+         per-run aliases (BT#1, BT#2, ...). -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+</Project>
