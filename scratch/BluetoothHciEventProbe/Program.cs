@@ -21,6 +21,8 @@ using Periphery;
 //   hci        GUID_BLUETOOTH_HCI_EVENT: a link to a remote device came up or went down
 //   l2cap      GUID_BLUETOOTH_L2CAP_EVENT: a channel on that link opened or closed
 //   in-range   GUID_BLUETOOTH_RADIO_IN_RANGE: the stack's flags for a device changed
+//   stack      the Bluetooth stack's own flags for the hci address, from IOCTL_BTH_GET_DEVICE_INFO
+//              on the radio, read just before each devnode sample (issue #288)
 //   devnode    IsActive of the Bluetooth devnodes carrying the hci address, at +0 and +2000 ms
 //   periphery  a live DeviceWatcher edge (the startup snapshot is counted, not printed)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +69,10 @@ for (int i = 0; i < radios.Count; i++)
     if (cr == Native.CR_SUCCESS)
         registrations.Add(notify);
 }
+
+Probe.RadioPaths = radios;
+Probe.StackAccess = access;
+await Probe.ReportStackAtStartupAsync();
 
 await using (var watcher = Devices.Watch().OfCategory(DeviceCategory.Bluetooth))
 {
@@ -220,6 +226,50 @@ static class Probe
         }
     }
 
+    public static List<string> RadioPaths = [];
+    public static uint StackAccess;
+
+    const uint BDIF_CONNECTED = 0x00000020;
+    const uint BDIF_LE_CONNECTED = 0x01000000;
+
+    // Checks the IOCTL once before any link changes: it runs, and the addresses it parses
+    // are the ones in the link devnodes' instance ids. A layout mistake shows up here as
+    // zero matches rather than as a wrong answer later.
+    public static async Task ReportStackAtStartupAsync()
+    {
+        var stack = ReadStack(out string detail);
+        if (stack is null)
+        {
+            Log("stack", $"IOCTL_BTH_GET_DEVICE_INFO failed: {detail}");
+            return;
+        }
+
+        var nodes = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
+        int matched = stack.Keys.Count(a =>
+            nodes.Any(d => d.Id.ToString().Contains($"DEV_{a:X12}", StringComparison.OrdinalIgnoreCase)));
+        Log("stack", $"IOCTL_BTH_GET_DEVICE_INFO -> {stack.Count} device(s), {detail}; " +
+                     $"{matched} match a link devnode; {stack.Values.Count(f => (f & BDIF_CONNECTED) != 0)} CONNECTED, " +
+                     $"{stack.Values.Count(f => (f & BDIF_LE_CONNECTED) != 0)} LE_CONNECTED");
+    }
+
+    // Address -> BDIF flags across every radio, or null when no radio answered.
+    static Dictionary<ulong, uint>? ReadStack(out string detail)
+    {
+        Dictionary<ulong, uint>? merged = null;
+        var notes = new List<string>();
+        foreach (string path in RadioPaths)
+        {
+            var devices = Native.QueryStackDevices(path, StackAccess, out string note);
+            notes.Add(note);
+            if (devices is null) continue;
+            merged ??= [];
+            foreach (var (address, flags) in devices)
+                merged[address] = flags;
+        }
+        detail = string.Join("; ", notes);
+        return merged;
+    }
+
     static async Task ReportDevnodesAsync(ulong address)
     {
         string hex = address.ToString("X12");
@@ -227,6 +277,14 @@ static class Probe
         {
             if (delayMs > 0)
                 await Task.Delay(delayMs);
+
+            // The stack first, so at +0 ms it is read as close to the event as possible.
+            var stack = ReadStack(out string stackDetail);
+            string stackLine = stack is null ? $"IOCTL failed: {stackDetail}"
+                : !stack.TryGetValue(address, out uint flags) ? "address not in the stack's device list"
+                : $"CONNECTED={(flags & BDIF_CONNECTED) != 0} LE_CONNECTED={(flags & BDIF_LE_CONNECTED) != 0}  [{FlagNames(flags)}]";
+            Log("stack", $"{Alias(address)} +{delayMs} ms: {stackLine}");
+
             var nodes = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
             var matches = nodes.Where(d => d.Id.ToString().Contains(hex, StringComparison.OrdinalIgnoreCase)).ToList();
             string detail = matches.Count == 0
@@ -278,6 +336,87 @@ static unsafe partial class Native
     public const uint FILE_SHARE_WRITE = 2;
     public const uint OPEN_EXISTING = 3;
     public static readonly nint INVALID_HANDLE_VALUE = -1;
+
+    // CTL_CODE(FILE_DEVICE_BLUETOOTH 0x41, 0x02, METHOD_BUFFERED, FILE_ANY_ACCESS), bthioctl.h.
+    const uint IOCTL_BTH_GET_DEVICE_INFO = 0x00410008;
+    const int ERROR_INSUFFICIENT_BUFFER = 122;
+    const int ERROR_MORE_DATA = 234;
+
+    // BTH_DEVICE_INFO_LIST is byte-packed: ULONG numOfDevices @0, BTH_DEVICE_INFO deviceList[] @4.
+    // BTH_DEVICE_INFO keeps natural alignment: flags @0, address @8, cod @16, name[248] @20; 272 bytes.
+    const int ListHeader = 4;
+    const int DeviceInfoSize = 272;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DeviceIoControl(
+        nint device, uint ioControlCode, void* inBuffer, uint inSize, void* outBuffer, uint outSize,
+        out uint bytesReturned, nint overlapped);
+
+    /// <summary>
+    /// Every remote device the radio's stack knows, with its BDIF flags. Null on failure;
+    /// <paramref name="note"/> says why, or reports the byte count so the layout can be checked.
+    /// </summary>
+    public static List<(ulong Address, uint Flags)>? QueryStackDevices(string radioPath, uint access, out string note)
+    {
+        nint radio = CreateFileW(radioPath, access, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+        if (radio == INVALID_HANDLE_VALUE)
+        {
+            note = $"CreateFile error {Marshal.GetLastPInvokeError()}";
+            return null;
+        }
+
+        try
+        {
+            int capacity = 64;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                int size = ListHeader + capacity * DeviceInfoSize;
+                var buffer = new byte[size];
+                BinaryPrimitives.WriteUInt32LittleEndian(buffer, (uint)capacity);
+
+                bool ok;
+                uint returned;
+                fixed (byte* p = buffer)
+                    ok = DeviceIoControl(radio, IOCTL_BTH_GET_DEVICE_INFO, p, (uint)size, p, (uint)size, out returned, 0);
+
+                if (!ok)
+                {
+                    int error = Marshal.GetLastPInvokeError();
+                    if (error is ERROR_MORE_DATA or ERROR_INSUFFICIENT_BUFFER)
+                    {
+                        capacity *= 4;
+                        continue;
+                    }
+                    note = $"DeviceIoControl error {error}";
+                    return null;
+                }
+
+                int count = (int)BinaryPrimitives.ReadUInt32LittleEndian(buffer);
+                if (count > capacity)
+                {
+                    capacity = count;
+                    continue;
+                }
+
+                note = $"{returned} bytes returned for {count} device(s), layout predicts {ListHeader + count * DeviceInfoSize}";
+                var devices = new List<(ulong, uint)>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    var entry = buffer.AsSpan(ListHeader + i * DeviceInfoSize, DeviceInfoSize);
+                    devices.Add((BinaryPrimitives.ReadUInt64LittleEndian(entry[8..]), BinaryPrimitives.ReadUInt32LittleEndian(entry)));
+                }
+                return devices;
+            }
+
+            note = "device list kept growing";
+            return null;
+        }
+        finally
+        {
+            CloseHandle(radio);
+        }
+    }
 
     static readonly Guid GUID_BTHPORT_DEVICE_INTERFACE = new("0850302a-b344-4fda-9be9-90576b8d46f0");
 
