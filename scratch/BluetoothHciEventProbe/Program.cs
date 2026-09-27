@@ -10,11 +10,12 @@ using Periphery;
 // Listens for the Bluetooth driver's connect/disconnect push on every local
 // radio, beside a Periphery DeviceWatcher, while you power-cycle a paired device.
 //
-//   dotnet run --project scratch/BluetoothHciEventProbe [seconds] [--keep-handle] [--generic-read]
+//   dotnet run --project scratch/BluetoothHciEventProbe [seconds] [--keep-handle] [--access attributes|query|read]
 //
 //   seconds         how long to listen (default 120; Ctrl+C stops early)
 //   --keep-handle   hold the radio handle open instead of closing it after registering
-//   --generic-read  open the radio with GENERIC_READ instead of query-only access
+//   --access        CreateFile access for the radio: FILE_READ_ATTRIBUTES (default),
+//                   query-only (0), or GENERIC_READ
 //
 // Output sources:
 //   hci        GUID_BLUETOOTH_HCI_EVENT: a link to a remote device came up or went down
@@ -26,10 +27,18 @@ using Periphery;
 
 int seconds = args.Select(a => int.TryParse(a, out var v) ? v : 0).FirstOrDefault(v => v > 0, 120);
 Probe.KeepHandle = args.Contains("--keep-handle");
-bool genericRead = args.Contains("--generic-read");
+int accessArg = Array.IndexOf(args, "--access");
+string accessName = accessArg >= 0 && accessArg + 1 < args.Length ? args[accessArg + 1] : "attributes";
+uint access = accessName switch
+{
+    "attributes" => Native.FILE_READ_ATTRIBUTES,
+    "query" => 0u,
+    "read" => Native.GENERIC_READ,
+    _ => throw new ArgumentException($"--access must be attributes, query or read, not '{accessName}'"),
+};
 
 Probe.Log("probe", $"radio handle {(Probe.KeepHandle ? "held open" : "closed after registering")}, " +
-                   $"access {(genericRead ? "GENERIC_READ" : "query-only")}, listening {seconds} s");
+                   $"access {accessName} (0x{access:X}), listening {seconds} s");
 
 var registrations = new List<nint>();
 var radios = Native.RadioInterfacePaths();
@@ -39,7 +48,7 @@ for (int i = 0; i < radios.Count; i++)
 {
     int radio = i + 1;
     nint handle = Native.CreateFileW(
-        radios[i], genericRead ? Native.GENERIC_READ : 0u, Native.FILE_SHARE_READ | Native.FILE_SHARE_WRITE,
+        radios[i], access, Native.FILE_SHARE_READ | Native.FILE_SHARE_WRITE,
         0, Native.OPEN_EXISTING, 0, 0);
     if (handle == Native.INVALID_HANDLE_VALUE)
     {
@@ -80,6 +89,7 @@ foreach (var notify in registrations)
     Native.CM_Unregister_Notification(notify);
 foreach (var handle in Probe.HeldHandles.Values)
     Native.CloseHandle(handle);
+await Task.WhenAll(Probe.PendingReports);
 
 Probe.Log("probe", $"stopped. device-handle events: {Probe.Summary()}");
 return 0;
@@ -95,6 +105,7 @@ static class Probe
     public static int SnapshotEdges;
     public static bool KeepHandle;
     public static readonly ConcurrentDictionary<int, nint> HeldHandles = new();
+    public static readonly ConcurrentBag<Task> PendingReports = [];
 
     static readonly Guid HciEvent   = new("fc240062-1541-49be-b463-84c4dcd7bf7f");
     static readonly Guid L2capEvent = new("7eae4030-b709-4aa8-ac55-e953829c9daa");
@@ -174,7 +185,7 @@ static class Probe
             bool connected = payload[9] != 0;
             Count($"HCI {(connected ? "connect" : "disconnect")}");
             Log("hci", $"radio {radio}: {Alias(address)} {type} {(connected ? "CONNECTED" : "DISCONNECTED")}");
-            _ = Task.Run(() => ReportDevnodesAsync(address));
+            PendingReports.Add(Task.Run(() => ReportDevnodesAsync(address)));
         }
         else if (guid == L2capEvent && payload.Length >= 12)
         {
@@ -262,6 +273,7 @@ static unsafe partial class Native
     public const int CM_NOTIFY_ACTION_DEVICEQUERYREMOVE = 2;
     public const int CM_NOTIFY_ACTION_DEVICECUSTOMEVENT = 6;
     public const uint GENERIC_READ = 0x80000000;
+    public const uint FILE_READ_ATTRIBUTES = 0x80;
     public const uint FILE_SHARE_READ = 1;
     public const uint FILE_SHARE_WRITE = 2;
     public const uint OPEN_EXISTING = 3;
