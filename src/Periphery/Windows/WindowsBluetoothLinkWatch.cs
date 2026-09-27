@@ -87,8 +87,20 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
             int cr = DevNodeHelper.CM_Register_Notification(ref filter, _id, &NotificationShim, out nint raw);
             if (cr == CR_SUCCESS)
             {
+                // Same keep-or-release rule as RegisterRadio: a Dispose that ran while the
+                // call was in flight found nothing to release, so this one is ours to drop.
+                var arrivals = new DevNodeHelper.CmNotifyHandle(raw);
+                bool keep;
                 lock (_lock)
-                    _radioArrivals = new DevNodeHelper.CmNotifyHandle(raw);
+                {
+                    keep = !_disposed;
+                    if (keep) _radioArrivals = arrivals;
+                }
+                if (!keep)
+                {
+                    arrivals.Dispose();
+                    return;
+                }
             }
             else
             {

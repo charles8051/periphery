@@ -243,9 +243,12 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
 
             _instanceNotifyHandle = new DevNodeHelper.CmNotifyHandle(rawInstanceHandle);
 
-            // After the cache is seeded, so a link event always finds its devnode. A link
-            // change before this point is not missed: DeviceWatcher's startup snapshot reads
-            // IsActive from the devnode. Best-effort; Start logs and continues on failure.
+            // After the cache is seeded, so a link event always finds its devnode.
+            // DeviceWatcher takes its startup snapshot after this method returns, so a link
+            // change before the registration is read from the devnode there. One gap
+            // remains: the devnode can lag the link by up to 2 s (measured), so a change in
+            // the last moments before the snapshot can be read stale and stays stale until
+            // the next link change. Best-effort; Start logs and continues on failure.
             _bluetoothLinkWatch = new WindowsBluetoothLinkWatch(OnBluetoothLinkChanged);
             _bluetoothLinkWatch.Start();
 
