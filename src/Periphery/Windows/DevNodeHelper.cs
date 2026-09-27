@@ -41,7 +41,13 @@ internal static unsafe partial class DevNodeHelper
     private const uint DEVPROP_TYPE_GUID        = 0x0000000D;
 
     // ── CM_NOTIFY constants ────────────────────────────────────────────
+    internal const int CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE         = 0;
+    internal const int CM_NOTIFY_FILTER_TYPE_DEVICEHANDLE            = 1;
     internal const int CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE          = 2;
+    internal const int CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL       = 0;
+    internal const int CM_NOTIFY_ACTION_DEVICEREMOVEPENDING          = 4;
+    internal const int CM_NOTIFY_ACTION_DEVICEREMOVECOMPLETE         = 5;
+    internal const int CM_NOTIFY_ACTION_DEVICECUSTOMEVENT            = 6;
     internal const int CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES    = 0x00000002;
     internal const int CM_NOTIFY_ACTION_DEVICEINSTANCEENUMERATED     = 7;
     internal const int CM_NOTIFY_ACTION_DEVICEINSTANCESTARTED        = 8;
@@ -79,7 +85,8 @@ internal static unsafe partial class DevNodeHelper
         [FieldOffset(4)]  public int Flags;
         [FieldOffset(8)]  public int FilterType;
         [FieldOffset(12)] public int Reserved;
-        [FieldOffset(16)] public Guid ClassGuid;
+        [FieldOffset(16)] public Guid ClassGuid;   // u.DeviceInterface
+        [FieldOffset(16)] public nint hTarget;     // u.DeviceHandle
     }
 
 

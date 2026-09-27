@@ -55,8 +55,15 @@ namespace Periphery.Windows;
 /// explicitly permits; it does not reinstate any tree scan. Monitor arrival/
 /// re-appearance also merges the DisplayConfig tier forward from cache so the
 /// appeared/activated payload is never a bare clobber (issue #149).</para>
-/// <para>cfgmgr32 has no soft driver-stop signal, so soft
-/// <see cref="DeviceDeactivated"/> is still not raised on Windows, and
+/// <para><b>Bluetooth link state (issue #286).</b> A <see cref="WindowsBluetoothLinkWatch"/>
+/// listens for the Bluetooth driver's <c>GUID_BLUETOOTH_HCI_EVENT</c> on each radio. A link
+/// coming up or going down on an already-paired device changes no devnode membership, so the
+/// instance stream above is silent for it. Each event raises <see cref="DeviceActivated"/> or
+/// <see cref="DeviceDeactivated"/> for the peripheral's <c>BTHENUM\DEV_…</c> or
+/// <c>BTHLE\DEV_…</c> node, with <see cref="DeviceInfo.IsActive"/> taken from the event
+/// (<see cref="BluetoothLinkEvents.Resolve"/>).</para>
+/// <para>Beyond that, cfgmgr32 has no soft driver-stop signal, so soft
+/// <see cref="DeviceDeactivated"/> is not raised for any other device on Windows, and
 /// <see cref="DevicePropertyChanged"/> fires only for the monitor DisplayConfig
 /// tier — no generic property-drift detection. A consumer needing another
 /// property's freshness wires that property's own OS signal or polls the single
@@ -124,18 +131,19 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
     // or a mode change the per-enumeration enrichment path never revisits (#149).
     private WindowsDisplayChangeSink? _displayChangeSink;
 
+    // Bluetooth link events from each radio (issue #286). The only source of
+    // DeviceDeactivated on Windows; see OnBluetoothLinkChanged.
+    private WindowsBluetoothLinkWatch? _bluetoothLinkWatch;
+
     public event EventHandler<DeviceChangeEventArgs>? DeviceAppeared;
     public event EventHandler<DeviceChangeEventArgs>? DeviceDisappeared;
     public event EventHandler<DeviceChangeEventArgs>? DeviceActivated;
 
-    // DeviceDeactivated is part of the IDeviceMonitorProvider contract but is
-    // intentionally never raised on Windows after ADR-0054: cfgmgr32 pushes no
-    // soft driver-stop signal, and Periphery no longer synthesizes one with a
-    // whole-tree poll. It fires from genuine OS push on Linux (udev unbind) and
-    // macOS (IOKit). CS0067 (event is never raised) is expected here.
-#pragma warning disable CS0067
+    // Raised only for a Bluetooth link going down (issue #286). cfgmgr32 pushes no
+    // soft driver-stop signal for anything else, and Periphery does not synthesize
+    // one with a whole-tree poll (ADR-0054). Linux (udev unbind) and macOS (IOKit)
+    // raise it from OS push for every device.
     public event EventHandler<DeviceChangeEventArgs>? DeviceDeactivated;
-#pragma warning restore CS0067
 
     // DevicePropertyChanged IS raised on Windows for Monitor-category devices:
     // the WM_DISPLAYCHANGE sink (below) re-runs the DisplayConfig enricher and
@@ -235,7 +243,16 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
 
             _instanceNotifyHandle = new DevNodeHelper.CmNotifyHandle(rawInstanceHandle);
 
-            _logger.LogInformation("Device notifications registered (events + WM_DISPLAYCHANGE display refresh).");
+            // After the cache is seeded, so a link event always finds its devnode.
+            // DeviceWatcher takes its startup snapshot after this method returns, so a link
+            // change before the registration is read from the devnode there. One gap
+            // remains: the devnode can lag the link by up to 2 s (measured), so a change in
+            // the last moments before the snapshot can be read stale and stays stale until
+            // the next link change. Best-effort; Start logs and continues on failure.
+            _bluetoothLinkWatch = new WindowsBluetoothLinkWatch(OnBluetoothLinkChanged);
+            _bluetoothLinkWatch.Start();
+
+            _logger.LogInformation("Device notifications registered (events + WM_DISPLAYCHANGE display refresh + Bluetooth link events).");
             return Task.CompletedTask;
         }
         catch (DeviceProviderException)
@@ -253,6 +270,8 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
 
     private void CleanupAfterFailedStart()
     {
+        _bluetoothLinkWatch?.Dispose();
+        _bluetoothLinkWatch = null;
         _displayChangeSink?.Dispose();
         _displayChangeSink = null;
         _instanceNotifyHandle?.Dispose();
@@ -598,6 +617,38 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
         DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
     }
 
+    // A Bluetooth link came up or went down (issue #286). Runs on the cfgmgr32 callback
+    // thread of the radio's registration. The cache entry is updated so a later removal
+    // carries the current activity, and the edge is raised with no lock held.
+    private void OnBluetoothLinkChanged(BluetoothLinkChange change)
+    {
+        DeviceInfo? device;
+        lock (_cacheLock)
+        {
+            device = BluetoothLinkEvents.Resolve(_lastKnownDevices.Values, change);
+            if (device is not null)
+                _lastKnownDevices[device.Id] = device;
+        }
+
+        if (device is null)
+        {
+            _logger.LogDebug("Bluetooth {LinkType} link {State} for a device with no known link devnode; ignored.",
+                change.Type, change.Connected ? "up" : "down");
+            return;
+        }
+
+        if (change.Connected)
+        {
+            _logger.LogDebug("Device activated (Bluetooth link up): {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
+            DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
+        }
+        else
+        {
+            _logger.LogDebug("Device deactivated (Bluetooth link down): {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
+            DeviceDeactivated?.Invoke(this, new DeviceChangeEventArgs(device));
+        }
+    }
+
     private void HandleInstanceRemoved(nint eventData, int eventDataSize)
     {
         string? instanceId = DevNodeHelper.ReadInstanceIdFromEventData(eventData, eventDataSize);
@@ -638,6 +689,9 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
     public ValueTask DisposeAsync()
     {
         _logger.LogInformation("Stopping device monitor, unregistering notifications");
+
+        _bluetoothLinkWatch?.Dispose();
+        _bluetoothLinkWatch = null;
 
         _displayChangeSink?.Dispose();
         _displayChangeSink = null;

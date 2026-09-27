@@ -12,6 +12,12 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 
 # ADR-0085: The 32feet binding is two integration packages, and neither of them is `Periphery.Bluetooth`
 
+> **Amendment (2026-09-27).** Context §1's "a 32feet-backed poll is currently the *only* live
+> Bluetooth signal" was true of cfgmgr32's devnode stream, not of Windows. The Bluetooth driver
+> pushes `GUID_BLUETOOTH_HCI_EVENT` on every BR/EDR link change, and core now raises activity edges
+> from it (issue #286; measured in `docs/explorations/bluetooth-os-apis-2026-09.md`). D7 §2's
+> activity source is not needed for BR/EDR on Windows. LE is unmeasured.
+
 ## Status
 
 Proposed. Resolves the question "should `Periphery.Bluetooth` just be a wrapper

@@ -855,11 +855,12 @@ public sealed class DeviceWatcher : IAsyncDisposable
     /// nothing serialising the two raises. Treat them as independent edges on
     /// independent axes (ADR-0004), not one arrival split in two.</para>
     /// <para>This is the edge to open a device on (ADR-0088). Its pair is
-    /// <see cref="Deactivated"/> — but that pairing does not hold on Windows, which
-    /// pushes no soft driver-stop signal (ADR-0054), so a handle opened here is torn
-    /// down only by <see cref="Disappeared"/>. A device that stops without leaving the
-    /// tree, such as a Bluetooth peripheral going out of range, produces no close edge
-    /// there at all.</para>
+    /// <see cref="Deactivated"/> — but on Windows that pairing holds only for a
+    /// Bluetooth peripheral's link node, whose link changes the Bluetooth driver
+    /// reports (issue #286). For every other device Windows pushes no soft
+    /// driver-stop signal (ADR-0054), so a handle opened here is torn down only by
+    /// <see cref="Disappeared"/>, and a device that stops without leaving the tree
+    /// produces no close edge there at all.</para>
     /// <para><see cref="DeviceProxy"/> and <see cref="DeviceSessionHost{TSession}"/> absorb that
     /// with their reopen and readiness loops. A hand-rolled subscription will not, and
     /// will hold a handle across a stop it never hears about.</para>

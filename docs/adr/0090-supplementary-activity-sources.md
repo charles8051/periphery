@@ -17,6 +17,12 @@ depends_on: ["0004-two-level-device-state-model.md", "0052-periphery-treehopper-
 >
 > **Amends [ADR-0087](0087-reconcile-activity-at-the-watcher-boundary.md) D1** within a declared
 > scope. D1 otherwise stands unchanged.
+>
+> **Amendment (2026-09-27).** The motivating case has an OS push. Windows raises
+> `GUID_BLUETOOTH_HCI_EVENT` on every BR/EDR link change, and the Windows provider now raises
+> `Activated` / `Deactivated` from it (issue #286). A supplementary source is no longer needed for
+> Windows BR/EDR link state. It may still be needed for LE, which is unmeasured, or for a
+> transport with no OS push.
 
 **Tracks:** `DeviceWatcher`, `IDeviceMonitorProvider`, `DeviceActivityStatus`, and any extension
 package that can observe a device the OS cannot.

@@ -11,6 +11,11 @@ depends_on: ["0005-property-change-events.md", "0009-setupapi-windows-provider.m
 
 # ADR-0054: Events over polling — drop the Windows whole-tree property scan
 
+> **Amendment (2026-09-27).** Decision 4's device-class-specific signal now exists for
+> Bluetooth. The provider raises `DeviceActivated` / `DeviceDeactivated` for a peripheral's
+> `BTHENUM\DEV_…` / `BTHLE\DEV_…` node from the Bluetooth driver's `GUID_BLUETOOTH_HCI_EVENT`,
+> registered per radio (issue #286). Soft stops of every other device remain unobserved.
+
 **Tracks:** `WindowsDeviceMonitorProvider`, `DeviceWatcher`, `DeviceTracker`
 **Depends on:** ADR-0005 (property-change events), ADR-0009 (SetupAPI Windows provider), ADR-0012 (state/property-change events), ADR-0026 (enricher I/O boundary), ADR-0048 (HID battery support)
 **Supersedes:** ADR-0012 **Decision 2** (the `PeriodicTimer` whole-tree property re-scan). ADR-0012 Decision 1 (cfgmgr32 instance notifications) and Decision 3 (AOT callback shim) stand.

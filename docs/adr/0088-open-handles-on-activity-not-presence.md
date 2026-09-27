@@ -103,6 +103,10 @@ A consequence of D1 rather than a separate choice, but numbered because D3 turns
 only by `Disappeared`, i.e. by physical removal. A device that stops without leaving the tree, such
 as a Bluetooth peripheral going out of range, produces no close edge at all on Windows.
 
+> **Amendment (2026-09-27).** The Bluetooth example no longer holds. A Bluetooth peripheral's
+> link node now gets `Deactivated` on Windows when its link drops, from the Bluetooth driver's
+> `GUID_BLUETOOTH_HCI_EVENT` (issue #286). The rule stands for every other device.
+
 `DeviceProxyBase` absorbs this with its reopen and readiness loops. A hand-rolled consumer will
 hold a handle across a soft stop it never hears about. This is the strongest argument for D3, and
 it is why D3 is a decision rather than a style preference.
