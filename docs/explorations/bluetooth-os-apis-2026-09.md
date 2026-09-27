@@ -7,6 +7,8 @@ Linux kernel source, the Windows SDK headers and Microsoft Learn, the 32feet sou
 developer documentation. Third-party reports fill the gaps and are labelled as such. Windows was
 also measured, read-only, on one Windows 11 host with two bonded BR/EDR peripherals and two bonded
 LE peripherals, through cfgmgr32 device properties and [`scratch/BleOsProbe`](../../scratch/BleOsProbe).
+Windows link-change pushes were measured on 2026-09-27 with
+[`scratch/BluetoothHciEventProbe`](../../scratch/BluetoothHciEventProbe).
 No Linux or macOS Bluetooth hardware was available.
 **Scope:** device inventory, identity, liveness, GATT access, pairing, scanning, permissions and
 caching. Classic profiles other than RFCOMM, LE Audio, mesh, and acting as a peripheral are out of
@@ -35,7 +37,7 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | 3 | 32feet's `BluetoothDevice.Id` has a different format on each platform. On Windows it drops leading zeros. | All | Source, Measured | Parse to a number before comparing. |
 | 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented | Nothing. It is a platform privacy decision. |
 | 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, and read-only on BlueZ 5.80+. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS is unverified. |
-| 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. WinRT documents two push sources that were never measured. | Windows | Documented | A link toggle under an AEP `DeviceWatcher` and under `BluetoothLEDevice.ConnectionStatusChanged`. |
+| 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. The Bluetooth driver pushes `GUID_BLUETOOTH_HCI_EVENT` on every BR/EDR link change, through a cfgmgr32 registration core can make without WinRT. | Windows | Documented, Measured | BR/EDR is settled; see [Liveness → Windows](#windows-1). An LE link toggle under the same probe. |
 | 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. This changes #232's expected result for the RPA column. | Windows | Measured | #232's rotation run, on Windows. |
 | 8 | A BlueZ `Device1` object is not a bond. Discovery creates temporary objects that BlueZ removes after 30 s. `Bonded` exists only from BlueZ 5.65, and Ubuntu 22.04 ships 5.64. | Linux | Documented, Source | Select on `Paired`. Treat `Bonded` as optional. |
 | 9 | Pairing has three shapes: an API on Windows, an agent on Linux, and no API on macOS. On macOS, 32feet's `IsPaired` is always `false`. | All | Documented, Source | No common surface. See [Pairing](#pairing). |
@@ -218,6 +220,36 @@ behaviour is still unmeasured, so Context §1's "only" is not yet established.
 Both sources need WinRT, which is ADR-0018's TFM coupling. Neither is reachable from core's bare
 TFM.
 
+A third source needs neither WinRT nor 32feet. The Bluetooth driver raises
+`GUID_BLUETOOTH_HCI_EVENT` on a handle to the local radio "when a remote Bluetooth device connects or
+disconnects at the ACL level", with a `BTH_HCI_EVENT_INFO` carrying the address, the connection type
+and a `connected` flag (Documented). Microsoft describes it through `RegisterDeviceNotification`.
+`CM_Register_Notification` delivers the same event as `CM_NOTIFY_ACTION_DEVICECUSTOMEVENT` to a
+`CM_NOTIFY_FILTER_TYPE_DEVICEHANDLE` registration, and the handle may be closed once the
+registration returns (Measured).
+
+Measured on 2026-09-27 against a paired BR/EDR HID peripheral, power-cycled twice, on a Windows 11
+host with one radio. The radio was opened with `FILE_READ_ATTRIBUTES`, registered, and its handle
+closed immediately.
+
+- Each connect and each disconnect raised exactly one `GUID_BLUETOOTH_HCI_EVENT`, type ACL, with the
+  bonded device's address. The address is the one in its `BTHENUM\DEV_<address>` instance id.
+- `GUID_BLUETOOTH_RADIO_IN_RANGE` arrived in the same millisecond, with `BDIF_CONNECTED` set or
+  cleared against `previousDeviceFlags`. `GUID_BLUETOOTH_L2CAP_EVENT` followed for the HID control
+  and interrupt channels (PSM `0x0011`, `0x0013`).
+- A Periphery `DeviceWatcher` over `DeviceCategory.Bluetooth`, running alongside, raised no edge for
+  any of the four transitions.
+- The `DEV_` devnode's `IsActive`, re-read after each event, agreed with it within 60 ms on three of
+  the four transitions. At the second disconnect it still read `true` 28 ms after the event and
+  `false` 2 s later. A consumer of the event should take the link state from the event, not from a
+  re-read of the devnode.
+- Every transition also raised an undocumented custom event,
+  `ab27d6ed-0e6d-4b67-9773-f1426bcea595`, with 18 bytes of data. It is not defined in SDK
+  10.0.26100's `bthdef.h`.
+
+So for BR/EDR the OS does push the edge, and Periphery does not subscribe to it. Context §1's "only"
+holds for the devnode stream, not for Windows.
+
 ### Linux
 
 `Device1.Connected` changes raise `PropertiesChanged`. `Device1.Disconnected(reason, message)`
@@ -359,6 +391,8 @@ each queued request can take that long (Documented: Microsoft Learn, Bluetooth G
 | Does CoreBluetooth on macOS hide `0x1812`? | `discoverServices(nil)` against an LE HID peripheral on a Mac. |
 | Does BlueZ restore the desktop's default agent after 32feet's `PairAsync(code)`? | Pair from 32feet in a GNOME session, then pair from Settings. |
 | What does `0x04000000` mean in `DEVPKEY_Bluetooth_DeviceFlags`? | Not defined in SDK 10.0.26100's `bthdef.h`. |
+| Does `GUID_BLUETOOTH_HCI_EVENT` fire, with connection type LE, when an LE peripheral connects? | An LE link toggle during `dotnet run --project scratch/BluetoothHciEventProbe -- 120`. |
+| What is custom event `ab27d6ed-0e6d-4b67-9773-f1426bcea595`? | Not defined in SDK 10.0.26100. Decode its 18 bytes across several transitions. |
 
 ---
 
@@ -385,7 +419,9 @@ Windows
 - [`BluetoothLEAdvertisementWatcher.ScanningMode`](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.advertisement.bluetoothleadvertisementwatcher.scanningmode)
 - [`DeviceInformationCustomPairing`](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.deviceinformationcustompairing)
 - [`BluetoothLEDevice.ConnectionStatusChanged`](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.connectionstatuschanged)
-- `bthdef.h`, Windows SDK 10.0.26100, `BDIF_*` definitions
+- `bthdef.h`, Windows SDK 10.0.26100, `BDIF_*`, `BTH_HCI_EVENT_INFO`, `BTH_L2CAP_EVENT_INFO` and `BTH_RADIO_IN_RANGE` definitions
+- [Bluetooth and WM_DEVICECHANGE Messages](https://learn.microsoft.com/en-us/windows/win32/bluetooth/bluetooth-and-wm-devicechange-messages)
+- [`CM_NOTIFY_FILTER`](https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/ns-cfgmgr32-cm_notify_filter), [`CM_NOTIFY_ACTION`](https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/ne-cfgmgr32-cm_notify_action)
 - [Microsoft Q&A: multiple Bluetooth adapters](https://learn.microsoft.com/en-us/answers/questions/4032619/can-a-windows-11-pc-use-2-bluetooth-adapters-at-on)
 
 Apple
