@@ -191,7 +191,7 @@ static class Probe
             bool connected = payload[9] != 0;
             Count($"HCI {(connected ? "connect" : "disconnect")}");
             Log("hci", $"radio {radio}: {Alias(address)} {type} {(connected ? "CONNECTED" : "DISCONNECTED")}");
-            PendingReports.Add(Task.Run(() => ReportDevnodesAsync(address)));
+            PendingReports.Add(Task.Run(() => ReportDevnodesAsync(address, radio)));
         }
         else if (guid == L2capEvent && payload.Length >= 12)
         {
@@ -252,12 +252,14 @@ static class Probe
                      $"{stack.Values.Count(f => (f & BDIF_LE_CONNECTED) != 0)} LE_CONNECTED");
     }
 
-    // Address -> BDIF flags across every radio, or null when no radio answered.
-    static Dictionary<ulong, uint>? ReadStack(out string detail)
+    // Address -> BDIF flags, or null when no radio answered. With a radio number (1-based,
+    // as printed), only that radio is asked; otherwise every radio, merged by address.
+    static Dictionary<ulong, uint>? ReadStack(out string detail, int? radio = null)
     {
         Dictionary<ulong, uint>? merged = null;
         var notes = new List<string>();
-        foreach (string path in RadioPaths)
+        List<string> paths = radio is int r && r >= 1 && r <= RadioPaths.Count ? [RadioPaths[r - 1]] : RadioPaths;
+        foreach (string path in paths)
         {
             var devices = Native.QueryStackDevices(path, StackAccess, out string note);
             notes.Add(note);
@@ -270,7 +272,7 @@ static class Probe
         return merged;
     }
 
-    static async Task ReportDevnodesAsync(ulong address)
+    static async Task ReportDevnodesAsync(ulong address, int radio)
     {
         string hex = address.ToString("X12");
         foreach (int delayMs in (int[])[0, 2000])
@@ -278,8 +280,9 @@ static class Probe
             if (delayMs > 0)
                 await Task.Delay(delayMs);
 
-            // The stack first, so at +0 ms it is read as close to the event as possible.
-            var stack = ReadStack(out string stackDetail);
+            // The stack first, so at +0 ms it is read as close to the event as possible,
+            // and from the radio that raised the event.
+            var stack = ReadStack(out string stackDetail, radio);
             string stackLine = stack is null ? $"IOCTL failed: {stackDetail}"
                 : !stack.TryGetValue(address, out uint flags) ? "address not in the stack's device list"
                 : $"CONNECTED={(flags & BDIF_CONNECTED) != 0} LE_CONNECTED={(flags & BDIF_LE_CONNECTED) != 0}  [{FlagNames(flags)}]";
