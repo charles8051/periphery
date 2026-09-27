@@ -899,7 +899,7 @@ Do **not** reach for a category filter to do this. `DeviceCategory` does not sep
 
 | Peripheral | Node | Category | Liveness |
 |---|---|---|---|
-| Keyboard (BR/EDR) | `BTHENUM\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected, with `Activated` / `Deactivated` from the Bluetooth driver (#286) |
+| Keyboard (BR/EDR) | `BTHENUM\DEV_…` | `Bluetooth` | present = bonded; `IsActive` = connected, read from the stack's `BDIF_CONNECTED` at enumeration because the devnode status lags (#288), with `Activated` / `Deactivated` from the Bluetooth driver (#286) |
 | | `BTHENUM\{00001124-…}` | `Hid` | **stuck `true` while bonded** |
 | | 6 × `HID\{00001124-…}&Col0n` | `Hid` | appear / disappear with the link |
 | | 2 × `HID\{00001124-…}&Col0n` | `Keyboard` | appear / disappear with the link |

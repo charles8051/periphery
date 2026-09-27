@@ -89,6 +89,12 @@ public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
         }
     }
 
+    // Bluetooth link state from the stack, read once per enumeration and only if a BR/EDR link
+    // devnode turns up. The devnode's own status lags the link by up to 2 s, which could leave
+    // a watcher's startup snapshot stale with no later event to correct it (issue #288).
+    var bluetoothStackFlags = new Lazy<Dictionary<ulong, uint>?>(
+        BluetoothRadio.TryReadStackFlags, LazyThreadSafetyMode.None);
+
     foreach (var (devInst, instanceId) in DevNodeHelper.EnumerateDeviceInstances(classGuids))
     {
         ct.ThrowIfCancellationRequested();
@@ -97,6 +103,8 @@ public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
         try
         {
             device = ToDeviceInfo(devInst, instanceId);
+            if (BluetoothStackLinkState.IsBrEdrLinkNode(device))
+                device = BluetoothStackLinkState.Apply(device, bluetoothStackFlags.Value);
             device = WindowsNetworkEnricher.Enrich(device);       // Tier 2: MacAddress/IPAddresses/Network
             device = WindowsBatteryEnricher.Enrich(device, batterySnapshot); // Tier 3: Battery charge/status/power source
             if (displayConfigEnricher is not null)

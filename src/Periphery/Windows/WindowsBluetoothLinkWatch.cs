@@ -38,15 +38,7 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
     private static readonly ILogger<WindowsBluetoothLinkWatch> _logger =
         PeripheryLoggerFactory.CreateLogger<WindowsBluetoothLinkWatch>();
 
-    private static readonly Guid GUID_BTHPORT_DEVICE_INTERFACE = new("0850302a-b344-4fda-9be9-90576b8d46f0");
-
-    private const uint FILE_READ_ATTRIBUTES = 0x80;
-    private const uint FILE_SHARE_READ = 0x1;
-    private const uint FILE_SHARE_WRITE = 0x2;
-    private const uint OPEN_EXISTING = 3;
     private const int CR_SUCCESS = 0;
-    private const int CR_BUFFER_SMALL = 0x1A;
-    private static readonly nint INVALID_HANDLE_VALUE = -1;
 
     // Callback context is an id into this map rather than a GCHandle. A registration made
     // on a thread-pool thread can race Dispose, and a callback that finds no entry is simply
@@ -82,7 +74,7 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
             {
                 cbSize = Marshal.SizeOf<DevNodeHelper.CM_NOTIFY_FILTER>(),
                 FilterType = DevNodeHelper.CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE,
-                ClassGuid = GUID_BTHPORT_DEVICE_INTERFACE,
+                ClassGuid = BluetoothRadio.GUID_BTHPORT_DEVICE_INTERFACE,
             };
             int cr = DevNodeHelper.CM_Register_Notification(ref filter, _id, &NotificationShim, out nint raw);
             if (cr == CR_SUCCESS)
@@ -107,7 +99,7 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
                 _logger.LogWarning("Bluetooth radio arrival registration failed (CONFIGRET 0x{Result:X}); radios added later get no link events.", cr);
             }
 
-            foreach (string path in RadioInterfacePaths())
+            foreach (string path in BluetoothRadio.InterfacePaths())
                 RegisterRadio(path);
         }
         catch (Exception ex)
@@ -144,8 +136,8 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
             if (_disposed || _radios.ContainsKey(interfacePath)) return;
         }
 
-        nint radio = CreateFileW(interfacePath, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
-        if (radio == INVALID_HANDLE_VALUE)
+        nint radio = BluetoothRadio.Open(interfacePath);
+        if (radio == BluetoothRadio.INVALID_HANDLE_VALUE)
         {
             _logger.LogWarning("Could not open a Bluetooth radio for link events (Win32 error {Error}).", Marshal.GetLastPInvokeError());
             return;
@@ -166,7 +158,7 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
         finally
         {
             // The handle only has to outlive the registration call.
-            CloseHandle(radio);
+            BluetoothRadio.Close(radio);
         }
 
         if (cr != CR_SUCCESS)
@@ -260,42 +252,4 @@ internal sealed partial class WindowsBluetoothLinkWatch : IDisposable
         if (eventData == 0 || eventDataSize < symbolicLinkOffset + 2) return null;
         return Marshal.PtrToStringUni(eventData + symbolicLinkOffset);
     }
-
-    private static unsafe List<string> RadioInterfacePaths()
-    {
-        var interfaceClass = GUID_BTHPORT_DEVICE_INTERFACE;
-        // The list can grow between the size query and the read.
-        for (int attempt = 0; attempt < 3; attempt++)
-        {
-            if (CM_Get_Device_Interface_List_SizeW(out uint length, ref interfaceClass, null, 0) != CR_SUCCESS)
-                return [];
-
-            var buffer = new char[length];
-            int cr;
-            fixed (char* p = buffer)
-                cr = CM_Get_Device_Interface_ListW(ref interfaceClass, null, p, length, 0);
-
-            if (cr == CR_BUFFER_SMALL) continue;
-            if (cr != CR_SUCCESS) return [];
-            return [.. new string(buffer).Split('\0', StringSplitOptions.RemoveEmptyEntries)];
-        }
-        return [];
-    }
-
-    [LibraryImport("cfgmgr32.dll")]
-    private static unsafe partial int CM_Get_Device_Interface_List_SizeW(
-        out uint pulLen, ref Guid interfaceClassGuid, char* pDeviceID, uint ulFlags);
-
-    [LibraryImport("cfgmgr32.dll")]
-    private static unsafe partial int CM_Get_Device_Interface_ListW(
-        ref Guid interfaceClassGuid, char* pDeviceID, char* buffer, uint bufferLen, uint ulFlags);
-
-    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-    private static partial nint CreateFileW(
-        string fileName, uint desiredAccess, uint shareMode, nint securityAttributes,
-        uint creationDisposition, uint flagsAndAttributes, nint templateFile);
-
-    [LibraryImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool CloseHandle(nint handle);
 }
