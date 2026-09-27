@@ -23,7 +23,8 @@ using Periphery;
 //   in-range   GUID_BLUETOOTH_RADIO_IN_RANGE: the stack's flags for a device changed
 //   stack      the Bluetooth stack's own flags for the hci address, from IOCTL_BTH_GET_DEVICE_INFO
 //              on the radio, read just before each devnode sample (issue #288)
-//   devnode    IsActive of the Bluetooth devnodes carrying the hci address, at +0 and +2000 ms
+//   enumerate  IsActive as Devices.Enumerate() reports it for the devnodes carrying the hci
+//              address, at +0 and +2000 ms. For a BR/EDR link node it comes from the stack (#288).
 //   periphery  a live DeviceWatcher edge (the startup snapshot is counted, not printed)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ static class Probe
             string detail = matches.Count == 0
                 ? "no Bluetooth devnode carries this address"
                 : string.Join("; ", matches.Select(d => $"{Mask(d.Id.ToString())} IsActive={d.IsActive}"));
-            Log("devnode", $"{Alias(address)} +{delayMs} ms: {detail}");
+            Log("enumerate", $"{Alias(address)} +{delayMs} ms: {detail}");
         }
     }
 

@@ -245,10 +245,11 @@ internal sealed class WindowsDeviceMonitorProvider : IDeviceMonitorProvider
 
             // After the cache is seeded, so a link event always finds its devnode.
             // DeviceWatcher takes its startup snapshot after this method returns, so a link
-            // change before the registration is read from the devnode there. One gap
-            // remains: the devnode can lag the link by up to 2 s (measured), so a change in
-            // the last moments before the snapshot can be read stale and stays stale until
-            // the next link change. Best-effort; Start logs and continues on failure.
+            // change before the registration is read by that snapshot. The devnode's own
+            // status lags the link by up to 2 s, so for BR/EDR link nodes the enumeration
+            // takes IsActive from the stack instead (BluetoothStackLinkState, issue #288).
+            // LE link nodes still read the devnode. Best-effort; Start logs and continues on
+            // failure.
             _bluetoothLinkWatch = new WindowsBluetoothLinkWatch(OnBluetoothLinkChanged);
             _bluetoothLinkWatch.Start();
 
