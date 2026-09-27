@@ -30,7 +30,7 @@ await using var session = await CameraSession.For(device)
 await foreach (var frame in session.CaptureAsync())
 {
     using (frame)
-    using (var bgr = frame.ToBgr())     // any capture format -> CV_8UC3 BGR
+    using (var bgr = frame.ToBgr())     // every format except Gray16 -> CV_8UC3 BGR
     {
         Cv2.ImShow("preview", bgr);
         Cv2.WaitKey(1);
@@ -42,7 +42,7 @@ await foreach (var frame in session.CaptureAsync())
 
 | Call | Copies | Use it when |
 |---|---|---|
-| `frame.AsMat()` | no | You convert or measure inside the capture loop. The `Mat` is valid until the returned scope is disposed. |
+| `frame.AsMat()` | no | You convert or measure inside the capture loop. The `Mat` borrows the frame's pooled buffer, so do not keep it past the returned scope: the buffer is reused for a later frame. |
 | `frame.ToMat()` | yes | You need the raw capture format after the frame is released. |
 | `frame.ToBgr()` | yes | You want a BGR image. This is the only one that accepts MJPEG. |
 

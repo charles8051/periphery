@@ -149,15 +149,16 @@ lossless consumer its own copy, as in [Retention](#retention).
 
 ### Size `BufferCount` to the fan-out
 
-Every queued frame in every subscriber channel is a held lease:
+Every queued frame in every subscriber channel is a held lease, and so is the frame the fan-out loop is
+writing:
 
 ```
-BufferCount ≥ Σ(subscriber depths) + (one in-flight frame per consumer)
+BufferCount ≥ Σ(subscriber depths) + (one in-flight frame per consumer) + 1 (the fan-out loop's frame)
 ```
 
-For the three consumers above that is `(1 + 1 + 8) + 3 = 13`, not the default 3. With 3, the pool empties,
-the producer cannot get a buffer, and the stall looks like a slow camera. The allocation is
-`BufferCount + QueueDepth + 1`: 15 buffers at 1080p NV12 is about 47 MB.
+For the three consumers above that is `(1 + 1 + 8) + 3 + 1 = 14`, not the default 3. With 3, the pool
+empties, the producer cannot get a buffer, and the stall looks like a slow camera. The allocation is
+`BufferCount + QueueDepth + 1`: 16 buffers at 1080p NV12 is about 50 MB.
 
 The deep channel dominates the sum. Keep such depths modest, or have that consumer copy out of the pool.
 
