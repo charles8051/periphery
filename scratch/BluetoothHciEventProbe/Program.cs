@@ -399,7 +399,14 @@ static unsafe partial class Native
                     continue;
                 }
 
-                note = $"{returned} bytes returned for {count} device(s), layout predicts {ListHeader + count * DeviceInfoSize}";
+                int expected = ListHeader + count * DeviceInfoSize;
+                if (returned < expected)
+                {
+                    note = $"{returned} bytes returned for {count} device(s), fewer than the {expected} the layout needs";
+                    return null;
+                }
+
+                note = $"{returned} bytes returned for {count} device(s), layout predicts {expected}";
                 var devices = new List<(ulong, uint)>(count);
                 for (int i = 0; i < count; i++)
                 {
