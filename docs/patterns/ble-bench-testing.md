@@ -9,8 +9,8 @@
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each
-transition to a peripheral over its serial console, and the peripheral's log
-confirms that the transition happened.
+transition to the DK over its serial console, and the DK's log
+confirms that the transition happened. The Thingy runs on its own.
 
 This is the Bluetooth companion to [`usb-lifecycle-testing.md`](usb-lifecycle-testing.md).
 There, the harness makes a USB device disappear. Here, it makes an LE peripheral
@@ -20,31 +20,33 @@ disconnect, reboot, change address, or forget its bond.
 
 ## Hardware
 
-| Board | Role | How it is flashed |
-|---|---|---|
-| nRF54 DK | Primary test peripheral. Programmer for the Thingy. | Onboard SEGGER J-Link, over the same USB cable. No bootloader involved. |
-| Nordic Thingy | Second peripheral. Battery-powered, so it can drop the link without a command. | Depends on the model; see below. |
-| nRF52840 Dongle | Sniffer. Not owned yet. | Sniffer firmware from nRF Sniffer for Bluetooth LE. |
+| Board | Zephyr target | Role | How it is flashed |
+|---|---|---|---|
+| nRF52833 DK (PCA10100) | `nrf52833dk/nrf52833` | Primary test peripheral. Programmer for the Thingy. | Onboard SEGGER J-Link, over the same USB cable. No bootloader involved. |
+| Thingy:52 (nRF52832) | `thingy52/nrf52832` | Second peripheral. Battery-powered, so its power switch drops the link without a command. | SWD only, from the DK's Debug out connector. |
+| nRF52840 Dongle | n/a | Sniffer. Not owned yet. | Sniffer firmware from nRF Sniffer for Bluetooth LE. |
 
-Both nRF54 DKs carry an onboard J-Link, so `west flash` or
-`nrfutil device program` needs no external probe. The nRF54L15 has no USB
-peripheral, so on that DK the J-Link is the only way in.
+The DK's onboard J-Link means `west flash` or `nrfutil device program` needs no
+external probe.
 
-The Thingy's flashing path depends on the model:
+The Thingy:52 has no USB data line. It is programmed through the DK's Debug out
+connector with a 2x5 1.27 mm socket-to-socket SWD cable, which neither board
+ships with. While that cable is attached, the DK's J-Link drives the Thingy
+instead of the DK's own chip.
 
-- **Thingy:53** ships with MCUboot and USB serial recovery. Hold SW2 while
-  switching SW1 on, then write a `dfu_application.zip` with nRF Connect
-  Programmer. Every build flashed this way has to keep MCUboot in the image.
-- **Thingy:52** has no USB data line and is SWD only.
+The Thingy:52 ships with an nRF5 SDK Secure DFU bootloader that updates over BLE.
+It accepts only packages signed with Nordic's key, so custom firmware has to go
+in over SWD, and that erases the bootloader. Nordic's
+[Thingy:52 firmware repository][thingy52-fw] has the stock image for restoring
+it. Before it is wiped, the stock Thingy is a live Secure DFU target over BLE.
+That is the protocol the [Nordic DFU spec] covers, and Nordic's released Thingy
+DFU packages are signed for it.
 
-Either model can be programmed from the DK's Debug OUT connector over a 10-pin
-1.27 mm cable. Nordic recommends keeping that cable under 8 cm on the nRF54L15 DK.
-This is also the recovery path for a Thingy:53 whose MCUboot was erased.
-
-Nordic's nRF Sniffer page lists only nRF52 boards as of 2026-09: the nRF52840
-Dongle, nRF52840 DK, nRF52833 DK and nRF52 DK. The DK also can't sniff while it
-is acting as the test peripheral. An nRF52840 Dongle solves both problems, and it
-is the same hardware the [Nordic DFU spec]'s OQ-2 needs.
+nRF Sniffer supports the nRF52833 DK up to hardware version 2. Nordic has reported
+the version 3 interface IC as incompatible. The version is on the DK's label.
+Whatever the version, the DK can't sniff while it is the test peripheral. An
+nRF52840 Dongle avoids both problems, and it is the same hardware the
+[Nordic DFU spec]'s OQ-2 needs.
 
 Host tooling: the nRF Connect SDK (`west`), `nrfutil`, and the SEGGER J-Link
 software.
@@ -74,7 +76,11 @@ Nordic parts are LE only. That sets the bench's reach.
 Zephyr's Bluetooth shell, [`tests/bluetooth/shell`][bt-shell], built with
 `CONFIG_BT_HRS=y`. The shell gives the harness a command for each transition, and
 Heart Rate (`0x180D`) carries a notify, a read and a write characteristic for GATT
-work. The same image goes on both boards.
+work. This image goes on the DK.
+
+The Thingy:52 has no serial console, so the shell can't drive it once the SWD
+cable is off. It runs Zephyr's `peripheral_hr` sample instead, which advertises
+at boot and needs no commands. Its power switch is its only control.
 
 | Transition | Command |
 |---|---|
@@ -88,7 +94,8 @@ work. The same image goes on both boards.
 | Reboot the peripheral | `nrfutil device reset`, through the J-Link |
 
 The reboot goes through the J-Link rather than the shell, so it still works when
-the firmware is hung.
+the firmware is hung. It resets the DK only while the Thingy's SWD cable is
+detached.
 
 ### Address types
 
@@ -98,7 +105,7 @@ the firmware is hung.
   short (for example 30 s) so a rotation happens inside one test.
 - **Public** is not available by default. Nordic parts have no factory public
   address, so one has to be written with Zephyr's vendor HCI command Write
-  BD_ADDR before `bt init`. Unverified on the nRF54.
+  BD_ADDR before `bt init`. Unverified on this bench.
 
 ### Ground truth from the peripheral
 
@@ -122,10 +129,9 @@ trustworthy.
 
 The test project reaches the DK's shell through its J-Link VCOM port (SEGGER
 VID `0x1366`), opened with `Periphery.Serial`. The DK may expose more than one
-VCOM port, so use the one that answers `bt id-show`. A Thingy:53 serves the
-same shell on its USB CDC ACM console.
+VCOM port, so use the one that answers `bt id-show`.
 
-A small interface keeps tests independent of which board they drive:
+A small interface keeps tests independent of the board behind them:
 
 ```csharp
 /// <summary>One LE test peripheral, driven over its shell.</summary>
@@ -190,9 +196,10 @@ These are the same rules the Linux device rig follows.
 3. **[#232]'s matrix.** Three address types, each through four transitions:
    disconnect and reconnect, peripheral reboot, unpair and re-pair, host reboot.
    The result decides whether `BleDeviceProxy` ships or is rejected.
-4. **Two identical units.** Put the same firmware, name and GATT table on both
-   boards. This measures what ADR-0083 NEG-005 predicts and what
-   `DeviceGroupTracker` has to handle.
+4. **Two identical units.** Flash `peripheral_hr` on both boards, with the same
+   device name. The host then sees two peripherals that differ only by address.
+   This measures what ADR-0083 NEG-005 predicts and what `DeviceGroupTracker` has
+   to handle.
 5. **Regression tests.** Turn the results from steps 2 to 4 that became
    contracts into gated tests.
 
@@ -220,8 +227,8 @@ results.
 - [Bluetooth OS APIs exploration][the OS APIs exploration]
 - [Nordic DFU spec]
 - [Zephyr Bluetooth shell][bt-shell], [GAP shell commands][gap-shell]
-- [nRF54L15 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF54L15-DK)
-- [Developing with Thingy:53](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy53.html)
+- [nRF52833 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF52833-DK)
+- [Thingy:52 firmware and cable programming][thingy52-fw]
 - [nRF Sniffer for Bluetooth LE](https://www.nordicsemi.com/Products/Development-tools/nrf-sniffer-for-bluetooth-le)
 
 [ADR-0083]: ../adr/0083-ble-identity-does-not-survive-repairing.md
@@ -235,3 +242,4 @@ results.
 [#259]: https://github.com/charles8051/periphery/issues/259
 [bt-shell]: https://docs.zephyrproject.org/latest/services/connectivity/bluetooth/bluetooth-shell.html
 [gap-shell]: https://docs.zephyrproject.org/latest/services/connectivity/bluetooth/shell/host/gap.html
+[thingy52-fw]: https://github.com/NordicSemiconductor/Nordic-Thingy52-FW
