@@ -64,8 +64,9 @@ internal static class BluetoothStackLinkState
     /// <summary>
     /// Returns <paramref name="device"/> with <see cref="DeviceInfo.IsActive"/> taken from the
     /// stack's <c>BDIF_CONNECTED</c>, when it is a BR/EDR link devnode and the stack lists its
-    /// address. Anything else is returned unchanged, including LE link devnodes: whether
-    /// <c>BDIF_LE_CONNECTED</c> tracks the link as promptly is unmeasured.
+    /// address. Anything else is returned unchanged, including LE link devnodes. Measured, the
+    /// stack's list never includes an LE peripheral, and an LE devnode's own status agreed with
+    /// every link change within 45 ms.
     /// </summary>
     internal static DeviceInfo Apply(DeviceInfo device, IReadOnlyDictionary<ulong, uint>? stackFlags)
     {

@@ -200,15 +200,11 @@ These are the same rules the Linux device rig follows.
    address-type classification from the top two bits, and ADR-0090 D2's rule
    that turns reported levels into edges, as a `(state, level) -> (state', edge?)`
    table.
-2. **LE liveness on Windows.** Toggle the DK's link while
-   `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` run. Answer:
-   - Does `GUID_BLUETOOTH_HCI_EVENT` fire with connection type LE?
-   - Does `BDIF_LE_CONNECTED` track the link on the devnode?
-   - Does `IOCTL_BTH_GET_DEVICE_INFO` list LE devices?
-   - Does the AEP watcher raise `Updated` for `IsConnected`?
-
-   If the HCI event covers LE, the provider path from [#286](https://github.com/charles8051/periphery/issues/286) extends to LE, and
-   ADR-0090 has no motivating case on Windows. Do this before building ADR-0090.
+2. **LE liveness on Windows.** Done 2026-09-28. `scratch/BleLinkHold/run-link-toggles.ps1`
+   holds a GATT session open from the host and toggles the DK's link while
+   `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` run, with `-Drop disconnect` or
+   `-Drop reset`. The HCI event covers LE, and core already raises the edges, so ADR-0090 has no
+   motivating case on Windows. Results are in [the OS APIs exploration][the OS APIs exploration].
 3. **[#232]'s matrix.** Three address types, each through four transitions:
    disconnect and reconnect, peripheral reboot, unpair and re-pair, host reboot.
    The result decides whether `BleDeviceProxy` ships or is rejected.

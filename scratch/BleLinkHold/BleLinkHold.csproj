@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Holds a GATT session with MaintainConnection on one bonded LE peripheral, so
+         Windows reconnects whenever the peripheral advertises. The peripheral side of
+         the BLE bench (docs/patterns/ble-bench-testing.md) then toggles the link by
+         disconnecting and re-advertising. Logs ConnectionStatusChanged and the
+         session status. Addresses are masked in the output. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

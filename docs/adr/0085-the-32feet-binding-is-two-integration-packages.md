@@ -17,6 +17,12 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > pushes `GUID_BLUETOOTH_HCI_EVENT` on every BR/EDR link change, and core now raises activity edges
 > from it (issue #286; measured in `docs/explorations/bluetooth-os-apis-2026-09.md`). D7 §2's
 > activity source is not needed for BR/EDR on Windows. LE is unmeasured.
+>
+> **Amendment (2026-09-28).** LE is measured. The same push fires with type LE on every LE link
+> change, including a link lost to a peripheral reset, and core already raises the edges from it.
+> D7 §2's activity source is needed on Windows for neither transport. On the same runs WinRT's
+> `BluetoothLEDevice.ConnectionStatusChanged` agreed with the devnode on every transition. That
+> answers the "LE agreement" open question for WinRT. 32feet's BLE package was not run.
 
 ## Status
 
