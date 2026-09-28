@@ -24,6 +24,13 @@
 
 LOG_MODULE_REGISTER(bench, LOG_LEVEL_INF);
 
+/*
+ * The advertising set belongs to the system workqueue. Shell commands hand it a request and wait
+ * for the result, and the address log runs on the same queue, so no address is read from a set
+ * that is being torn down, and a logged address belongs to the set announced before it. The
+ * host's own RPA rotation (rpa_timeout) runs there too. HCI traffic is received on the Bluetooth
+ * workqueue, so a blocking HCI call from the system workqueue is safe.
+ */
 static struct bt_le_ext_adv *adv;
 
 static const struct bt_data ad[] = {
@@ -50,8 +57,8 @@ static void log_adv_address(struct k_work *work)
 }
 
 /*
- * The host rotates the RPA after every rpa_expired callback returns, in the same work item, so
- * the address is read from a work item queued behind it.
+ * rpa_timeout rotates the RPA after every rpa_expired callback returns, in the same work item,
+ * so the new address is read from a work item queued behind it.
  */
 static K_WORK_DEFINE(adv_address_work, log_adv_address);
 
@@ -83,8 +90,12 @@ static const struct bt_le_ext_adv_cb adv_cb = {
 #endif
 };
 
+/* Runs on the system workqueue. */
 static void adv_delete(void)
 {
+	/* A pending log would read the set that replaces this one. */
+	(void)k_work_cancel(&adv_address_work);
+
 	if (adv == NULL) {
 		return;
 	}
@@ -92,6 +103,80 @@ static void adv_delete(void)
 	(void)bt_le_ext_adv_stop(adv);
 	(void)bt_le_ext_adv_delete(adv);
 	adv = NULL;
+}
+
+/* Runs on the system workqueue. Returns the failing step through *step. */
+static int adv_start(bool identity, uint8_t id, const char **step)
+{
+	struct bt_le_adv_param param = BT_LE_ADV_PARAM_INIT(
+		BT_LE_ADV_OPT_CONN | (identity ? BT_LE_ADV_OPT_USE_IDENTITY : 0),
+		BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL);
+	int err;
+
+	param.id = id;
+	adv_delete();
+
+	*step = "create";
+	err = bt_le_ext_adv_create(&param, &adv_cb, &adv);
+	if (err) {
+		adv = NULL;
+		return err;
+	}
+
+	*step = "set data";
+	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
+	if (!err) {
+		*step = "start";
+		err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
+	}
+	if (err) {
+		adv_delete();
+		return err;
+	}
+
+	LOG_INF("adv started mode=%s id=%u", identity ? "identity" : "rpa", id);
+	log_adv_address(NULL);
+	return 0;
+}
+
+static struct {
+	bool stop;
+	bool identity;
+	uint8_t id;
+	int result;
+	const char *step;
+} adv_request;
+
+static K_SEM_DEFINE(adv_request_done, 0, 1);
+
+static void adv_request_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	if (adv_request.stop) {
+		adv_delete();
+		LOG_INF("adv stopped");
+		adv_request.result = 0;
+	} else {
+		adv_request.result = adv_start(adv_request.identity, adv_request.id, &adv_request.step);
+	}
+
+	k_sem_give(&adv_request_done);
+}
+
+static K_WORK_DEFINE(adv_request_work, adv_request_handler);
+
+/* Called from the shell thread, which is the only caller, so one request is in flight at a time. */
+static int adv_request_run(bool stop, bool identity, uint8_t id)
+{
+	adv_request.stop = stop;
+	adv_request.identity = identity;
+	adv_request.id = id;
+	adv_request.step = "";
+
+	k_work_submit(&adv_request_work);
+	k_sem_take(&adv_request_done, K_FOREVER);
+	return adv_request.result;
 }
 
 static int cmd_adv_start(const struct shell *sh, size_t argc, char **argv)
@@ -114,36 +199,11 @@ static int cmd_adv_start(const struct shell *sh, size_t argc, char **argv)
 		id = (uint8_t)strtoul(argv[2], NULL, 0);
 	}
 
-	adv_delete();
-
-	struct bt_le_adv_param param = BT_LE_ADV_PARAM_INIT(
-		BT_LE_ADV_OPT_CONN | (identity ? BT_LE_ADV_OPT_USE_IDENTITY : 0),
-		BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL);
-	param.id = id;
-
-	err = bt_le_ext_adv_create(&param, &adv_cb, &adv);
+	err = adv_request_run(false, identity, id);
 	if (err) {
-		shell_error(sh, "adv create failed (%d)", err);
-		return err;
+		shell_error(sh, "adv %s failed (%d)", adv_request.step, err);
 	}
-
-	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
-		shell_error(sh, "adv set data failed (%d)", err);
-		adv_delete();
-		return err;
-	}
-
-	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
-	if (err) {
-		shell_error(sh, "adv start failed (%d)", err);
-		adv_delete();
-		return err;
-	}
-
-	LOG_INF("adv started mode=%s id=%u", argv[1], id);
-	k_work_submit(&adv_address_work);
-	return 0;
+	return err;
 }
 
 static int cmd_adv_stop(const struct shell *sh, size_t argc, char **argv)
@@ -152,9 +212,7 @@ static int cmd_adv_stop(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	adv_delete();
-	LOG_INF("adv stopped");
-	return 0;
+	return adv_request_run(true, false, 0);
 }
 
 static int cmd_status(const struct shell *sh, size_t argc, char **argv)
@@ -173,9 +231,8 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 		shell_print(sh, "id %u %s", (unsigned int)i, addr);
 	}
 
-	if (adv != NULL) {
-		k_work_submit(&adv_address_work);
-	}
+	/* Logs nothing when no set exists; the check runs on the queue that owns the set. */
+	k_work_submit(&adv_address_work);
 	return 0;
 }
 

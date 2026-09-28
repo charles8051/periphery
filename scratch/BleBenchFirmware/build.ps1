@@ -59,8 +59,11 @@ foreach ($image in $images) {
     Copy-Item $hex (Join-Path $imagesDir "$($image.Name).hex") -Force
 }
 
-$sniffer = Join-Path $HOME '.nrfutil/share/nrfutil-ble-sniffer/firmware'
-Get-ChildItem $sniffer -Filter 'sniffer_nrf52833dk_*.hex' -ErrorAction SilentlyContinue |
-    Copy-Item -Destination $imagesDir -Force
+$sniffer = Get-ChildItem (Join-Path $HOME '.nrfutil/share/nrfutil-ble-sniffer/firmware') `
+    -Filter 'sniffer_nrf52833dk_*.hex' -ErrorAction SilentlyContinue
+if (-not $sniffer) {
+    throw "no nRF Sniffer hex for the nRF52833 DK; run 'nrfutil install ble-sniffer'"
+}
+$sniffer | Copy-Item -Destination $imagesDir -Force
 
 Get-ChildItem $imagesDir | Select-Object Name, Length
