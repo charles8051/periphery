@@ -4,7 +4,6 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Runtime.Versioning;
 
 namespace Periphery.Windows;
@@ -74,38 +73,21 @@ internal static class BluetoothLinkEvents
     }
 
     /// <summary>
-    /// Reads the remote address from the devnode that carries a peripheral's link state:
-    /// <c>BTHENUM\DEV_&lt;address&gt;\…</c> for BR/EDR and <c>BTHLE\DEV_&lt;address&gt;\…</c> for LE.
-    /// Service and function nodes of the same peripheral return <see langword="false"/>.
+    /// Reads the remote address from the devnode that carries a peripheral's link state, as
+    /// <see cref="BluetoothAddress.TryParseInstanceId"/> does, and gives its transport as the
+    /// link type an HCI event reports for it. Service and function nodes of the same peripheral
+    /// return <see langword="false"/>.
     /// </summary>
     internal static bool TryGetLinkAddress(string instanceId, out ulong address, out BluetoothLinkType type)
     {
         address = 0;
         type = default;
-
-        const string brEdrPrefix = @"BTHENUM\DEV_";
-        const string lePrefix = @"BTHLE\DEV_";
-        int start;
-        if (instanceId.StartsWith(brEdrPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            start = brEdrPrefix.Length;
-            type = BluetoothLinkType.Acl;
-        }
-        else if (instanceId.StartsWith(lePrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            start = lePrefix.Length;
-            type = BluetoothLinkType.Le;
-        }
-        else
-        {
-            return false;
-        }
-
-        var rest = instanceId.AsSpan(start);
-        if (rest.Length < 12 || (rest.Length > 12 && rest[12] != '\\'))
+        if (!BluetoothAddress.TryParseInstanceId(instanceId, out var parsed, out var transport))
             return false;
 
-        return ulong.TryParse(rest[..12], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out address);
+        address = parsed.Value;
+        type = transport == BluetoothTransport.LowEnergy ? BluetoothLinkType.Le : BluetoothLinkType.Acl;
+        return true;
     }
 
     /// <summary>
