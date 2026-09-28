@@ -11,7 +11,15 @@ start advertising, wait for the peripheral to log the connection, then drop the 
 Every step waits for the peripheral's own `bench:` log line. Each tool's output goes to
 <OutDir>\<timestamp>\, with the DK's lines stamped on the same clock as the tools' start offsets.
 
-Build the three projects first. The DK must run nrf52833dk-bench.hex and be paired with this PC.
+Build the three projects first. The DK must run a bench image and be paired with this PC.
+
+.PARAMETER Advertise
+The arguments to `bench adv start`: `identity` (default), or `rpa 1` for identity 1 on a rotating
+resolvable private address under the privacy image.
+
+.PARAMETER Device
+The paired peripheral BleLinkHold holds a session with: its address as its BTHLE\DEV_ node carries
+it, or a name substring. Default "Periphery", which needs exactly one paired match.
 
 .PARAMETER Drop
 disconnect: the peripheral ends the link with `bt disconnect`.
@@ -22,6 +30,8 @@ param(
     [Parameter(Mandatory)][string]$Port,
     [Parameter(Mandatory)][string]$Serial,
     [ValidateSet('disconnect', 'reset')][string]$Drop = 'disconnect',
+    [string]$Advertise = 'identity',
+    [string]$Device = 'Periphery',
     [int]$Cycles = 3,
     [int]$ProbeSeconds = 120,
     [string]$OutDir = 'C:\blebench\runs'
@@ -36,7 +46,7 @@ function Exe($project, $tfm) { Join-Path $scratch "$project\bin\Debug\$tfm\$proj
 $tools = @(
     @{ Name = 'hci';  Exe = (Exe 'BluetoothHciEventProbe' 'net10.0-windows');  Args = "$ProbeSeconds" }
     @{ Name = 'aep';  Exe = (Exe 'BleOsProbe' 'net10.0-windows10.0.19041.0');  Args = "$ProbeSeconds" }
-    @{ Name = 'hold'; Exe = (Exe 'BleLinkHold' 'net10.0-windows10.0.19041.0'); Args = "Periphery $($ProbeSeconds - 10)" }
+    @{ Name = 'hold'; Exe = (Exe 'BleLinkHold' 'net10.0-windows10.0.19041.0'); Args = "$Device $($ProbeSeconds - 10)" }
 )
 
 $origin = Get-Date
@@ -80,7 +90,7 @@ try {
     # Let the probes finish their startup snapshots before the first transition.
     Dwell 8
     for ($c = 1; $c -le $Cycles; $c++) {
-        Send 'bench adv start identity'
+        Send "bench adv start $Advertise"
         if (-not (WaitFor 'bench: connected' 40)) { break }
         Dwell 8
         if ($Drop -eq 'disconnect') {

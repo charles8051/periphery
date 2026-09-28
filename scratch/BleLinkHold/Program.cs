@@ -7,22 +7,40 @@ using Windows.Devices.Enumeration;
 // ─────────────────────────────────────────────────────────────────────────────
 // Asks Windows to keep a bonded LE peripheral connected, for as long as it runs.
 //
-//   dotnet run --project scratch/BleLinkHold [name] [seconds]
+//   dotnet run --project scratch/BleLinkHold [device] [seconds]
 //
-//   name     substring of the paired device's name (default "Periphery Bench")
+//   device   the paired device's address (AA:BB:CC:DD:EE:FF, or twelve hex digits) as its
+//            BTHLE\DEV_ node carries it, or a substring of its name (default "Periphery Bench")
 //   seconds  how long to hold the session (default 120)
 // ─────────────────────────────────────────────────────────────────────────────
 
 string name = args.FirstOrDefault(a => !int.TryParse(a, out _)) ?? "Periphery Bench";
+string hex = name.Replace(":", "").Replace("-", "");
+ulong? address = hex.Length == 12 && ulong.TryParse(hex, System.Globalization.NumberStyles.AllowHexSpecifier, null, out var parsed)
+    ? parsed
+    : null;
 int seconds = args.Select(a => int.TryParse(a, out var v) ? v : 0).FirstOrDefault(v => v > 0, 120);
 var clock = Stopwatch.StartNew();
 void Log(string message) => Console.WriteLine($"{clock.Elapsed.TotalSeconds,8:F3}s  hold       {message}");
 
 var paired = await DeviceInformation.FindAllAsync(BluetoothLEDevice.GetDeviceSelectorFromPairingState(true));
-var match = paired.Where(d => d.Name.Contains(name, StringComparison.OrdinalIgnoreCase)).ToList();
+var match = new List<DeviceInformation>();
+foreach (var info in paired)
+{
+    if (address is null)
+    {
+        if (info.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
+            match.Add(info);
+        continue;
+    }
+
+    using var candidate = await BluetoothLEDevice.FromIdAsync(info.Id);
+    if (candidate?.BluetoothAddress == address)
+        match.Add(info);
+}
 if (match.Count != 1)
 {
-    Log($"expected one paired LE device named like '{name}', found {match.Count}");
+    Log($"expected one paired LE device matching '{(address is null ? name : "the address")}', found {match.Count}");
     return 1;
 }
 
