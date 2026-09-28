@@ -12,6 +12,18 @@ depends_on: ["0001-device-tracking-handles.md", "0006-device-profile-single-devi
 
 # ADR-0083: BLE device identity is address-derived and did not survive re-pairing on the LE HID device measured
 
+> **Amendment (2026-09-28).** Issue #232's matrix was measured on Windows against the BLE bench
+> (`docs/explorations/bluetooth-os-apis-2026-09.md`, "Durability, measured"). A static-random
+> peripheral kept its instance id and container across an unpair and re-pair. A peripheral using
+> resolvable private addresses got a new instance id and container on re-pair, although its
+> identity address and IRK were unchanged: Windows keys the bond by the RPA it saw at pairing. Both
+> kept their keys across disconnects, peripheral reboots and a host reboot. So D2's "does not
+> survive a re-pair" column holds for a private-address peripheral, and for one that picks a new
+> static address when it re-pairs, which the mouse's static-random bond suggests. It does not hold
+> for a peripheral that keeps one static address. D5's rule stands: a consumer still cannot tell
+> which kind it has. Open question 1 is answered for the bench peripheral. Open question 3 has two
+> consistent data points: each container followed its address.
+
 ## Status
 
 Proposed. The evidence is a single unpair/re-pair of a single BLE mouse on one

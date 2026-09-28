@@ -27,6 +27,13 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > record of what was believed on 2026-09-02. On the same runs WinRT's
 > `BluetoothLEDevice.ConnectionStatusChanged` agreed with the devnode on every transition, which
 > answers the "LE agreement" open question for WinRT. 32feet's BLE package was not run.
+>
+> **Amendment (2026-09-28, #232).** D7 §3's blocker is measured for Windows. The D5 key held across
+> disconnects, peripheral reboots and a host reboot for a static-random peripheral and for one using
+> resolvable private addresses, including across RPA rotations. It changed only when the
+> private-address peripheral was re-paired, which ADR-0083 D5 already treats as a new identity. A
+> static-random peripheral kept it across a re-pair as well. `BleDeviceProxy` is no longer blocked
+> on Windows. The public-address column, Linux and macOS are unmeasured.
 
 ## Status
 

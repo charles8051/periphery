@@ -39,7 +39,7 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented | Nothing. It is a platform privacy decision. |
 | 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, and read-only on BlueZ 5.80+. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS is unverified. |
 | 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. The Bluetooth driver pushes `GUID_BLUETOOTH_HCI_EVENT` on every link change, BR/EDR and LE, through a cfgmgr32 registration core can make without WinRT. | Windows | Documented, Measured | Settled for BR/EDR and LE; see [Liveness → Windows](#windows-1). |
-| 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. This changes #232's expected result for the RPA column. | Windows | Measured | #232's rotation run, on Windows. |
+| 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. Later RPAs resolve to that devnode; a re-pair creates a new one. | Windows | Measured | Settled on Windows; see [Durability, measured](#durability-measured). |
 | 8 | A BlueZ `Device1` object is not a bond. Discovery creates temporary objects that BlueZ removes after 30 s. `Bonded` exists only from BlueZ 5.65, and Ubuntu 22.04 ships 5.64. | Linux | Documented, Source | Select on `Paired`. Treat `Bonded` as optional. |
 | 9 | Pairing has three shapes: an API on Windows, an agent on Linux, and no API on macOS. On macOS, 32feet's `IsPaired` is always `false`. | All | Documented, Source | No common surface. See [Pairing](#pairing). |
 | 10 | TCC attributes a console process's CoreBluetooth use to the terminal. A binary built against the macOS 11+ SDK without `NSBluetoothAlwaysUsageDescription` is terminated on first use. | macOS | Reported | Run the CLI and an example on a Mac, from a terminal with and without Bluetooth permission. |
@@ -167,6 +167,48 @@ paired, so the host cannot show it either way.
 The mouse's bond is static random with no privacy flag. If this is the mouse ADR-0083 measured, the
 address change that ADR recorded came from the peripheral generating a new static address in
 pairing mode, not from RPA rotation. The host does not record whether it is the same mouse.
+
+### Durability, measured
+
+#232's matrix was run on Windows on 2026-09-28 against the [BLE bench](../patterns/ble-bench-testing.md).
+The static-random column used the nRF52833 DK's identity 0 and, for the host reboot, the Thingy:52.
+The resolvable-private column used the DK's identity 1 under the privacy image, with a 30 s RPA
+timeout. The public column was not run: Nordic parts have no public address.
+[`scratch/BleKeyDurabilityProbe`](../../scratch/BleKeyDurabilityProbe) snapshotted the
+`BTHLE\DEV_` node before and after each transition, and bound three `DeviceTracker`s at start:
+by instance id, by container id, and by parsed `BluetoothAddress`.
+
+| Transition | Static random | Resolvable private |
+|---|---|---|
+| Disconnect and reconnect | Id, container and address kept; id and address trackers resolve | Kept, across RPAs Windows had not seen |
+| Peripheral reboot | Kept | Kept; the peripheral reloaded its IRK and advertised a new RPA |
+| Unpair and re-pair | Kept | **New node**, keyed by the new pairing-time RPA, with a new container |
+| Host reboot | Kept (Thingy:52) | Kept |
+
+"Kept" means the instance id, the container id and D5's `BluetoothAddress` were the same afterwards,
+and the id and address trackers bound before the transition were `Active` again after it.
+
+- Windows resolves each rotated RPA to the devnode keyed at pairing. Across the private column's
+  reconnects the peripheral advertised six different RPAs, none of them the one Windows paired
+  with, and every connect re-encrypted from the stored bond and raised its edges on the same node.
+- A re-pair re-keys the private peripheral even though nothing about it changed. Identity 1 kept
+  its identity address and its IRK. Windows named the new bond after the RPA on air at the new
+  pairing. The trackers bound to the old node went `Absent` and never resolved again.
+- The static peripheral's re-pair came back with the same instance id and container. A consumer
+  saw `Disappeared` on unpair and a live `Appeared` about 8 s later. The live `Appeared` carried the
+  id as `BTHLE\Dev_ee2984e48fd0\a&ede6a8a&0&ee2984e48fd0`, while enumeration reports
+  `BTHLE\DEV_EE2984E48FD0\A&EDE6A8A&0&EE2984E48FD0`. `DeviceId` compares case-insensitively, so the
+  id tracker bound to it.
+- Every container id seen is a version 5 UUID, and each followed its address. The static re-pair
+  kept its address and its container. The private re-pair got a new address and a new container.
+  That is consistent with a name-based UUID over the address, from two re-pairs.
+- A tracker keyed by container id bound to one of the peripheral's GATT service nodes
+  (`BTHLEDEVICE\{…}`) rather than to the `DEV_` node. The service node reads `IsActive = true`
+  whether or not the link is up, so that tracker reported `Active` throughout.
+- `DeviceInformationCustomPairing.PairAsync(DevicePairingKinds.ConfirmOnly)` paired Just Works
+  unattended from a desktop process ([`scratch/BlePair`](../../scratch/BlePair)). Its result
+  reported `ProtectionLevelUsed = None` every time, although the peripheral saw the link encrypt at
+  security level 2 and stored the bond.
 
 ### The 32feet Id
 
@@ -432,7 +474,6 @@ each queued request can take that long (Documented: Microsoft Learn, Bluetooth G
 |---|---|
 | Does macOS 13+ register any `IOBluetoothDevice` objects? | `ioreg -r -l -c IOBluetoothDevice` with a connected BR/EDR device, then a connected LE device. |
 | What is the 250 ms LE link the host sometimes reports before a connect, which the peripheral never logs? | Repeat the toggle runs with a sniffer on the link. |
-| Does Windows resolve a rotated RPA back to the devnode keyed at pairing? | #232, on Windows, with a sniffer confirming the rotation. |
 | Does `DEVPKEY_Bluetooth_DeviceFlags` on an LE devnode track `BDIF_LE_CONNECTED`? The in-range event carries the stack's flags, not the devnode property. | An LE link toggle, reading the devnode property before and after. |
 | Does CoreBluetooth on macOS hide `0x1812`? | `discoverServices(nil)` against an LE HID peripheral on a Mac. |
 | Does BlueZ restore the desktop's default agent after 32feet's `PairAsync(code)`? | Pair from 32feet in a GNOME session, then pair from Settings. |
