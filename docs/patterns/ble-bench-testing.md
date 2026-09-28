@@ -6,8 +6,8 @@
 >
 > **Status:** partly done. The DK firmware is built and runs on the DK, and step 2 is
 > measured. Step 1 is half done: `BluetoothAddress` shipped, and ADR-0090's table is
-> deferred. Steps 3 to 5 are still a plan, and step 4 needs a Thingy:52 that is not on
-> hand. The test harness below does not exist yet.
+> deferred. Steps 3 to 5 are still a plan. Both boards are flashed. The test harness below
+> does not exist yet.
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each
@@ -25,16 +25,16 @@ disconnect, reboot, change address, or forget its bond.
 | Board | Zephyr target | Role | How it is flashed |
 |---|---|---|---|
 | nRF52833 DK (PCA10100) | `nrf52833dk/nrf52833` | Primary test peripheral. Programmer for the Thingy. | Onboard SEGGER J-Link, over the same USB cable. No bootloader involved. |
-| Thingy:52 (nRF52832) | `thingy52/nrf52832` | Second peripheral. Battery-powered, so its power switch drops the link without a command. | SWD only, from the DK's Debug out connector. |
+| Thingy:52 (nRF52832) | `thingy52/nrf52832` | Second peripheral. Battery-powered, so its power switch drops the link without a command. | SWD only, from the DK's Debug out connector or a standalone J-Link. |
 | nRF52840 Dongle | n/a | Sniffer. Not owned yet. | Sniffer firmware from nRF Sniffer for Bluetooth LE. |
 
 The DK's onboard J-Link means `west flash` or `nrfutil device program` needs no
 external probe.
 
-The Thingy:52 has no USB data line. It is programmed through the DK's Debug out
-connector with a 2x5 1.27 mm socket-to-socket SWD cable, which neither board
-ships with. While that cable is attached, the DK's J-Link drives the Thingy
-instead of the DK's own chip.
+The Thingy:52 has no USB data line. It is programmed over its 2x5 1.27 mm SWD
+header, from a standalone J-Link or from the DK's Debug out connector. Neither board
+ships with the cable. While a cable is attached to Debug out, the DK's J-Link drives
+the Thingy instead of the DK's own chip. A standalone J-Link avoids that.
 
 The Thingy:52 ships with an nRF5 SDK Secure DFU bootloader that updates over BLE.
 It accepts only packages signed with Nordic's key, so custom firmware has to go
@@ -93,8 +93,11 @@ The Thingy:52 has no serial console, so it runs `peripheral_hr`, which advertise
 power switch is its only control.
 
 Flash with `nrfutil device program --firmware <hex> --serial-number <J-Link serial>`. The
-first SWD flash of a Thingy:52 needs `nrfutil device recover` beforehand, which erases the stock
-image and its bootloader.
+first SWD flash of a Thingy:52 needs `--options chip_erase_mode=ERASE_ALL`, which erases the
+stock image, its bootloader and the UICR. Back the stock image up first with
+`nrfutil device dump-to-file <file>.hex --code --uicr`. `nrfutil device recover` is needed only
+when `nrfutil device protection-get` reports readback protection. The nRF52833 DK here had it on;
+the Thingy:52 here did not.
 
 | Transition | Command |
 |---|---|
