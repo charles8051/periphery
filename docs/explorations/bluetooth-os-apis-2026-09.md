@@ -193,16 +193,17 @@ and the id and address trackers bound before the transition were `Active` again 
   with, and every connect re-encrypted from the stored bond and raised its edges on the same node.
 - A re-pair re-keys the private peripheral even though nothing about it changed. Identity 1 kept
   its identity address and its IRK. Windows named the new bond after the RPA on air at the new
-  pairing. The trackers bound to the old node went `Absent` and never resolved again. Both
-  private re-pairs run did this; the probe found the replacement node by its device name.
+  pairing. The trackers bound to the old node went `Absent` and never resolved again. All three
+  private re-pairs run did this. On the third, the probe located the replacement node at the
+  address the peripheral logged when it paired.
 - The static peripheral's re-pair came back with the same instance id and container. A consumer
   saw `Disappeared` on unpair and a live `Appeared` about 8 s later. The live `Appeared` carried the
   id as `BTHLE\Dev_ee2984e48fd0\a&ede6a8a&0&ee2984e48fd0`, while enumeration reports
   `BTHLE\DEV_EE2984E48FD0\A&EDE6A8A&0&EE2984E48FD0`. `DeviceId` compares case-insensitively, so the
   id tracker bound to it.
 - Every container id seen is a version 5 UUID, and each followed its address. The static re-pair
-  kept its address and its container. Both private re-pairs got a new address and a new
-  container. That is consistent with a name-based UUID over the address, from three re-pairs.
+  kept its address and its container. All three private re-pairs got a new address and a new
+  container. That is consistent with a name-based UUID over the address, from four re-pairs.
 - A tracker keyed by container id bound to one of the peripheral's GATT service nodes
   (`BTHLEDEVICE\{…}`) rather than to the `DEV_` node. The service node reads `IsActive = true`
   whether or not the link is up, so that tracker reported `Active` throughout.
