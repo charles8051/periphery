@@ -17,6 +17,16 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > pushes `GUID_BLUETOOTH_HCI_EVENT` on every BR/EDR link change, and core now raises activity edges
 > from it (issue #286; measured in `docs/explorations/bluetooth-os-apis-2026-09.md`). D7 §2's
 > activity source is not needed for BR/EDR on Windows. LE is unmeasured.
+>
+> **Amendment (2026-09-28).** LE is measured. On one Windows 11 host with one LE peripheral, the
+> same push fired with type LE on every link change, including a link lost to a peripheral reset,
+> and core already raised the edges from it. Host-initiated disconnects and other controllers
+> were not tried. On the measured setup D7 §2's activity source is needed for neither transport.
+> This supersedes, for Windows, Context §1's "poll-only" conclusion, D7 §2's case that a poll is
+> "currently the only signal", and the first Positive consequence. Those passages stand as the
+> record of what was believed on 2026-09-02. On the same runs WinRT's
+> `BluetoothLEDevice.ConnectionStatusChanged` agreed with the devnode on every transition, which
+> answers the "LE agreement" open question for WinRT. 32feet's BLE package was not run.
 
 ## Status
 

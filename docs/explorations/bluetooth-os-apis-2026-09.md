@@ -8,7 +8,8 @@ developer documentation. Third-party reports fill the gaps and are labelled as s
 also measured, read-only, on one Windows 11 host with two bonded BR/EDR peripherals and two bonded
 LE peripherals, through cfgmgr32 device properties and [`scratch/BleOsProbe`](../../scratch/BleOsProbe).
 Windows link-change pushes were measured on 2026-09-27 with
-[`scratch/BluetoothHciEventProbe`](../../scratch/BluetoothHciEventProbe).
+[`scratch/BluetoothHciEventProbe`](../../scratch/BluetoothHciEventProbe), for BR/EDR, and on
+2026-09-28 for LE against the [BLE bench](../patterns/ble-bench-testing.md) peripheral.
 No Linux or macOS Bluetooth hardware was available.
 **Scope:** device inventory, identity, liveness, GATT access, pairing, scanning, permissions and
 caching. Classic profiles other than RFCOMM, LE Audio, mesh, and acting as a peripheral are out of
@@ -37,7 +38,7 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | 3 | 32feet's `BluetoothDevice.Id` has a different format on each platform. On Windows it drops leading zeros. | All | Source, Measured | Parse to a number before comparing. |
 | 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented | Nothing. It is a platform privacy decision. |
 | 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, and read-only on BlueZ 5.80+. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS is unverified. |
-| 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. The Bluetooth driver pushes `GUID_BLUETOOTH_HCI_EVENT` on every BR/EDR link change, through a cfgmgr32 registration core can make without WinRT. | Windows | Documented, Measured | BR/EDR is settled; see [Liveness → Windows](#windows-1). An LE link toggle under the same probe. |
+| 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. The Bluetooth driver pushes `GUID_BLUETOOTH_HCI_EVENT` on every link change, BR/EDR and LE, through a cfgmgr32 registration core can make without WinRT. | Windows | Documented, Measured | Settled for BR/EDR and LE; see [Liveness → Windows](#windows-1). |
 | 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. This changes #232's expected result for the RPA column. | Windows | Measured | #232's rotation run, on Windows. |
 | 8 | A BlueZ `Device1` object is not a bond. Discovery creates temporary objects that BlueZ removes after 30 s. `Bonded` exists only from BlueZ 5.65, and Ubuntu 22.04 ships 5.64. | Linux | Documented, Source | Select on `Paired`. Treat `Bonded` as optional. |
 | 9 | Pairing has three shapes: an API on Windows, an agent on Linux, and no API on macOS. On macOS, 32feet's `IsPaired` is always `false`. | All | Documented, Source | No common surface. See [Pairing](#pairing). |
@@ -259,6 +260,42 @@ later still reported `IsActive = true` at both disconnects (Measured). `DEVPKEY_
 on the devnode is not the same source: ARCHITECTURE.md §10.6.2 measured it never changing on a
 BR/EDR node. The list was fresh for BR/EDR only; `BDIF_LE_CONNECTED` was not exercised.
 
+LE was measured on 2026-09-28 against the BLE bench peripheral, an nRF52833 DK bonded with LE
+Secure Connections on a static random address. [`scratch/BleLinkHold`](../../scratch/BleLinkHold)
+held a GATT session with `MaintainConnection`, so Windows reconnected whenever the peripheral
+advertised. `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` ran alongside. The link was
+dropped seven times: four times by the peripheral's `bt disconnect`, and three times by resetting
+the peripheral through its J-Link, which ends the link without a disconnect, as leaving range does.
+The results were the same both ways.
+
+- Each connect and each disconnect raised exactly one `GUID_BLUETOOTH_HCI_EVENT`, type LE, with
+  the address in the peripheral's `BTHLE\DEV_<address>` instance id.
+- `GUID_BLUETOOTH_RADIO_IN_RANGE` arrived in the same millisecond, with `BDIF_LE_CONNECTED` and
+  `BDIF_CONNECTED` set or cleared.
+- A Periphery `DeviceWatcher` over `DeviceCategory.Bluetooth` raised `Activated` or `Deactivated`
+  for the `BTHLE\DEV_` node on every transition. The provider's existing HCI-event path already
+  handles the LE link type.
+- The `DEV_` devnode's `IsActive`, re-read 30-45 ms after each event, agreed with it every time.
+  It did not lag as the BR/EDR node did.
+- The peripheral's GATT service nodes (`BTHLEDEVICE\{…}`) read `IsActive = true` throughout. They
+  do not track the link.
+- `IOCTL_BTH_GET_DEVICE_INFO` never listed the LE peripheral. It returned the two bonded BR/EDR
+  devices only.
+- The AEP watcher raised `Updated` with `System.Devices.Aep.IsConnected` on every transition, and
+  `BluetoothLEDevice.ConnectionStatusChanged` fired on every transition.
+- After a reset, the host detected the lost link within about 0.6 s of the reset command. How much
+  of that was the reset itself and how much the host's supervision timeout was not separated.
+- In two of seven connects, the host reported an LE link that lasted about 250 ms, then connected
+  again within 600 ms. The peripheral logged only the second connection each time. The watcher
+  raised `Activated`, `Deactivated`, `Activated`. One followed a peripheral reset, the other a
+  peripheral disconnect, so a consumer can see a short spurious link either way.
+- Two more undocumented custom events, `477335e6-24cf-4a65-a817-642e1092c34f` (52 bytes) and
+  `1bbd4010-498c-4e85-851b-eaa05715c37a` (270 bytes), arrived each time the peripheral began
+  advertising, before the connect. `ab27d6ed-…` fired on LE transitions as it does on BR/EDR.
+
+So on Windows the OS pushes the LE edge, and core already raises it. This is one peripheral on one
+host. Every disconnect came from the peripheral side; a host-initiated disconnect was not tried.
+
 ### Linux
 
 `Device1.Connected` changes raise `PropertiesChanged`. `Device1.Disconnected(reason, message)`
@@ -394,15 +431,13 @@ each queued request can take that long (Documented: Microsoft Learn, Bluetooth G
 | Question | What resolves it |
 |---|---|
 | Does macOS 13+ register any `IOBluetoothDevice` objects? | `ioreg -r -l -c IOBluetoothDevice` with a connected BR/EDR device, then a connected LE device. |
-| Does an AEP watcher raise `Updated` for `IsConnected` on a link change? | A link toggle during `dotnet run --project scratch/BleOsProbe -- 120`. |
+| What is the 250 ms LE link the host sometimes reports before a connect, which the peripheral never logs? | Repeat the toggle runs with a sniffer on the link. |
 | Does Windows resolve a rotated RPA back to the devnode keyed at pairing? | #232, on Windows, with a sniffer confirming the rotation. |
-| Does `BDIF_LE_CONNECTED` track the link on LE devnodes? | The same link toggle, reading the devnode flags before and after. |
+| Does `DEVPKEY_Bluetooth_DeviceFlags` on an LE devnode track `BDIF_LE_CONNECTED`? The in-range event carries the stack's flags, not the devnode property. | An LE link toggle, reading the devnode property before and after. |
 | Does CoreBluetooth on macOS hide `0x1812`? | `discoverServices(nil)` against an LE HID peripheral on a Mac. |
 | Does BlueZ restore the desktop's default agent after 32feet's `PairAsync(code)`? | Pair from 32feet in a GNOME session, then pair from Settings. |
 | What does `0x04000000` mean in `DEVPKEY_Bluetooth_DeviceFlags`? | Not defined in SDK 10.0.26100's `bthdef.h`. |
-| Does `IOCTL_BTH_GET_DEVICE_INFO` list LE peripherals, and does `BDIF_LE_CONNECTED` track their link as promptly as `BDIF_CONNECTED` does for BR/EDR? | An LE link toggle during `dotnet run --project scratch/BluetoothHciEventProbe -- 120`. |
-| Does `GUID_BLUETOOTH_HCI_EVENT` fire, with connection type LE, when an LE peripheral connects? | An LE link toggle during `dotnet run --project scratch/BluetoothHciEventProbe -- 120`. |
-| What is custom event `ab27d6ed-0e6d-4b67-9773-f1426bcea595`? | Not defined in SDK 10.0.26100. Decode its 18 bytes across several transitions. |
+| What are custom events `ab27d6ed-0e6d-4b67-9773-f1426bcea595` (18 bytes), `477335e6-24cf-4a65-a817-642e1092c34f` (52 bytes) and `1bbd4010-498c-4e85-851b-eaa05715c37a` (270 bytes)? | None is defined in SDK 10.0.26100. Decode the bytes across several transitions. |
 
 ---
 

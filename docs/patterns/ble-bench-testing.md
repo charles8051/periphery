@@ -4,8 +4,10 @@
 > [ADR-0083], [ADR-0085] or [ADR-0090], and need to know which hardware proves
 > it, what each board is for, and in what order to measure before building.
 >
-> **Status:** plan. No firmware has been flashed and no harness exists. Every
-> command below is untested on this bench until a result is recorded against it.
+> **Status:** partly done. The DK firmware is built and runs on the DK, and step 2 is
+> measured. Step 1 is half done: `BluetoothAddress` shipped, and ADR-0090's table is
+> deferred. Steps 3 to 5 are still a plan, and step 4 needs a Thingy:52 that is not on
+> hand. The test harness below does not exist yet.
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each
@@ -200,15 +202,11 @@ These are the same rules the Linux device rig follows.
    address-type classification from the top two bits, and ADR-0090 D2's rule
    that turns reported levels into edges, as a `(state, level) -> (state', edge?)`
    table.
-2. **LE liveness on Windows.** Toggle the DK's link while
-   `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` run. Answer:
-   - Does `GUID_BLUETOOTH_HCI_EVENT` fire with connection type LE?
-   - Does `BDIF_LE_CONNECTED` track the link on the devnode?
-   - Does `IOCTL_BTH_GET_DEVICE_INFO` list LE devices?
-   - Does the AEP watcher raise `Updated` for `IsConnected`?
-
-   If the HCI event covers LE, the provider path from [#286](https://github.com/charles8051/periphery/issues/286) extends to LE, and
-   ADR-0090 has no motivating case on Windows. Do this before building ADR-0090.
+2. **LE liveness on Windows.** Done 2026-09-28. `scratch/BleLinkHold/run-link-toggles.ps1`
+   holds a GATT session open from the host and toggles the DK's link while
+   `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` run, with `-Drop disconnect` or
+   `-Drop reset`. The HCI event covers LE, and core already raises the edges, so ADR-0090 has no
+   motivating case on Windows. Results are in [the OS APIs exploration][the OS APIs exploration].
 3. **[#232]'s matrix.** Three address types, each through four transitions:
    disconnect and reconnect, peripheral reboot, unpair and re-pair, host reboot.
    The result decides whether `BleDeviceProxy` ships or is rejected.
