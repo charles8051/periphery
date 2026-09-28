@@ -264,7 +264,7 @@ LE was measured on 2026-09-28 against the BLE bench peripheral, an nRF52833 DK b
 Secure Connections on a static random address. [`scratch/BleLinkHold`](../../scratch/BleLinkHold)
 held a GATT session with `MaintainConnection`, so Windows reconnected whenever the peripheral
 advertised. `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` ran alongside. The link was
-dropped six times: three times by the peripheral's `bt disconnect`, and three times by resetting
+dropped seven times: four times by the peripheral's `bt disconnect`, and three times by resetting
 the peripheral through its J-Link, which ends the link without a disconnect, as leaving range does.
 The results were the same both ways.
 

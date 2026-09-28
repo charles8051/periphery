@@ -4,8 +4,10 @@
 > [ADR-0083], [ADR-0085] or [ADR-0090], and need to know which hardware proves
 > it, what each board is for, and in what order to measure before building.
 >
-> **Status:** plan. No firmware has been flashed and no harness exists. Every
-> command below is untested on this bench until a result is recorded against it.
+> **Status:** partly done. The DK firmware is built and runs on the DK, and step 2 is
+> measured. Step 1 is half done: `BluetoothAddress` shipped, and ADR-0090's table is
+> deferred. Steps 3 to 5 are still a plan, and step 4 needs a Thingy:52 that is not on
+> hand. The test harness below does not exist yet.
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each

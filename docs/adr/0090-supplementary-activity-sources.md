@@ -24,13 +24,14 @@ depends_on: ["0004-two-level-device-state-model.md", "0052-periphery-treehopper-
 > Windows BR/EDR link state. It may still be needed for LE, which is unmeasured, or for a
 > transport with no OS push.
 >
-> **Amendment (2026-09-28).** LE is measured, and it has the push too. Windows raises
-> `GUID_BLUETOOTH_HCI_EVENT` with type LE on every LE link change, including a link lost to a
-> peripheral reset, and the Windows provider already raises `Activated` / `Deactivated` for the
-> `BTHLE\DEV_…` node from it (`docs/explorations/bluetooth-os-apis-2026-09.md`). No Bluetooth
-> case on Windows needs this ADR. The remaining case is a platform whose push core cannot reach.
-> On Linux that is BlueZ's `Device1.Connected` over D-Bus, which ADR-0024 keeps out of core
-> (issue #258).
+> **Amendment (2026-09-28).** LE is measured, and it has the push too. On one Windows 11 host with
+> one LE peripheral, Windows raised `GUID_BLUETOOTH_HCI_EVENT` with type LE on every link change,
+> including a link lost to a peripheral reset. The Windows provider already raised `Activated` /
+> `Deactivated` for the `BTHLE\DEV_…` node from it (`docs/explorations/bluetooth-os-apis-2026-09.md`).
+> On that setup no Bluetooth case needs this ADR, and CTX-002 and CTX-003 no longer describe
+> Windows Bluetooth. Host-initiated disconnects and other controllers are unverified. The
+> remaining case is a platform whose push core cannot reach. On Linux that is BlueZ's
+> `Device1.Connected` over D-Bus, which ADR-0024 keeps out of core (issue #258).
 
 **Tracks:** `DeviceWatcher`, `IDeviceMonitorProvider`, `DeviceActivityStatus`, and any extension
 package that can observe a device the OS cannot.
