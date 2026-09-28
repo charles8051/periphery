@@ -73,55 +73,71 @@ Nordic parts are LE only. That sets the bench's reach.
 
 ## Peripheral firmware
 
-Zephyr's Bluetooth shell, [`tests/bluetooth/shell`][bt-shell], built with
-`CONFIG_BT_HRS=y`. The shell gives the harness a command for each transition, and
-Heart Rate (`0x180D`) carries a notify, a read and a write characteristic for GATT
-work. This image goes on the DK.
+[`scratch/BleBenchFirmware`](../../scratch/BleBenchFirmware) is a Zephyr application: the
+Bluetooth shell, the Heart Rate service (`0x180D`) notifying once a second, and a `bench` shell
+command set. Heart Rate carries a notify, a read and a write characteristic for GATT work.
 
-The Thingy:52 has no serial console, so the shell can't drive it once the SWD
-cable is off. It runs Zephyr's `peripheral_hr` sample instead, which advertises
-at boot and needs no commands. Its power switch is its only control.
+`build.ps1` builds every image into `C:\blebench\images`:
+
+| Image | Board | Use |
+|---|---|---|
+| `nrf52833dk-bench.hex` | DK | Harness-driven peripheral on a static random identity |
+| `nrf52833dk-bench-privacy.hex` | DK | The same with `CONFIG_BT_PRIVACY=y` and a 30 s RPA timeout |
+| `nrf52833dk-peripheral-hr.hex` | DK | Zephyr's `peripheral_hr` as "Periphery Bench HR", for step 4 |
+| `thingy52-peripheral-hr.hex` | Thingy:52 | The same image for the Thingy |
+| `sniffer_nrf52833dk_nrf52833_4.1.1.hex` | DK | nRF Sniffer, copied from the `nrfutil ble-sniffer` install |
+
+The Thingy:52 has no serial console, so it runs `peripheral_hr`, which advertises at boot. Its
+power switch is its only control.
+
+Flash with `nrfutil device program --firmware <hex> --serial-number <J-Link serial>`. The
+first SWD flash of a Thingy:52 needs `nrfutil device recover` beforehand, which erases the stock
+image and its bootloader.
 
 | Transition | Command |
 |---|---|
-| Advertise on the identity address | `bt advertise on identity` |
-| Advertise with privacy (RPA) | `bt advertise on`, with `CONFIG_BT_PRIVACY=y` |
-| Stop advertising | `bt advertise off` |
-| Drop the link from the peripheral side | `bt disconnect <addr>` |
+| Start the stack, after every reset | `bt init` |
+| Advertise on an identity address | `bench adv start identity [id]` |
+| Advertise on a rotating RPA (privacy image) | `bench adv start rpa [id]` |
+| Stop advertising | `bench adv stop` |
+| Drop the link from the peripheral side | `bt disconnect` |
 | Forget the host's bond | `bt clear all` |
 | Create a new identity | `bt id-create [addr]` |
-| List identities | `bt id-show` |
+| Show privacy, identities and the advertising address | `bench status` |
 | Reboot the peripheral | `nrfutil device reset`, through the J-Link |
 
-The reboot goes through the J-Link rather than the shell, so it still works when
-the firmware is hung. It resets the DK only while the Thingy's SWD cable is
-detached.
+The reboot goes through the J-Link rather than the shell, so it still works when the firmware
+is hung. It resets the DK only while the Thingy's SWD cable is detached. Bonds and identities
+are stored in flash, so they survive the reboot.
 
 ### Address types
 
 - **Static random** is the default. Nordic parts derive one from FICR at boot.
-  `bt id-create <addr>` sets a chosen one.
-- **Resolvable private** needs `CONFIG_BT_PRIVACY=y`. Set `CONFIG_BT_RPA_TIMEOUT`
-  short (for example 30 s) so a rotation happens inside one test.
-- **Public** is not available by default. Nordic parts have no factory public
-  address, so one has to be written with Zephyr's vendor HCI command Write
-  BD_ADDR before `bt init`. Unverified on this bench.
+  `bt id-create <addr>` adds a chosen one.
+- **Resolvable private** is the privacy image with `bench adv start rpa`. The advertising
+  set is created without `BT_LE_ADV_OPT_USE_IDENTITY`.
+- **Public** is not available. Nordic parts have no factory public address, and neither image
+  sets one. Zephyr's vendor HCI command Write BD_ADDR is the likely route. Untried.
 
 ### Ground truth from the peripheral
 
-The shell prints each connection and disconnection with the peer address.
-`bt id-show` prints the identity. That covers the public and static-random
-columns.
+Every event a harness waits on is a log line from the `bench` module:
 
-For the RPA column, each on-air address needs a separate record, because the
-host resolves RPAs and never shows the rotation. Two sources can provide it:
+| Line | When |
+|---|---|
+| `bench: ready board=… privacy=…` | Boot |
+| `bench: adv started mode=… id=…` | `bench adv start` succeeded |
+| `bench: adv address <addr> (random)` | After each start, and after each RPA rotation |
+| `bench: rpa expired` | The RPA timeout fired |
+| `bench: connected peer=… err=…` | A link came up |
+| `bench: disconnected peer=… reason=…` | A link went down |
+| `bench: pairing complete peer=… bonded=…` | Pairing finished |
+| `bench: peer identity resolved rpa=… identity=…` | The host's own RPA was resolved |
+| `bench: bond deleted id=… peer=…` | `bt clear` removed a bond |
 
-- a few lines of firmware that log the new address from
-  `bt_le_ext_adv_cb.rpa_expired` using `bt_le_ext_adv_get_info`;
-- a sniffer capture.
-
-[#232] already notes that a passing RPA column without this record is not
-trustworthy.
+The host resolves RPAs and never shows the rotation, so the `adv address` lines are the RPA
+column's record of each on-air address. A sniffer capture confirms them independently. [#232]
+already notes that a passing RPA column without that record is not trustworthy.
 
 ---
 
@@ -129,7 +145,7 @@ trustworthy.
 
 The test project reaches the DK's shell through its J-Link VCOM port (SEGGER
 VID `0x1366`), opened with `Periphery.Serial`. The DK may expose more than one
-VCOM port, so use the one that answers `bt id-show`.
+VCOM port, so use the one that answers `bench status`.
 
 A small interface keeps tests independent of the board behind them:
 
