@@ -12,7 +12,10 @@ using Periphery;
 //   --stop-file  also stop as soon as this file exists, for a transition a person performs
 //
 // Run it, perform the transition, and let it finish. It prints the link node before and
-// after, and every state change of three trackers bound at start:
+// after, and every state change of three trackers bound at start. If the node is gone
+// afterwards, it looks for a replacement: an LE link node that was not there before and
+// carries the same device name, which is how a re-paired private-address peripheral returns.
+//
 //   by-id         DeviceFilter.WithId(the node's instance id at start)
 //   by-container  DeviceFilter.WithContainerId(the node's container id at start)
 //   by-address    BluetoothAddress.TryParseInstanceId == the address, LE transport
@@ -35,7 +38,8 @@ bool IsTarget(DeviceInfo d) =>
     && t == BluetoothTransport.LowEnergy
     && a == target;
 
-var before = await SnapshotAsync("before");
+var visible = new HashSet<ulong> { target.Value };
+var (before, beforeNodes) = await SnapshotAsync("before");
 if (before is null)
 {
     Log("probe", $"no BTHLE\\DEV_ node for {target}; pair the peripheral first");
@@ -81,13 +85,40 @@ await using (var watcher = Devices.Watch().OfCategory(DeviceCategory.Bluetooth).
                      $"{(tracker.CurrentState.Device is null ? "no device" : Describe(tracker.CurrentState.Device))}");
 }
 
-var after = await SnapshotAsync("after");
-Log("result", $"instance id  {(after is null ? "node gone" : after.Id == before.Id ? "same" : "changed")}");
-Log("result", $"container id {(after is null ? "node gone" : after.ContainerId == before.ContainerId ? "same" : "changed")}");
-Log("result", $"address      {(after is null ? "node gone" : "same (the node was found by it)")}");
+var (after, afterNodes) = await SnapshotAsync("after");
+if (after is not null)
+{
+    Log("result", $"instance id  {(after.Id == before.Id ? "same" : "changed")}");
+    Log("result", $"container id {(after.ContainerId == before.ContainerId ? "same" : "changed")}");
+    Log("result", "address      same (the node was found by it)");
+    return 0;
+}
+
+var beforeIds = beforeNodes.Select(d => d.Id).ToHashSet();
+var replacements = afterNodes
+    .Where(d => !beforeIds.Contains(d.Id) && string.Equals(d.Name, before.Name, StringComparison.Ordinal))
+    .ToList();
+foreach (var r in replacements)
+{
+    BluetoothAddress.TryParseInstanceId(r.Id.Value, out var address, out _);
+    visible.Add(address.Value);
+    Log("replacement", $"{address}  {Describe(r)}");
+}
+
+if (replacements.Count != 1)
+{
+    Log("result", $"node gone; {replacements.Count} new LE node(s) named '{before.Name}'");
+    return 0;
+}
+
+var replacement = replacements[0];
+BluetoothAddress.TryParseInstanceId(replacement.Id.Value, out var replacementAddress, out _);
+Log("result", $"instance id  changed ({replacement.Id.Value})");
+Log("result", $"container id {(replacement.ContainerId == before.ContainerId ? "same" : "changed")}");
+Log("result", $"address      changed ({target} -> {replacementAddress})");
 return 0;
 
-async Task<DeviceInfo?> SnapshotAsync(string label)
+async Task<(DeviceInfo? Target, List<DeviceInfo> LinkNodes)> SnapshotAsync(string label)
 {
     var nodes = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
     var le = nodes.Where(d => BluetoothAddress.TryParseInstanceId(d.Id.Value, out _, out var t)
@@ -97,7 +128,7 @@ async Task<DeviceInfo?> SnapshotAsync(string label)
     var match = le.Where(IsTarget).ToList();
     if (match.Count > 1)
         Log(label, $"{match.Count} nodes carry {target}");
-    return match.FirstOrDefault();
+    return (match.FirstOrDefault(), le);
 }
 
 void Edge(string kind, DeviceInfo device)
@@ -109,9 +140,8 @@ void Edge(string kind, DeviceInfo device)
 string Describe(DeviceInfo d) =>
     $"{Mask(d.Id.Value)}  container {d.ContainerId?.ToString() ?? "none"}  IsActive={d.IsActive}";
 
-string Mask(string id)
-{
-    string mine = target.ToString("X12", null);
-    return Regex.Replace(id, "(?i)[0-9a-f]{12}", m =>
-        string.Equals(m.Value, mine, StringComparison.OrdinalIgnoreCase) ? m.Value : "<addr12>");
-}
+// Only the target's address, and a replacement's once found, are shown. Every other
+// Bluetooth device on the host is masked.
+string Mask(string id) =>
+    Regex.Replace(id, "(?i)[0-9a-f]{12}", m =>
+        BluetoothAddress.TryParse(m.Value, out var a) && visible.Contains(a.Value) ? m.Value : "<addr12>");

@@ -21,7 +21,7 @@ depends_on: ["0001-device-tracking-handles.md", "0006-device-profile-single-devi
 > survive a re-pair" column holds for a private-address peripheral, and for one that picks a new
 > static address when it re-pairs, which the mouse's static-random bond suggests. It does not hold
 > for a peripheral that keeps one static address. D5's rule stands: a consumer still cannot tell
-> which kind it has. Open question 1 is answered for the bench peripheral. Open question 3 has two
+> which kind it has. Open question 1 is answered for the bench peripheral. Open question 3 has three
 > consistent data points: each container followed its address.
 
 ## Status
