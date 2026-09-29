@@ -73,5 +73,6 @@ jobs:
           # Posts a `peanut-gallery` commit status on the PR head: pending while the panel
           # reviews, success only when it reports the head with no findings. Make it a
           # required check to hold auto-merge. The concurrency group above keeps an older
-          # run from overwriting a newer run's status.
+          # run from overwriting a newer run's status. A fork PR never gets one (its token is
+          # read-only), so with the status required it merges by admin bypass.
           commit-status: true
