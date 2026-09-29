@@ -229,13 +229,25 @@ The core applies the snapshot, then the buffered signals in arrival order, then 
 as it arrives. It raises the edges for the snapshot and the buffer as one diff against what it held
 before, and one diff per later signal.
 
-This converges. Every signal carries values, not deltas: `InterfacesAdded` carries the object's
-properties, `PropertiesChanged` carries the new values, with an invalidated property counted as
-absent, and `InterfacesRemoved` is final. The bus relays one sender's messages in the order sent,
-so the last signal for a property carries its latest value. A buffered signal the snapshot already
-contains is applied twice, to the same value. One older than the snapshot can briefly restore an
-older value, and the signal for the newer change corrects it. Every edge the core raises follows a
-value BlueZ signalled.
+This rests on one premise, which BlueZ declares. Every property the core reads is annotated
+`org.freedesktop.DBus.Property.EmitsChangedSignal=true`: `busctl introspect` on BlueZ 5.72 shows
+`emits-change` on `Adapter`, `Address`, `Alias`, `Paired`, `Bonded` and `Connected`. Each change to
+one of them is therefore followed by a `PropertiesChanged` that carries the new value.
+`InterfacesAdded` carries every property, and `InterfacesRemoved` is final. The bus relays one
+sender's messages in the order sent.
+
+So once the last signal BlueZ sent for a property has arrived, the core holds that property's
+current value. That holds whether each earlier signal was older or newer than the snapshot, and the
+core never has to tell which. A signal can arrive after the snapshot that holds its value, and the
+core holds a stale value only while a signal is still in flight.
+
+For the booleans `Paired` and `Connected`, every edge the core raises is a transition BlueZ made,
+in the order it made them, though possibly late. `Alias` can briefly show an older name between two
+`DevicePropertyChanged` edges, when its signals arrive after a snapshot that already holds the
+newer one.
+
+A `PropertiesChanged` that lists one of these properties as invalidated, value omitted, breaks the
+annotation. The core logs it and runs the snapshot sequence again.
 
 The core drops any message whose sender is not the current owner's unique name. That covers a late
 signal from a `bluetoothd` that has exited, and a reply to a request sent to that owner. It also
