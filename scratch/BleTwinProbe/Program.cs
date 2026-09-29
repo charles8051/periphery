@@ -115,11 +115,17 @@ string Show(object? value) => value switch
 {
     null => "-",
     string s => Mask(s),
-    // Sorted, so two sets holding the same items compare equal whatever their iteration order.
-    System.Collections.IEnumerable e and not string =>
+    // A set is sorted, so two sets holding the same items compare equal whatever their iteration
+    // order. Any other sequence keeps its order: in a hardware-id list, order carries meaning.
+    System.Collections.IEnumerable e when IsSet(e) =>
         Mask(string.Join(";", e.Cast<object?>().Select(x => x?.ToString()).Order(StringComparer.Ordinal))),
+    System.Collections.IEnumerable e => Mask(string.Join(";", e.Cast<object?>().Select(x => x?.ToString()))),
     _ => Mask(value.ToString() ?? "-"),
 };
+
+static bool IsSet(object value) =>
+    value.GetType().GetInterfaces().Any(i => i.IsGenericType
+        && (i.GetGenericTypeDefinition() == typeof(ISet<>) || i.GetGenericTypeDefinition() == typeof(IReadOnlySet<>)));
 
 string Mask(string text) =>
     Regex.Replace(text, "(?i)[0-9a-f]{12}", m =>
