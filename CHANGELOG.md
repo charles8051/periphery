@@ -5,6 +5,11 @@ All notable changes to Periphery are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- **`periphery camera capture`** saves frames from one camera through `CameraFrameSinks.SaveToDirectoryAsync`. MJPEG frames are written as `.jpg`. Other formats are written as `.raw`, with the dimensions and pixel format in the filename. The camera is chosen with `--name` or `--id`, or implicitly when only one is connected. `--format` sets the preferred pixel format (default `mjpeg`), `--max-resolution` caps the size, `--frames` sets the count, and `--skip` discards frames while auto-exposure settles. Stdout carries only the saved paths. Progress and errors go to stderr.
+
 ## 4.3.0 - 2026-09-23
 
 ### Added
