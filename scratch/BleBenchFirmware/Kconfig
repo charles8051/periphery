@@ -1,0 +1,9 @@
+# Copyright 2026 Charles Lee
+# SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
+
+config BENCH_AUTO_ADVERTISE
+	bool "Start the stack and advertise at boot, and again after every disconnect"
+	help
+	  For a board with no console to type `bt init` into, such as the Thingy:52.
+
+source "Kconfig.zephyr"

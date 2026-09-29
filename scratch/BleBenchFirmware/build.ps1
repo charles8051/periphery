@@ -26,20 +26,19 @@ Remove-Item $staged -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $staged | Out-Null
 Copy-Item (Join-Path $PSScriptRoot '*') $staged -Recurse -Exclude 'build.ps1'
 $app = $staged -replace '\\', '/'
-$hrSample = (Join-Path $workspace 'zephyr/samples/bluetooth/peripheral_hr') -replace '\\', '/'
 $imagesDir = Join-Path $OutDir 'images'
 New-Item -ItemType Directory -Force $imagesDir | Out-Null
 
 $images = @(
-    @{ Name = 'nrf52833dk-bench';         Board = 'nrf52833dk/nrf52833'; Source = $app;      Extra = '' }
-    @{ Name = 'nrf52833dk-bench-privacy'; Board = 'nrf52833dk/nrf52833'; Source = $app;      Extra = "$app/privacy.conf" }
-    @{ Name = 'nrf52833dk-peripheral-hr'; Board = 'nrf52833dk/nrf52833'; Source = $hrSample; Extra = "$app/peripheral_hr.conf" }
-    @{ Name = 'thingy52-peripheral-hr';   Board = 'thingy52/nrf52832';   Source = $hrSample; Extra = "$app/peripheral_hr.conf" }
+    @{ Name = 'nrf52833dk-bench';         Board = 'nrf52833dk/nrf52833'; Extra = '' }
+    @{ Name = 'nrf52833dk-bench-privacy'; Board = 'nrf52833dk/nrf52833'; Extra = "$app/privacy.conf" }
+    @{ Name = 'nrf52833dk-bench-twin';    Board = 'nrf52833dk/nrf52833'; Extra = "$app/twin.conf" }
+    @{ Name = 'thingy52-bench-twin';      Board = 'thingy52/nrf52832';   Extra = "$app/twin.conf" }
 )
 
 foreach ($image in $images) {
     $buildDir = (Join-Path $OutDir "build/$($image.Name)") -replace '\\', '/'
-    $westArgs = @('west', 'build', '--pristine', 'always', '--board', $image.Board, '--build-dir', $buildDir, $image.Source)
+    $westArgs = @('west', 'build', '--pristine', 'always', '--board', $image.Board, '--build-dir', $buildDir, $app)
     if ($image.Extra) {
         $westArgs += @('--', "-DEXTRA_CONF_FILE=$($image.Extra)")
     }
