@@ -45,18 +45,18 @@ foreach (var d in twins)
     Log("twin", $"{Mask(d.Id.Value)}  container {d.ContainerId}  VID {d.VendorId?.ToString() ?? "-"} PID {d.ProductId?.ToString() ?? "-"}  serial {d.SerialNumber ?? "-"}");
 
 // Every field and property the two nodes carry, compared.
-var fields = new (string Name, Func<DeviceInfo, object?> Get)[]
+// Every public DeviceInfo property, read by reflection so a field added later is compared too.
+// Properties is the platform property bag, compared key by key below.
+var fields = typeof(DeviceInfo)
+    .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+    .Where(p => p.GetIndexParameters().Length == 0 && p.Name != nameof(DeviceInfo.Properties))
+    .OrderBy(p => p.Name, StringComparer.Ordinal)
+    .ToList();
+Log("compare", $"{fields.Count} DeviceInfo properties and {twins.Sum(t => t.Properties.Count)} bag entries");
+foreach (var field in fields)
 {
-    ("Id", d => d.Id), ("Name", d => d.Name), ("Manufacturer", d => d.Manufacturer), ("ClassGuid", d => d.ClassGuid),
-    ("ContainerId", d => d.ContainerId), ("VendorId", d => d.VendorId), ("ProductId", d => d.ProductId),
-    ("SerialNumber", d => d.SerialNumber), ("BusType", d => d.BusType), ("LocationPath", d => d.LocationPath),
-    ("ParentId", d => d.ParentId), ("Driver", d => d.Driver), ("BatteryChargePercent", d => d.BatteryChargePercent),
-    ("Tags", d => string.Join(",", d.Tags.Order())),
-};
-foreach (var (field, get) in fields)
-{
-    string a = Show(get(twins[0])), b = Show(get(twins[1]));
-    Log("compare", $"{field,-22} {(a == b ? "same" : "DIFFERS")}  {a}{(a == b ? "" : $" | {b}")}");
+    string a = Show(field.GetValue(twins[0])), b = Show(field.GetValue(twins[1]));
+    Log("compare", $"{field.Name,-32} {(a == b ? "same" : "DIFFERS")}  {a}{(a == b ? "" : $" | {b}")}");
 }
 foreach (var key in twins[0].Properties.Keys.Union(twins[1].Properties.Keys).Order())
 {
@@ -115,9 +115,17 @@ string Show(object? value) => value switch
 {
     null => "-",
     string s => Mask(s),
-    System.Collections.IEnumerable e and not string => Mask(string.Join(";", e.Cast<object?>().Select(x => x?.ToString()))),
+    // A set is sorted, so two sets holding the same items compare equal whatever their iteration
+    // order. Any other sequence keeps its order: in a hardware-id list, order carries meaning.
+    System.Collections.IEnumerable e when IsSet(e) =>
+        Mask(string.Join(";", e.Cast<object?>().Select(x => x?.ToString()).Order(StringComparer.Ordinal))),
+    System.Collections.IEnumerable e => Mask(string.Join(";", e.Cast<object?>().Select(x => x?.ToString()))),
     _ => Mask(value.ToString() ?? "-"),
 };
+
+static bool IsSet(object value) =>
+    value.GetType().GetInterfaces().Any(i => i.IsGenericType
+        && (i.GetGenericTypeDefinition() == typeof(ISet<>) || i.GetGenericTypeDefinition() == typeof(IReadOnlySet<>)));
 
 string Mask(string text) =>
     Regex.Replace(text, "(?i)[0-9a-f]{12}", m =>

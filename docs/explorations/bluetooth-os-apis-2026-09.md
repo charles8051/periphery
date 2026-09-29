@@ -219,11 +219,12 @@ image, advertised one name, and were both paired on static random addresses.
 [`scratch/BleTwinProbe`](../../scratch/BleTwinProbe) compared their link nodes, then ran two
 trackers keyed on the shared name while each link was brought up and released.
 
-- Of every `DeviceInfo` field and property, only three differed: the instance id, the container
+- Of all 50 public `DeviceInfo` properties, read by reflection, and every entry in the platform
+  property bag, only three differed: the instance id, the container
   id and the `HardwareID` property (`BTHLE\Dev_<address>`). All three come from the address.
   `Name`, `Manufacturer` (`Microsoft`), `ClassGuid`, `BusType`, `Driver` (`BthLEEnum`), and
   `LocationPath` and `ParentId` (both the local radio's) were identical.
-- `VendorId`, `ProductId` and `SerialNumber` were empty on both. An earlier run gave both units the
+- `MacAddress`, `VendorId`, `ProductId` and `SerialNumber` were empty on both. An earlier run gave both units the
   same Device Information PnP ID; it reached no field, and the node's compatible id was
   `BTHLE\GenericDevice`. On a generic LE peripheral, the address is the only discriminator
   Periphery exposes.
