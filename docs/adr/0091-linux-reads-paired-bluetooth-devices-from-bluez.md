@@ -241,10 +241,10 @@ current value. That holds whether each earlier signal was older or newer than th
 core never has to tell which. A signal can arrive after the snapshot that holds its value, and the
 core holds a stale value only while a signal is still in flight.
 
-For the booleans `Paired` and `Connected`, every edge the core raises is a transition BlueZ made,
-in the order it made them, though possibly late. `Alias` can briefly show an older name between two
-`DevicePropertyChanged` edges, when its signals arrive after a snapshot that already holds the
-newer one.
+This is a convergence guarantee, not a replay of history. The snapshot and the buffer raise one net
+edge per property, and each later signal raises at most one. A change that was undone before the
+snapshot was built can still raise a pair of edges after it, when its signals arrive late.
+`Alias` can briefly show an older name the same way.
 
 A `PropertiesChanged` that lists one of these properties as invalidated, value omitted, breaks the
 annotation. The core logs it and runs the snapshot sequence again.
