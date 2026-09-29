@@ -7,8 +7,8 @@
 > **Status:** partly done. The DK firmware is built and runs on the DK, and step 2 is
 > measured. Step 1 is half done: `BluetoothAddress` shipped, and ADR-0090's table is
 > deferred. Step 3 is measured on Windows for static-random and private addresses; the
-> public column is not. Step 4 is measured. Step 5 is still a plan, and the test harness
-> below does not exist yet.
+> public column is not. Step 4 is measured. Step 5 has its first gated tests, in
+> `tests/Periphery.Ble.InTheHand.Tests`; the shell-driving fixture below does not exist yet.
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each
@@ -199,7 +199,8 @@ level. `PairAsync` reports `ProtectionLevelUsed = None` even when the bond encry
 
 These are the same rules the Linux device rig follows.
 
-- Tests run only when `PERIPHERY_BLE_DEVICE_TESTS=1` is set. When it is set, a
+- Tests run only when `PERIPHERY_BLE_DEVICE_TESTS=1` is set, with
+  `PERIPHERY_BLE_BENCH_ADDRESS` naming the paired bench peripheral. When it is set, a
   missing peripheral is a failure, not a skip.
 - Every assertion that the host raised nothing is paired with a peripheral log
   line showing the transition happened. Without that pairing, the test passes
@@ -232,7 +233,15 @@ These are the same rules the Linux device rig follows.
    the address-derived fields differ. Results are in
    [the OS APIs exploration][the OS APIs exploration].
 5. **Regression tests.** Turn the results from steps 2 to 4 that became
-   contracts into gated tests.
+   contracts into gated tests. Started with `Periphery.Ble.InTheHand`:
+   `BleBenchDeviceTests` joins the bench peripheral to 32feet by its address, reads Body
+   Sensor Location and waits for a Heart Rate notification. Run on Windows with the twin
+   or bench image:
+
+   ```bash
+   PERIPHERY_BLE_DEVICE_TESTS=1 PERIPHERY_BLE_BENCH_ADDRESS=EE:29:84:E4:8F:D0 \
+     dotnet test tests/Periphery.Ble.InTheHand.Tests -f net10.0-windows10.0.19041.0 --filter Category=Integration
+   ```
 
 ---
 

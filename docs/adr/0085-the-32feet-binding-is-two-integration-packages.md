@@ -1,7 +1,7 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
-status: "Proposed"
-status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make."
+status: "Accepted"
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships D2-D4 and the D7 join, verified on the BLE bench; the D3 build error and D4 dependency graphs were checked against a packed build. BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
 date: "2026-09-02"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm", "api-design", "device-proxy"]
@@ -37,7 +37,7 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 
 ## Status
 
-Proposed. Resolves the question "should `Periphery.Bluetooth` just be a wrapper
+Accepted 2026-09-29. Resolves the question "should `Periphery.Bluetooth` just be a wrapper
 over 32feet?" with: yes to the binding, no to that name, and no to it being one
 package.
 

@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- ADR-0085 D3 and D4. net10.0 carries 32feet's BlueZ provider and net10.0-windows10.0.19041.0
+         its WinRT GATT provider. net10.0-windows exists only so a consumer on an unversioned Windows
+         target gets a build error rather than NuGet's fallback to the BlueZ asset: it compiles no
+         surface and takes no 32feet dependency. There is no net8.0: 32feet has no net8.0 asset, and
+         its netstandard2.0 fallback throws on every call. -->
+    <TargetFrameworks>net10.0;net10.0-windows;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Ble.InTheHand</PackageId>
+    <Description>ADR-0085: joins a Periphery DeviceInfo for a Bluetooth LE device to 32feet's
+      InTheHand.BluetoothLE BluetoothDevice, for GATT access. InTheHand.BluetoothLE is a third-party
+      runtime dependency of this package only. On Windows, target net10.0-windows10.0.19041.0 or
+      later.</Description>
+    <PackageTags>bluetooth;ble;gatt;32feet;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0-windows'">
+    <PackageReference Include="InTheHand.BluetoothLE" Version="4.0.44" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <Compile Remove="**/*.cs" />
+  </ItemGroup>
+
+  <!-- A consumer's build picks the nearest buildTransitive folder for its own framework. An
+       unversioned Windows target lands on the error; 10.0.19041 or later lands on the empty file. -->
+  <ItemGroup>
+    <None Include="buildTransitive/RequiresWindows10.targets" Pack="true"
+          PackagePath="buildTransitive/net10.0-windows7.0/Periphery.Ble.InTheHand.targets" />
+    <None Include="buildTransitive/Empty.targets" Pack="true"
+          PackagePath="buildTransitive/net10.0-windows10.0.19041/Periphery.Ble.InTheHand.targets" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Ble.InTheHand.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
