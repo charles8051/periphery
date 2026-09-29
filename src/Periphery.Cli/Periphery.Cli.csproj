@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Camera\Periphery.Camera.csproj" />
     <ProjectReference Include="..\Periphery.Hid\Periphery.Hid.csproj" />
     <ProjectReference Include="..\Periphery.Monitor\Periphery.Monitor.csproj" />
   </ItemGroup>

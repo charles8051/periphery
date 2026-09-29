@@ -135,6 +135,16 @@ app.Configure(config =>
             .WithDescription("Rotate the output (width/height swap handled automatically).")
             .WithExample("monitor", "set-orientation", "portrait");
     });
+
+    config.AddBranch("camera", camera =>
+    {
+        camera.SetDescription("Camera capture (Periphery.Camera). Windows (Media Foundation) and Linux (V4L2).");
+        camera.AddCommand<CameraCaptureCommand>("capture")
+            .WithDescription("Save frames from one camera: MJPEG as .jpg, other formats as .raw. Prints the saved paths.")
+            .WithExample("camera", "capture")
+            .WithExample("camera", "capture", "--name", "PW513", "--skip", "30", "-o", "stills")
+            .WithExample("camera", "capture", "--max-resolution", "1920x1080", "--frames", "10");
+    });
 });
 
 return await app.RunAsync(args);
