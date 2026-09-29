@@ -23,8 +23,9 @@ depends_on: ["0001-device-tracking-handles.md", "0006-device-profile-single-devi
 > for a peripheral that keeps one static address. D5's rule stands: a consumer still cannot tell
 > which kind it has. Open question 1 is answered for the bench peripheral. Open question 3 has four
 > consistent data points: each container followed its address. NEG-005 was measured with two units
-> of one firmware and name: of every `DeviceInfo` field, only the three address-derived ones
-> differed, and `VendorId` / `ProductId` were absent even with a Device Information PnP ID set. The
+> of one firmware and name: across all 50 public `DeviceInfo` properties and the property bag, only
+> three values differed, all derived from the address (`Id`, `ContainerId`, the `HardwareID` entry).
+> `MacAddress`, `VendorId` and `ProductId` were absent even with a Device Information PnP ID set. The
 > address is the only discriminator Periphery exposes, so for units on static addresses one
 > exists, and for private-address units it is lost on re-pair.
 
