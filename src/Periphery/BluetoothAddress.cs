@@ -13,10 +13,12 @@ namespace Periphery;
 /// <remarks>
 /// <para><b>A join key, not an identity</b> (ADR-0083, ADR-0085 D5). It matches a Periphery
 /// device node to a Bluetooth library's device object, and it lasts only as long as the address it
-/// was read from. An LE peripheral on a private address, or one that picks a new static address
-/// when it re-pairs, comes back with a different address and therefore a different
-/// <see cref="BluetoothAddress"/>. On Windows, measured on one peripheral, a bond with a
-/// privacy-enabled LE device is keyed by the address the host saw at pairing.</para>
+/// was read from. On Windows (issue #232) it held across disconnects, peripheral reboots, host
+/// reboots and RPA rotations, for a static-random peripheral and for one using private addresses.
+/// A re-pair is where it can change. Windows keys a private-address bond by the address it saw
+/// at pairing, so a re-paired private-address peripheral comes back under a new address, as
+/// does one that picks a new static address when it re-pairs. A peripheral that keeps one static
+/// address keeps its key.</para>
 /// <para>Only Windows instance IDs carry the address; see <see cref="TryParseInstanceId"/>.
 /// <see cref="DeviceInfo.MacAddress"/> is always <see langword="null"/> for a Bluetooth node.</para>
 /// </remarks>

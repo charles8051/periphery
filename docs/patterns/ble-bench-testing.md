@@ -6,8 +6,9 @@
 >
 > **Status:** partly done. The DK firmware is built and runs on the DK, and step 2 is
 > measured. Step 1 is half done: `BluetoothAddress` shipped, and ADR-0090's table is
-> deferred. Steps 3 to 5 are still a plan. Both boards are flashed. The test harness below
-> does not exist yet.
+> deferred. Step 3 is measured on Windows for static-random and private addresses; the
+> public column is not. Steps 4 and 5 are still a plan. Both boards are flashed. The test
+> harness below does not exist yet.
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each
@@ -124,6 +125,11 @@ are stored in flash, so they survive the reboot.
 - **Public** is not available. Nordic parts have no factory public address, and neither image
   sets one. Zephyr's vendor HCI command Write BD_ADDR is the likely route. Untried.
 
+One host can bond only one of the DK's identities at a time. Zephyr refuses a second bond with
+the same peer on another identity ("Refusing new pairing. The old bond must be unpaired first.",
+SMP reason 4). To run the static and private columns side by side, pair the Thingy for one of
+them.
+
 ### Ground truth from the peripheral
 
 Every event a harness waits on is a log line from the `bench` module:
@@ -182,7 +188,9 @@ The host side pairs and unpairs without a person:
   accepting in `PairingRequested`;
 - unpair with `DeviceInformationPairing.UnpairAsync()`.
 
-This should run unattended from a desktop process. It has not been measured.
+[`scratch/BlePair`](../../scratch/BlePair) does both, and runs unattended from a desktop
+process. Pass `DevicePairingProtectionLevel.Encryption`: Just Works cannot satisfy the default
+level. `PairAsync` reports `ProtectionLevelUsed = None` even when the bond encrypts.
 
 ### Rules
 
@@ -210,9 +218,11 @@ These are the same rules the Linux device rig follows.
    `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` run, with `-Drop disconnect` or
    `-Drop reset`. The HCI event covers LE, and core already raises the edges, so ADR-0090 has no
    motivating case on Windows. Results are in [the OS APIs exploration][the OS APIs exploration].
-3. **[#232]'s matrix.** Three address types, each through four transitions:
-   disconnect and reconnect, peripheral reboot, unpair and re-pair, host reboot.
-   The result decides whether `BleDeviceProxy` ships or is rejected.
+3. **[#232]'s matrix.** Done 2026-09-28 on Windows for static-random and private addresses; the
+   public column is not run. `scratch/BleKeyDurabilityProbe` watches the node and three trackers
+   through each transition. The key held everywhere except a private-address re-pair, so
+   `BleDeviceProxy` is no longer blocked on Windows. Results are in
+   [the OS APIs exploration][the OS APIs exploration].
 4. **Two identical units.** Flash `peripheral_hr` on both boards, with the same
    device name. The host then sees two peripherals that differ only by address.
    This measures what ADR-0083 NEG-005 predicts and what `DeviceGroupTracker` has
