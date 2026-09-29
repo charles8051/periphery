@@ -88,11 +88,12 @@ internal sealed class CameraCaptureCommand : AsyncCommand<CameraCaptureCommand.S
             builder.MaxResolution(maxWidth, maxHeight);
 
         string directory = Path.GetFullPath(settings.Output);
-        // One prefix per run, so the listing below names this run's files and a
-        // second run into the same directory does not overwrite the first.
-        string prefix = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        // Unique per run, so a second run into the same directory, even one started
+        // in the same second, neither overwrites these files nor appears in their
+        // listing. The time keeps a directory of stills in capture order.
+        string prefix = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+            + "-" + Guid.NewGuid().ToString("N")[..6];
 
-        int exitCode = 0;
         try
         {
             await using var session = await builder.OpenAsync(cancellationToken);
@@ -105,20 +106,26 @@ internal sealed class CameraCaptureCommand : AsyncCommand<CameraCaptureCommand.S
                 .Take(settings.Frames)
                 .SaveToDirectoryAsync(
                     directory, new CameraFrameWriteOptions(FilenamePrefix: prefix), cancellationToken);
+            return 0;
         }
         catch (CameraException ex)
         {
             err.MarkupLine($"[red]{Markup.Escape(ex.Message)}[/]");
-            exitCode = 1;
+            return 1;
         }
-
-        // Listed on failure too: a stream that stalls after some frames keeps them.
-        if (Directory.Exists(directory))
+        finally
         {
-            foreach (var path in Directory.EnumerateFiles(directory, prefix + "-*").Order(StringComparer.Ordinal))
-                Console.Out.WriteLine(path);
+            // Listed on every exit: a stream that stalls, a full disk, or Ctrl+C
+            // after some frames leaves those frames on disk.
+            PrintSavedPaths(directory, prefix);
         }
-        return exitCode;
+    }
+
+    private static void PrintSavedPaths(string directory, string prefix)
+    {
+        if (!Directory.Exists(directory)) return;
+        foreach (var path in Directory.EnumerateFiles(directory, prefix + "-*").Order(StringComparer.Ordinal))
+            Console.Out.WriteLine(path);
     }
 
     /// <summary>
