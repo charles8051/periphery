@@ -137,7 +137,8 @@ throw.
 | `ParentId` | the adapter's sysfs path, resolved through `/sys/class/bluetooth/hciN` |
 
 The adapter address comes from the `Adapter1` object that `Device1.Adapter` names, in the same
-`GetManagedObjects` reply.
+`GetManagedObjects` reply. Both addresses in `Id` are parsed as `BluetoothAddress` and written in
+its uppercase colon form.
 
 **`Id` is not the object path.** The path embeds the adapter's kernel name,
 `/org/bluez/hci0/dev_…`. The kernel numbers `hciN` in registration order, so adding a second
@@ -181,14 +182,24 @@ With D5 carrying connection state on the device, a `link` node repeats it withou
 also the node that raises `Appeared` per connection today. The provider skips udev devices with
 `DEVTYPE=link`, in enumeration and in monitoring. Adapters stay.
 
+A BR/EDR HID device's sysfs parent is its link node: `hidp_setup_hid` sets
+`hid->dev.parent = &session->conn->hcon->dev` (Source: `net/bluetooth/hidp/core.c`). The same
+function writes the adapter's address to `phys` and the peer's to `uniq`, which udev reports as
+`HID_PHYS` and `HID_UNIQ`. A node whose parent is a skipped link node takes `ParentId`
+`bluez:<HID_PHYS>/<HID_UNIQ>`, written as in D4, which is the `Id` of the paired device. The HID
+node then sits under the peripheral. The value is built from the node's own properties, with no
+bus call. A node without
+both addresses takes the link's parent, the adapter.
+
 ### D8 — A pure core decides, and the shell only talks to the bus
 
 The shell owns libdbus: the connection, the calls, the file descriptor and the dispatch loop. It
 turns each reply and signal into an immutable value before anything is decided. The core is pure:
 
 - `Map(snapshot) → DeviceInfo[]` covers D1 and D4.
-- `Step(state, observation) → (state, edges)` covers D5 and D6. An observation is a snapshot, an
-  interface added or removed, a property change, an owner lost, or an owner gained.
+- `Step(state, observation) → (state, edges)` covers D5 and D6. An observation is a snapshot
+  request, a snapshot, an interface added or removed, a property change, an owner lost, or an owner
+  gained.
 
 Both are tested as tables, with no bus, as in the Periphery.Treehopper split (ADR-0052).
 
@@ -201,6 +212,23 @@ three match rules, all with `sender='org.bluez'` except the last:
 - `ObjectManager` signals;
 - `PropertiesChanged` with `arg0='org.bluez.Device1'`;
 - `NameOwnerChanged` from the bus with `arg0='org.bluez'`.
+
+**The snapshot and the signals are ordered by arrival.** A change between a snapshot and a
+subscription would otherwise be lost, and a signal older than a snapshot would overwrite it. At
+start, and again whenever `org.bluez` gains an owner, the shell runs one sequence:
+
+1. Add the match rules.
+2. Send `GetManagedObjects` with `dbus_connection_send`, not the blocking call, and keep its
+   serial.
+3. Pop messages in arrival order until the method return whose reply serial matches.
+
+The core sees `SnapshotRequested`, then any signals, then `Snapshot`. The bus relays one sender's
+messages in the order that sender sent them. A BlueZ signal that arrives before the reply was
+therefore sent before it, and the snapshot already reflects it, so the core drops it. It applies
+every signal that arrives after the reply. It also drops any signal whose sender is not the current
+owner's unique name, which covers a late signal from a `bluetoothd` that has exited.
+
+`EnumerateAsync` takes one snapshot and subscribes to nothing, so it has no ordering to settle.
 
 ---
 
@@ -220,12 +248,12 @@ three match rules, all with `sender='org.bluez'` except the last:
 ### Bad
 
 - Core owns a libdbus binding. Walking `a{oa{sa{sv}}}` takes the message-iterator API, and
-  `DBusMessageIter` is a caller-allocated struct whose size the binding has to declare.
+  `DBusMessageIter` is a caller-allocated struct. Its fields are declared in the public header
+  `dbus/dbus-message.h`, so the binding copies that declaration rather than guessing a size.
 - With BlueZ absent, D7 removes the link nodes and D1 adds nothing, so Linux loses the one
   connection signal it had. That signal carried no identity.
-- A BR/EDR HID device's sysfs parent is its link node: `hidp_setup_hid` sets
-  `hid->dev.parent = &session->conn->hcon->dev` (Source: `net/bluetooth/hidp/core.c`). After D7
-  its `ParentId` names a node that no longer enumerates.
+- With BlueZ absent, a BR/EDR HID node's D7 `ParentId` names a paired device that does not
+  enumerate.
 - An unfiltered `Devices.Enumerate()` on Linux makes one system-bus round trip when libdbus is
   present.
 - D7 changes what a Linux Bluetooth watcher receives. It needs a `BREAKING-CHANGES.md` entry when it
