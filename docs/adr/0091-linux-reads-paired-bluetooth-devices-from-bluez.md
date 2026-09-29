@@ -197,9 +197,9 @@ The shell owns libdbus: the connection, the calls, the file descriptor and the d
 turns each reply and signal into an immutable value before anything is decided. The core is pure:
 
 - `Map(snapshot) → DeviceInfo[]` covers D1 and D4.
-- `Step(state, observation) → (state, edges)` covers D5 and D6. An observation is a snapshot
-  request, a snapshot, an interface added or removed, a property change, an owner lost, or an owner
-  gained.
+- `Step(state, observation) → (state, edges)` covers D5 and D6. An observation is a snapshot with
+  its buffered signals, an interface added or removed, a property change, an owner lost, or an
+  owner gained. Each carries its sender.
 
 Both are tested as tables, with no bus, as in the Periphery.Treehopper split (ADR-0052).
 
@@ -213,20 +213,33 @@ three match rules, all with `sender='org.bluez'` except the last:
 - `PropertiesChanged` with `arg0='org.bluez.Device1'`;
 - `NameOwnerChanged` from the bus with `arg0='org.bluez'`.
 
-**The snapshot and the signals are ordered by arrival.** A change between a snapshot and a
-subscription would otherwise be lost, and a signal older than a snapshot would overwrite it. At
-start, and again whenever `org.bluez` gains an owner, the shell runs one sequence:
+**The snapshot and the signals combine so that the result converges.** Nothing in BlueZ's API ties
+the moment it builds a `GetManagedObjects` reply to the signals it sends around it. A signal can
+describe a change the reply already contains, or one it does not. At start, and again whenever
+`org.bluez` gains an owner, the shell runs one sequence:
 
 1. Add the match rules.
-2. Send `GetManagedObjects` with `dbus_connection_send`, not the blocking call, and keep its
-   serial.
-3. Pop messages in arrival order until the method return whose reply serial matches.
+2. Take the owner's unique name: from `GetNameOwner("org.bluez")` at start, or from the
+   `NameOwnerChanged` that reported the new owner.
+3. Send `GetManagedObjects` to that unique name with `dbus_connection_send`, not the blocking call,
+   and keep its serial.
+4. Buffer every BlueZ signal that arrives before the method return whose reply serial matches.
 
-The core sees `SnapshotRequested`, then any signals, then `Snapshot`. The bus relays one sender's
-messages in the order that sender sent them. A BlueZ signal that arrives before the reply was
-therefore sent before it, and the snapshot already reflects it, so the core drops it. It applies
-every signal that arrives after the reply. It also drops any signal whose sender is not the current
-owner's unique name, which covers a late signal from a `bluetoothd` that has exited.
+The core applies the snapshot, then the buffered signals in arrival order, then each later signal
+as it arrives. It raises the edges for the snapshot and the buffer as one diff against what it held
+before, and one diff per later signal.
+
+This converges. Every signal carries values, not deltas: `InterfacesAdded` carries the object's
+properties, `PropertiesChanged` carries the new values, with an invalidated property counted as
+absent, and `InterfacesRemoved` is final. The bus relays one sender's messages in the order sent,
+so the last signal for a property carries its latest value. A buffered signal the snapshot already
+contains is applied twice, to the same value. One older than the snapshot can briefly restore an
+older value, and the signal for the newer change corrects it. Every edge the core raises follows a
+value BlueZ signalled.
+
+The core drops any message whose sender is not the current owner's unique name. That covers a late
+signal from a `bluetoothd` that has exited, and a reply to a request sent to that owner. It also
+drops a method return whose reply serial is not its latest request's.
 
 `EnumerateAsync` takes one snapshot and subscribes to nothing, so it has no ordering to settle.
 
