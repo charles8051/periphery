@@ -101,6 +101,7 @@ The core package only discovers devices. Extension packages talk to them.
 |---|---|
 | [`Periphery`](https://github.com/charles8051/periphery/tree/main/src/Periphery) | Enumerate, watch, and track devices |
 | [`Periphery.Camera`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera) | Frame capture, with [Avalonia](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.Avalonia) and [OpenCvSharp](https://github.com/charles8051/periphery/tree/main/src/Periphery.Camera.OpenCvSharp) integrations |
+| [`Periphery.Ble.InTheHand`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Ble.InTheHand) | GATT access to a Bluetooth LE device, through 32feet (Windows) |
 | [`Periphery.Hid`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Hid) | HID reports, such as battery levels |
 | [`Periphery.Monitor`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Monitor) | Monitor brightness, power, input, resolution, and orientation |
 | [`Periphery.Usb`](https://github.com/charles8051/periphery/tree/main/src/Periphery.Usb) | Raw USB I/O |

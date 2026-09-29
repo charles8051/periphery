@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows only (ADR-0085, 2026-09-29 amendment). The join needs a Windows instance id, so a
+         net10.0 target would ship 32feet's BlueZ provider, and its vulnerable Tmds.DBus chain, for
+         an API that throws on every Linux node. With no bare asset, NuGet has nothing to fall back
+         to: an unversioned Windows or a net10.0 consumer is refused at restore (NU1202). 32feet's
+         only Windows GATT asset needs 10.0.19041. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- XML Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Package Metadata -->
+    <PackageId>Periphery.Ble.InTheHand</PackageId>
+    <Description>ADR-0085: joins a Periphery DeviceInfo for a Bluetooth LE device to 32feet's
+      InTheHand.BluetoothLE BluetoothDevice, for GATT access. Windows only: target
+      net10.0-windows10.0.19041.0 or later. InTheHand.BluetoothLE is a third-party runtime dependency
+      of this package only.</Description>
+    <PackageTags>bluetooth;ble;gatt;32feet;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <PackageReference Include="InTheHand.BluetoothLE" Version="4.0.44" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Ble.InTheHand.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
