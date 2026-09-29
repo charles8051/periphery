@@ -94,7 +94,7 @@ keys were exchanged. `Bonded` means they were stored. Ubuntu 22.04 ships BlueZ 5
 
 This section first said ADR-0024 keeps D-Bus out of core, so a Linux inventory could only come from
 an integration package. ADR-0024 forbids third-party packages, not native libraries, and core
-already binds `libudev.so.1`. ADR-0091 (proposed) reads BlueZ in core through `libdbus-1`.
+already binds `libudev.so.1`. ADR-0091 (proposed) reads BlueZ in core over a managed D-Bus client.
 
 ### macOS
 
@@ -466,7 +466,8 @@ reported `Allowed` (Measured).
 
 **Linux.** Access to `org.bluez` is governed by the system D-Bus policy. BlueZ 5.72's shipped
 `bluetooth.conf` grants `send_destination="org.bluez"` to the default context, and an unprivileged
-user's `GetManagedObjects` call succeeded on Ubuntu 24.04 (Measured, 2026-09-29, ADR-0091).
+user's `GetManagedObjects` call succeeded on Ubuntu 24.04 (Measured, 2026-09-29, ADR-0091). BlueZ
+5.50 and earlier denied the default context (Source: BlueZ commit 3ef0ce954b).
 
 **macOS.** CoreBluetooth requires `NSBluetoothAlwaysUsageDescription`. For a binary built against
 the macOS 11 SDK or later, TCC terminates the process when the key is missing (Reported: Chromium
