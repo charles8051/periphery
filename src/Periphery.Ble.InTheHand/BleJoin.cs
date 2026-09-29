@@ -32,14 +32,13 @@ internal static class BleJoin
     }
 
     /// <summary>
-    /// The id 32feet's <c>BluetoothDevice.FromIdAsync</c> takes for <paramref name="address"/>.
+    /// The id 32feet's Windows <c>BluetoothDevice.FromIdAsync</c> takes for <paramref name="address"/>:
+    /// twelve hex digits, which it parses as a number.
     /// </summary>
     /// <remarks>
-    /// The format is 32feet's per platform: hex digits on Windows, where it parses the id as a
-    /// number, and colon-separated octets on Linux, where it is BlueZ's <c>Device1.Address</c>.
-    /// Twelve digits are always written. 32feet's own Windows ids drop leading zeros, so compare
-    /// them as parsed <see cref="BluetoothAddress"/> values, never as strings.
+    /// 32feet's own Windows ids drop leading zeros, so compare them as parsed
+    /// <see cref="BluetoothAddress"/> values, never as strings.
     /// </remarks>
-    internal static string ToBluetoothDeviceId(BluetoothAddress address, bool windows) =>
-        windows ? address.ToString("X12", CultureInfo.InvariantCulture) : address.ToString();
+    internal static string ToBluetoothDeviceId(BluetoothAddress address) =>
+        address.ToString("X12", CultureInfo.InvariantCulture);
 }

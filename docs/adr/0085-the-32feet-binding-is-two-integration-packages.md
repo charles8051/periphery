@@ -1,7 +1,7 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
 status: "Accepted"
-status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships D2-D4 and the D7 join, verified on the BLE bench; the D3 build error and D4 dependency graphs were checked against a packed build. BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
 date: "2026-09-02"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm", "api-design", "device-proxy"]
@@ -34,6 +34,17 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > private-address peripheral was re-paired, which ADR-0083 D5 already treats as a new identity. A
 > static-random peripheral kept it across a re-pair as well. `BleDeviceProxy` is no longer blocked
 > on Windows. The public-address column, Linux and macOS are unmeasured.
+>
+> **Amendment (2026-09-29).** `Periphery.Ble.InTheHand` ships `net10.0-windows10.0.19041.0` only,
+> replacing D3's and D4's TFM set for that package. The D7 join needs a Windows instance id: on
+> Linux no node carries an address (issue #258), so a `net10.0` target would ship 32feet's BlueZ
+> provider and the vulnerable `Tmds.DBus` chain for an API that throws on every call. Without a
+> bare asset NuGet has nothing to fall back to, so an unversioned Windows or a `net10.0` consumer
+> is refused at restore with NU1202, which names the supported framework. D3's sentinel
+> `net10.0-windows` target and its build-error file are therefore unnecessary and are not built.
+> Measured against a packed build: `net10.0-windows` and `net10.0` consumers get NU1202;
+> `net10.0-windows10.0.19041.0` and `10.0.22621.0` consumers build with only
+> `InTheHand.BluetoothLE`. A `net10.0` target comes back when Linux has a join key.
 
 ## Status
 

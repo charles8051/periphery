@@ -1,7 +1,6 @@
 // Copyright 2026 Charles Lee
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
-using System.Runtime.Versioning;
 using InTheHand.Bluetooth;
 
 namespace Periphery.Ble.InTheHand;
@@ -10,9 +9,6 @@ namespace Periphery.Ble.InTheHand;
 /// Joins a Periphery <see cref="DeviceInfo"/> to 32feet's <see cref="BluetoothDevice"/>, for GATT
 /// access (ADR-0085 D7).
 /// </summary>
-#if !WINDOWS
-[SupportedOSPlatform("linux")]
-#endif
 public static class DeviceInfoBleExtensions
 {
     /// <summary>
@@ -31,20 +27,13 @@ public static class DeviceInfoBleExtensions
     /// Windows it holds across disconnects, peripheral and host reboots, and RPA rotation. A
     /// re-paired peripheral that uses private addresses comes back under a new node and a new
     /// address.</para>
-    /// <para>Only a Windows instance id carries an address, so on Linux every node is rejected
-    /// (issue #258).</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="device"/> is not an LE link node.</exception>
     public static async Task<BluetoothDevice?> ToBluetoothDeviceAsync(
         this DeviceInfo device, CancellationToken cancellationToken = default)
     {
-#if WINDOWS
-        const bool windowsIds = true;
-#else
-        const bool windowsIds = false;
-#endif
-        string id = BleJoin.ToBluetoothDeviceId(BleJoin.LeAddressOf(device), windowsIds);
+        string id = BleJoin.ToBluetoothDeviceId(BleJoin.LeAddressOf(device));
         return await BluetoothDevice.FromIdAsync(id).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 }

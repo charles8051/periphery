@@ -2,7 +2,8 @@ namespace Periphery.Ble.InTheHand.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="BleJoin"/>, the pure half of the ADR-0085 D7 join. Strings and values
-/// only, so they run on any host. Addresses are synthetic.
+/// only, so they run on any host, with the join's source compiled in on net10.0. Addresses are
+/// synthetic.
 /// </summary>
 public class BleJoinTests
 {
@@ -37,25 +38,19 @@ public class BleJoinTests
     // ── ToBluetoothDeviceId ────────────────────────────────────────────
 
     [Fact]
-    public void ToBluetoothDeviceId_Windows_WritesTwelveHexDigits_KeepingLeadingZeros()
+    public void ToBluetoothDeviceId_WritesTwelveHexDigits_KeepingLeadingZeros()
     {
-        Assert.Equal("001A2B3C4D5E", BleJoin.ToBluetoothDeviceId(new BluetoothAddress(0x001A2B3C4D5E), windows: true));
+        Assert.Equal("001A2B3C4D5E", BleJoin.ToBluetoothDeviceId(new BluetoothAddress(0x001A2B3C4D5E)));
     }
 
     [Fact]
-    public void ToBluetoothDeviceId_Linux_WritesBlueZColonForm()
-    {
-        Assert.Equal("00:1A:2B:3C:4D:5E", BleJoin.ToBluetoothDeviceId(new BluetoothAddress(0x001A2B3C4D5E), windows: false));
-    }
-
-    [Fact]
-    public void ToBluetoothDeviceId_Windows_ParsesBackToTheSameAddress_As32feetsUnpaddedIdDoes()
+    public void ToBluetoothDeviceId_ParsesBackToTheSameAddress_As32feetsUnpaddedIdDoes()
     {
         // 32feet's own Windows Id formats with "X6", so an address that begins 00 comes back as ten
         // digits. The join and 32feet's Id meet as parsed addresses.
         var address = new BluetoothAddress(0x001A2B3C4D5E);
 
-        Assert.Equal(address, BluetoothAddress.Parse(BleJoin.ToBluetoothDeviceId(address, windows: true)));
+        Assert.Equal(address, BluetoothAddress.Parse(BleJoin.ToBluetoothDeviceId(address)));
         Assert.Equal(address, BluetoothAddress.Parse("1A2B3C4D5E"));
     }
 }

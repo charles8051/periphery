@@ -7,9 +7,9 @@ Open a GATT session on a Bluetooth LE device you found with Periphery, through
 dotnet add package Periphery.Ble.InTheHand --prerelease
 ```
 
-On Windows, target `net10.0-windows10.0.19041.0` or later. An unversioned `net10.0-windows` target
-fails the build with a message saying so: 32feet's only Windows GATT asset needs 10.0.19041, and
-without it NuGet would hand you the Linux provider, which throws at first call.
+Windows only: target `net10.0-windows10.0.19041.0` or later. Restore refuses any other target
+(NU1202). 32feet's only Windows GATT asset needs 10.0.19041, and the join below needs a Windows
+instance id. Linux has no address to join on yet (issue #258).
 
 ```csharp
 using InTheHand.Bluetooth;
@@ -32,14 +32,6 @@ var service = await device.Gatt.GetPrimaryServiceAsync(BluetoothUuid.FromShortId
 ```
 
 `ToBluetoothDeviceAsync` takes an LE link node, `BTHLE\DEV_<address>`, and throws for any other
-node. It resolves the device by the address in the node's instance id, which only Windows carries.
-The address is a join key, not an identity: a peripheral that uses private addresses comes back
-under a new node and address after it is re-paired.
-
-## Vulnerable dependency on the bare target
-
-On `net10.0`, 32feet brings `Linux.Bluetooth` and `Tmds.DBus` 0.20.0, which has a high-severity
-advisory ([CVE-2026-39959](https://github.com/advisories/GHSA-xrw6-gwf8-vvr9)). Restore reports it
-as NU1903. The exposure follows your target framework, not this package: a
-`net10.0-windows10.0.19041.0` build does not include either package. On Linux, the bare target is
-the only one, so the exposure cannot be avoided there until 32feet takes Tmds.DBus 0.92.0.
+node. It resolves the device by the address in the node's instance id. The address is a join key,
+not an identity: a peripheral that uses private addresses comes back under a new node and address
+after it is re-paired.
