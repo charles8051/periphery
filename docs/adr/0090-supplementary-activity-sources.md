@@ -29,7 +29,8 @@ depends_on: ["0004-two-level-device-state-model.md", "0052-periphery-treehopper-
 > including a link lost to a peripheral reset. The Windows provider already raised `Activated` /
 > `Deactivated` for the `BTHLE\DEV_…` node from it (`docs/explorations/bluetooth-os-apis-2026-09.md`).
 > On that setup no Bluetooth case needs this ADR, and CTX-002 and CTX-003 no longer describe
-> Windows Bluetooth. Host-initiated disconnects and other controllers are unverified. The
+> Windows Bluetooth. A host-initiated disconnect, measured later that day, raised the same push
+> and edge. Other controllers are unverified. The
 > remaining case is a platform whose push core cannot reach. On Linux that is BlueZ's
 > `Device1.Connected` over D-Bus, which ADR-0024 keeps out of core (issue #258).
 

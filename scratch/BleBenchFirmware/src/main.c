@@ -8,6 +8,9 @@
  * `bt id-create`. This file adds what the shell does not provide: one advertising set whose
  * address mode the harness chooses, a Heart Rate notification once a second, and a log line for
  * every event a harness waits on. Every such line carries the `bench:` log module prefix.
+ *
+ * With CONFIG_BENCH_AUTO_ADVERTISE, for a board with no console, there is no shell: the stack
+ * comes up at boot and advertises on identity 0, and advertising restarts after every disconnect.
  */
 
 #include <errno.h>
@@ -20,6 +23,7 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/settings/settings.h>
 #include <zephyr/shell/shell.h>
 
 LOG_MODULE_REGISTER(bench, LOG_LEVEL_INF);
@@ -139,6 +143,8 @@ static int adv_start(bool identity, uint8_t id, const char **step)
 	return 0;
 }
 
+/* Shell commands reach the advertising set through a request to the system workqueue. */
+#if defined(CONFIG_SHELL)
 static struct {
 	bool stop;
 	bool identity;
@@ -247,6 +253,35 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bench_cmds,
 	SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(bench, &bench_cmds, "BLE bench peripheral", NULL);
+#endif /* CONFIG_SHELL */
+
+/* ── Auto mode ──────────────────────────────────────────────────────────── */
+
+#if defined(CONFIG_BENCH_AUTO_ADVERTISE)
+/* Runs on the system workqueue, which owns the advertising set. */
+static void auto_advertise(struct k_work *work)
+{
+	const char *step = "";
+	int err;
+
+	ARG_UNUSED(work);
+	err = adv_start(true, BT_ID_DEFAULT, &step);
+	if (err) {
+		LOG_ERR("auto adv %s failed (%d)", step, err);
+	}
+}
+
+static K_WORK_DEFINE(auto_advertise_work, auto_advertise);
+
+/*
+ * Restarting from the disconnected callback can fail while the connection object is still held,
+ * and on a single-connection build that leaves the board silent. recycled fires once it is free.
+ */
+static void recycled(void)
+{
+	k_work_submit(&auto_advertise_work);
+}
+#endif /* CONFIG_BENCH_AUTO_ADVERTISE */
 
 /* ── Connections ────────────────────────────────────────────────────────── */
 
@@ -293,6 +328,9 @@ BT_CONN_CB_DEFINE(bench_conn_cb) = {
 	.disconnected = disconnected,
 	.identity_resolved = identity_resolved,
 	.security_changed = security_changed,
+#if defined(CONFIG_BENCH_AUTO_ADVERTISE)
+	.recycled = recycled,
+#endif
 };
 
 static void pairing_complete(struct bt_conn *conn, bool bonded)
@@ -348,5 +386,16 @@ int main(void)
 	k_work_schedule(&hrs_work, K_SECONDS(1));
 
 	LOG_INF("ready board=%s privacy=%d", CONFIG_BOARD, IS_ENABLED(CONFIG_BT_PRIVACY));
+
+#if defined(CONFIG_BENCH_AUTO_ADVERTISE)
+	int err = bt_enable(NULL);
+
+	if (err) {
+		LOG_ERR("bt_enable failed (%d)", err);
+		return 0;
+	}
+	settings_load();
+	k_work_submit(&auto_advertise_work);
+#endif
 	return 0;
 }

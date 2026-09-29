@@ -6,11 +6,12 @@ using Windows.Devices.Enumeration;
 // ─────────────────────────────────────────────────────────────────────────────
 // Pairs or unpairs a BLE bench peripheral.
 //
-//   dotnet run --project scratch/BlePair pair <name> [seconds]
+//   dotnet run --project scratch/BlePair pair <name|address> [seconds]
 //   dotnet run --project scratch/BlePair unpair <address>
 //
-//   pair    scans for an advertiser whose local name is exactly <name>, and pairs the first
-//           one it hears, accepting Just Works. Gives up after [seconds] (default 20).
+//   pair    scans for an advertiser whose local name is exactly <name>, or whose address is
+//           <address>, and pairs the first one it hears, accepting Just Works. An address is
+//           needed when two units share a name. Gives up after [seconds] (default 20).
 //   unpair  removes the bond with the paired LE device whose address, as its BTHLE\DEV_ node
 //           carries it, is <address> (AA:BB:CC:DD:EE:FF or twelve hex digits).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,11 +29,12 @@ return args[0] == "pair" ? await PairAsync(args[1], args.Length > 2 ? int.Parse(
 
 async Task<int> PairAsync(string name, int seconds)
 {
+    ulong? wanted = TryParseAddress(name);
     var heard = new TaskCompletionSource<(ulong Address, BluetoothAddressType Type)>(TaskCreationOptions.RunContinuationsAsynchronously);
     var watcher = new BluetoothLEAdvertisementWatcher { ScanningMode = BluetoothLEScanningMode.Active };
     watcher.Received += (_, e) =>
     {
-        if (e.Advertisement.LocalName == name)
+        if (wanted is ulong a ? e.BluetoothAddress == a : e.Advertisement.LocalName == name)
             heard.TrySetResult((e.BluetoothAddress, e.BluetoothAddressType));
     };
     watcher.Start();
@@ -40,7 +42,7 @@ async Task<int> PairAsync(string name, int seconds)
     watcher.Stop();
     if (winner != heard.Task)
     {
-        Log($"no advertiser named '{name}' in {seconds} s");
+        Log($"no advertiser matching '{name}' in {seconds} s");
         return 1;
     }
 
@@ -75,8 +77,7 @@ async Task<int> PairAsync(string name, int seconds)
 
 async Task<int> UnpairAsync(string text)
 {
-    string hex = text.Replace(":", "").Replace("-", "");
-    if (hex.Length != 12 || !ulong.TryParse(hex, System.Globalization.NumberStyles.AllowHexSpecifier, null, out ulong address))
+    if (TryParseAddress(text) is not ulong address)
     {
         Log($"'{text}' is not an address");
         return 2;
@@ -96,6 +97,14 @@ async Task<int> UnpairAsync(string text)
 
     Log($"no paired LE device at {Format(address)}");
     return 1;
+}
+
+static ulong? TryParseAddress(string text)
+{
+    string hex = text.Replace(":", "").Replace("-", "");
+    return hex.Length == 12 && ulong.TryParse(hex, System.Globalization.NumberStyles.AllowHexSpecifier, null, out ulong v)
+        ? v
+        : null;
 }
 
 static string Format(ulong address) =>

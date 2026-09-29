@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Two units of one LE model, as ADR-0083 NEG-005 describes them: what does
+         Periphery see that tells them apart, and how does a tracker keyed on what
+         they share bind when both match?
+
+         Compares the two BTHLE\DEV_ link nodes field by field, then runs a
+         name-keyed DeviceTracker, a PnP-ID-keyed DeviceTracker and a name-keyed
+         MultiDeviceTracker while the links come and go. Periphery core only. The
+         twins' addresses are shown; every other device's are masked. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+  </ItemGroup>
+
+</Project>

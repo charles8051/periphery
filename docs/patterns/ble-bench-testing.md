@@ -7,8 +7,8 @@
 > **Status:** partly done. The DK firmware is built and runs on the DK, and step 2 is
 > measured. Step 1 is half done: `BluetoothAddress` shipped, and ADR-0090's table is
 > deferred. Step 3 is measured on Windows for static-random and private addresses; the
-> public column is not. Steps 4 and 5 are still a plan. Both boards are flashed. The test
-> harness below does not exist yet.
+> public column is not. Step 4 is measured. Step 5 is still a plan, and the test harness
+> below does not exist yet.
 
 The bench is two Nordic LE boards acting as test peripherals. The host's own
 Bluetooth radio and OS stack are what's under test. The harness sends each
@@ -86,12 +86,15 @@ command set. Heart Rate carries a notify, a read and a write characteristic for 
 |---|---|---|
 | `nrf52833dk-bench.hex` | DK | Harness-driven peripheral on a static random identity |
 | `nrf52833dk-bench-privacy.hex` | DK | The same with `CONFIG_BT_PRIVACY=y` and a 30 s RPA timeout |
-| `nrf52833dk-peripheral-hr.hex` | DK | Zephyr's `peripheral_hr` as "Periphery Bench HR", for step 4 |
-| `thingy52-peripheral-hr.hex` | Thingy:52 | The same image for the Thingy |
+| `nrf52833dk-bench-twin.hex` | DK | The bench app with `twin.conf`, as "Periphery Bench Twin", for step 4 |
+| `thingy52-bench-twin.hex` | Thingy:52 | The same image for the Thingy |
 | `sniffer_nrf52833dk_nrf52833_4.1.1.hex` | DK | nRF Sniffer, copied from the `nrfutil ble-sniffer` install |
 
-The Thingy:52 has no serial console, so it runs `peripheral_hr`, which advertises at boot. Its
-power switch is its only control.
+The Thingy:52 has no serial console, so it runs the twin image: `CONFIG_BENCH_AUTO_ADVERTISE`
+starts the stack at boot, advertises on identity 0, and restarts advertising from the
+connection object's `recycled` callback after every disconnect. Zephyr's `peripheral_hr` was
+tried first and dropped: it restarts advertising before the connection object is freed, and
+exits its loop when that fails, which left the Thingy silent after its first disconnect.
 
 Flash with `nrfutil device program --firmware <hex> --serial-number <J-Link serial>`. The
 first SWD flash of a Thingy:52 needs `--options chip_erase_mode=ERASE_ALL`, which erases the
@@ -223,10 +226,11 @@ These are the same rules the Linux device rig follows.
    through each transition. The key held everywhere except a private-address re-pair, so
    `BleDeviceProxy` is no longer blocked on Windows. Results are in
    [the OS APIs exploration][the OS APIs exploration].
-4. **Two identical units.** Flash `peripheral_hr` on both boards, with the same
-   device name. The host then sees two peripherals that differ only by address.
-   This measures what ADR-0083 NEG-005 predicts and what `DeviceGroupTracker` has
-   to handle.
+4. **Two identical units.** Done 2026-09-28. Both boards run the twin image and are paired;
+   `scratch/BleTwinProbe` compares their link nodes and runs a name-keyed `DeviceTracker`
+   and `MultiDeviceTracker` while `BleLinkHold` brings each link up and releases it. Only
+   the address-derived fields differ. Results are in
+   [the OS APIs exploration][the OS APIs exploration].
 5. **Regression tests.** Turn the results from steps 2 to 4 that became
    contracts into gated tests.
 

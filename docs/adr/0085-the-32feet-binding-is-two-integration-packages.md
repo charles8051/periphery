@@ -20,8 +20,8 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 >
 > **Amendment (2026-09-28).** LE is measured. On one Windows 11 host with one LE peripheral, the
 > same push fired with type LE on every link change, including a link lost to a peripheral reset,
-> and core already raised the edges from it. Host-initiated disconnects and other controllers
-> were not tried. On the measured setup D7 §2's activity source is needed for neither transport.
+> and core already raised the edges from it. A host-initiated disconnect, measured later that
+> day, raised the same push. Other controllers were not tried. On the measured setup D7 §2's activity source is needed for neither transport.
 > This supersedes, for Windows, Context §1's "poll-only" conclusion, D7 §2's case that a poll is
 > "currently the only signal", and the first Positive consequence. Those passages stand as the
 > record of what was believed on 2026-09-02. On the same runs WinRT's

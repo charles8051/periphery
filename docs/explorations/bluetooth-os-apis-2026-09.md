@@ -212,6 +212,31 @@ and the id and address trackers bound before the transition were `Active` again 
   reported `ProtectionLevelUsed = None` every time, although the peripheral saw the link encrypt at
   security level 2 and stored the bond.
 
+### Two units of one model
+
+Measured 2026-09-28 (bench step 4, ADR-0083 NEG-005). The DK and the Thingy:52 ran one firmware
+image, advertised one name, and were both paired on static random addresses.
+[`scratch/BleTwinProbe`](../../scratch/BleTwinProbe) compared their link nodes, then ran two
+trackers keyed on the shared name while each link was brought up and released.
+
+- Of every `DeviceInfo` field and property, only three differed: the instance id, the container
+  id and the `HardwareID` property (`BTHLE\Dev_<address>`). All three come from the address.
+  `Name`, `Manufacturer` (`Microsoft`), `ClassGuid`, `BusType`, `Driver` (`BthLEEnum`), and
+  `LocationPath` and `ParentId` (both the local radio's) were identical.
+- `VendorId`, `ProductId` and `SerialNumber` were empty on both. An earlier run gave both units the
+  same Device Information PnP ID; it reached no field, and the node's compatible id was
+  `BTHLE\GenericDevice`. On a generic LE peripheral, the address is the only discriminator
+  Periphery exposes.
+- A `DeviceTracker` keyed on the name claimed the unit that enumerated first and kept it. While
+  that unit was disconnected and the other was connected, the tracker reported the first as
+  `Present` rather than switching. This is ADR-0006 §9's per-profile latch working as designed,
+  so which of two identical units a shared-attribute tracker claims is set by enumeration order.
+- A `MultiDeviceTracker` keyed on the name gave each unit its own child tracker, and each followed
+  its own link.
+- Releasing the last GATT session on a unit dropped its link about 3 s later. The host-initiated
+  disconnect raised `GUID_BLUETOOTH_HCI_EVENT` and a watcher `Deactivated`, as a
+  peripheral-initiated one does.
+
 ### The 32feet Id
 
 **Windows.** `GetId()` returns `NativeDevice.BluetoothAddress.ToString("X6")` (Source:
@@ -338,7 +363,9 @@ The results were the same both ways.
   advertising, before the connect. `ab27d6ed-…` fired on LE transitions as it does on BR/EDR.
 
 So on Windows the OS pushes the LE edge, and core already raises it. This is one peripheral on one
-host. Every disconnect came from the peripheral side; a host-initiated disconnect was not tried.
+host. Every disconnect here came from the peripheral side. Host-initiated disconnects were measured
+later, with two units, and raised the same event and edge (see
+[Two units of one model](#two-units-of-one-model)).
 
 ### Linux
 
