@@ -33,6 +33,11 @@ depends_on: ["0004-two-level-device-state-model.md", "0052-periphery-treehopper-
 > and edge. Other controllers are unverified. The
 > remaining case is a platform whose push core cannot reach. On Linux that is BlueZ's
 > `Device1.Connected` over D-Bus, which ADR-0024 keeps out of core (issue #258).
+>
+> **Amendment (2026-09-29).** ADR-0024 does not keep D-Bus out of core. It forbids third-party
+> packages, and core already binds `libudev.so.1`. ADR-0091 (proposed) reads BlueZ in core over a
+> managed D-Bus client, which makes `Device1.Connected` a platform push. If it is accepted, no
+> Bluetooth case on Windows or Linux needs this ADR.
 
 **Tracks:** `DeviceWatcher`, `IDeviceMonitorProvider`, `DeviceActivityStatus`, and any extension
 package that can observe a device the OS cannot.
