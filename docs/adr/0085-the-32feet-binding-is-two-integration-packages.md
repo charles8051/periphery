@@ -1,7 +1,7 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
 status: "Accepted"
-status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. 2026-09-30 amendment: net10.0 ships again for Linux, joining ADR-0091's BlueZ bonds, on InTheHand.BluetoothLE 4.0.45. 2026-09-30 amendment: a link node's MacAddress holds its address (#301). 2026-09-30 amendment: the public-address column is measured on Windows and matches static random (#232). BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. 2026-09-30 amendment: net10.0 ships again for Linux, joining ADR-0091's BlueZ bonds, on InTheHand.BluetoothLE 4.0.45. 2026-09-30 amendment: a link node's MacAddress holds its address (#301). 2026-09-30 amendment: the public-address column is measured on Windows and matches static random (#232). 2026-09-30 amendment: BleDeviceProxy is built (#314). Periphery.Bluetooth.InTheHand is not built yet."
 date: "2026-09-02"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm", "api-design", "device-proxy"]
@@ -91,6 +91,17 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > instance id (issue #301), so `WithMacAddress` selects it. Its service and function nodes still
 > carry none, since they read active while the link is down (#294). `BluetoothAddress` stays the
 > join key: the join reads the instance id, not `MacAddress`.
+>
+> **Amendment (2026-09-30), D7 §3's `BleDeviceProxy` is built (issue #314).** It keeps a
+> `BleSession`, the joined device and its connected GATT server, open while the peripheral is
+> present, and opens on presence rather than activity (ADR-0088 amendment). It never resets the
+> device. Measured against 32feet 4.0.45 on Windows: `ConnectAsync` to a silent peripheral
+> returned after about 23 s without throwing, with `IsConnected` false, so an attempt that ends
+> unconnected fails. `GattServerDisconnected` fired 0.34 s after the peripheral halted, and also
+> for the session's own `Disconnect()`, so it counts as a drop only while the session is open.
+> On the BLE bench and the Linux rig, a proxy connected, lost its link, failed while the
+> peripheral was silent, and reconnected when it returned. `Periphery.Bluetooth.InTheHand` is
+> still not built.
 
 ## Status
 

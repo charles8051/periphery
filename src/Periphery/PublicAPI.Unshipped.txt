@@ -29,3 +29,4 @@ override Periphery.BluetoothAddress.ToString() -> string!
 static Periphery.BluetoothAddress.Parse(string! s) -> Periphery.BluetoothAddress
 static Periphery.BluetoothAddress.TryParse(string? s, out Periphery.BluetoothAddress result) -> bool
 static Periphery.BluetoothAddress.TryParseInstanceId(string? instanceId, out Periphery.BluetoothAddress address, out Periphery.BluetoothTransport transport) -> bool
+virtual Periphery.DeviceProxyBase<TDevice, TException>.OpensWhilePresent.get -> bool

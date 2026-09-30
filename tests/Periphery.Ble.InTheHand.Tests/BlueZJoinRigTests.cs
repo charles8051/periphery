@@ -1,6 +1,8 @@
 #if !WINDOWS
 using System.Diagnostics;
 using System.Globalization;
+using System.Net.NetworkInformation;
+using System.Threading.Channels;
 using System.Text.RegularExpressions;
 using InTheHand.Bluetooth;
 
@@ -69,6 +71,62 @@ public class BlueZJoinRigTests
         }
     }
 
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Proxy_ConnectsWhilePresent_AndReconnectsAfterTheLinkDrops()
+    {
+        if (!Enabled) return;
+
+        var profile = new DeviceProfile(f => f
+            .OfCategory(DeviceCategory.Bluetooth)
+            .WithMacAddress(PhysicalAddress.Parse(Peripheral.Replace(':', '-')))
+            .WithBluetoothTransport(BluetoothTransport.LowEnergy), "btvirt");
+
+        var opened = Channel.CreateUnbounded<BleSession>();
+        var closed = Channel.CreateUnbounded<bool>();
+        var failed = Channel.CreateUnbounded<BleException>();
+        var advertiser = await AdvertiseFromPeripheralAsync();
+        try
+        {
+            await using var proxy = await BleDeviceProxy.OpenAsync(profile);
+            proxy.DeviceOpened += (_, session) => opened.Writer.TryWrite(session);
+            proxy.DeviceClosed += (_, _) => closed.Writer.TryWrite(true);
+            proxy.OpenFailed += (_, ex) => failed.Writer.TryWrite(ex);
+
+            // Bounds that turn a stuck proxy into a failure; its own events are the signals (ADR-0089 D5).
+            var first = proxy.Device ?? await opened.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(60));
+            Assert.Equal(7, (await ReadPnpIdAsync(first)).Length);
+            while (opened.Reader.TryRead(out _)) { }   // the first open, if it raced the subscription
+
+            // hci1 stops advertising and drops the link, so hci0 has nothing to reconnect to.
+            advertiser.Kill(entireProcessTree: true);
+            await RunToEndAsync("bash", "-c", $"{{ echo 'select {Peripheral}'; sleep 1; echo 'disconnect {Central}'; sleep 3; echo quit; }} | bluetoothctl");
+            await closed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+
+            var failure = await failed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(120));
+            Assert.Contains("did not connect", failure.Message);
+            Assert.False(proxy.IsOpen);
+
+            advertiser = await AdvertiseFromPeripheralAsync();
+            var second = await opened.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(120));
+            Assert.NotSame(first, second);
+            Assert.Equal(7, (await ReadPnpIdAsync(second)).Length);
+        }
+        finally
+        {
+            advertiser.Kill(entireProcessTree: true);
+        }
+    }
+
+    private static async Task<byte[]> ReadPnpIdAsync(BleSession session)
+    {
+        var service = await session.Gatt.GetPrimaryServiceAsync(BluetoothUuid.FromShortId(0x180A));
+        Assert.True(service is not null, "The peer serves no Device Information service.");
+        var pnpId = await service.GetCharacteristicAsync(BluetoothUuid.FromShortId(0x2A50));
+        Assert.True(pnpId is not null, "Device Information has no PnP ID characteristic.");
+        return await pnpId.ReadValueAsync() ?? [];
+    }
+
     private static byte[] LittleEndian(string hex)
     {
         ushort value = ushort.Parse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
@@ -81,7 +139,7 @@ public class BlueZJoinRigTests
     {
         var start = new ProcessStartInfo("bash") { RedirectStandardOutput = true, RedirectStandardError = true };
         start.ArgumentList.Add("-c");
-        start.ArgumentList.Add($"{{ echo 'select {Peripheral}'; sleep 1; echo 'advertise peripheral'; sleep 60; echo quit; }} | bluetoothctl");
+        start.ArgumentList.Add($"{{ echo 'select {Peripheral}'; sleep 1; echo 'advertise peripheral'; sleep 300; echo quit; }} | bluetoothctl");
         var process = Process.Start(start)!;
 
         // A safety net, not an assertion (ADR-0089 D5). The wait ends on bluetoothctl's own line.
