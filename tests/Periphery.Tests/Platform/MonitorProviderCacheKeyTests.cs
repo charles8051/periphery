@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
 using Xunit;
@@ -58,10 +59,12 @@ public class MonitorProviderCacheKeyTests
             $"{typeName} has no _lastKnownDevices field — if the cache was renamed or removed, "
             + "update this guardrail rather than deleting it; the hazard it pins is real.");
 
+        // Linux holds an ImmutableDictionary that its pure UdevDispatch core replaces (#304).
         Assert.True(
             field!.FieldType.IsGenericType
-            && field.FieldType.GetGenericTypeDefinition() == typeof(Dictionary<,>),
-            $"{typeName}.{field.Name} is {field.FieldType}, expected a Dictionary<,>.");
+            && field.FieldType.GetGenericTypeDefinition() is var definition
+            && (definition == typeof(Dictionary<,>) || definition == typeof(ImmutableDictionary<,>)),
+            $"{typeName}.{field.Name} is {field.FieldType}, expected a Dictionary<,> or ImmutableDictionary<,>.");
 
         var keyType = field.FieldType.GetGenericArguments()[0];
 

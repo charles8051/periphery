@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using System;
-using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Periphery.Linux.BlueZ;
 using Periphery.Linux.BlueZ.Core;
+using Periphery.Linux.Core;
 using Periphery.Linux.DBus;
 
 namespace Periphery.Linux;
@@ -51,7 +52,8 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
     // provider (whose ids DO flip case, and where the bug IS live) held it in a comparer,
     // and neither Linux nor macOS picked it up when they were written. If the Linux id
     // scheme ever changes to something case-bearing, this cache is already correct.
-    private readonly Dictionary<DeviceId, DeviceInfo> _lastKnownDevices = new();
+    // Replaced whole under _cacheLock; UdevDispatch.Step computes each replacement.
+    private ImmutableDictionary<DeviceId, DeviceInfo> _lastKnownDevices = ImmutableDictionary<DeviceId, DeviceInfo>.Empty;
 
     public event EventHandler<DeviceChangeEventArgs>? DeviceAppeared;
     public event EventHandler<DeviceChangeEventArgs>? DeviceDisappeared;
@@ -181,6 +183,7 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
         {
             UdevInterop.udev_enumerate_scan_devices(enumerate);
             var entry = UdevInterop.udev_enumerate_get_list_entry(enumerate);
+            var seed = ImmutableDictionary.CreateBuilder<DeviceId, DeviceInfo>();
 
             lock (_cacheLock)
             {
@@ -198,7 +201,7 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
                             {
                                 var info = LinuxDeviceProvider.ToDeviceInfo(dev, syspath);
                                 if (info is not null)
-                                    _lastKnownDevices[info.Id] = info;
+                                    seed[info.Id] = info;
                             }
                             catch
                             {
@@ -213,6 +216,8 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
 
                     entry = UdevInterop.udev_list_entry_get_next(entry);
                 }
+
+                _lastKnownDevices = seed.ToImmutable();
             }
 
             _logger.LogDebug("Cache seeded with {Count} devices", _lastKnownDevices.Count);
@@ -263,7 +268,8 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
     }
 
     /// <summary>
-    /// Routes a udev event to the appropriate handler based on the action string.
+    /// Reads a udev event, steps <see cref="UdevDispatch"/> over the devices last seen, and raises
+    /// the edges it returns.
     /// </summary>
     private void DispatchAction(IntPtr dev)
     {
@@ -281,113 +287,38 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
         if (LinuxCategoryMap.IsBluetoothLink(subsystem, UdevInterop.GetPropertyValue(dev, "DEVTYPE")))
             return;
 
-        switch (action)
-        {
-            case "add":
-                HandleAdd(dev, syspath);
-                break;
-            case "remove":
-                HandleRemove(syspath);
-                break;
-            case "bind":
-                HandleBind(dev, syspath);
-                break;
-            case "unbind":
-                HandleUnbind(syspath);
-                break;
-            case "change":
-                HandleChange(dev, syspath);
-                break;
-        }
-    }
+        var e = new UdevEvent(
+            action,
+            syspath,
+            UdevDispatch.NeedsDevice(action) ? LinuxDeviceProvider.ToDeviceInfo(dev, syspath) : null,
+            action == "move" ? UdevDispatch.OldSyspath(UdevInterop.GetPropertyValue(dev, "DEVPATH_OLD")) : null);
 
-    private void HandleAdd(IntPtr dev, string syspath)
-    {
-        var device = LinuxDeviceProvider.ToDeviceInfo(dev, syspath);
-        if (device is null) return;
-
-        lock (_cacheLock)
-            _lastKnownDevices[device.Id] = device;
-
-        _logger.LogDebug("Device appeared: {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-        DeviceAppeared?.Invoke(this, new DeviceChangeEventArgs(device));
-
-        if (device.IsActive)
-        {
-            _logger.LogDebug("Device activated: {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-            DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
-        }
-    }
-
-    private void HandleRemove(string syspath)
-    {
-        DeviceInfo? cached;
-        lock (_cacheLock)
-            _lastKnownDevices.Remove(syspath, out cached);
-
-        var device = cached ?? new DeviceInfo { Id = syspath };
-
-        _logger.LogDebug("Device disappeared: {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-        DeviceDisappeared?.Invoke(this, new DeviceChangeEventArgs(device));
-    }
-
-    private void HandleBind(IntPtr dev, string syspath)
-    {
-        var device = LinuxDeviceProvider.ToDeviceInfo(dev, syspath);
-        if (device is null) return;
-
-        lock (_cacheLock)
-            _lastKnownDevices[device.Id] = device;
-
-        _logger.LogDebug("Device activated (bind): {DeviceId} ({DeviceName})", device.Id, device.Name ?? "(unnamed)");
-        DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(device));
-    }
-
-    private void HandleUnbind(string syspath)
-    {
-        DeviceInfo? cached;
-        lock (_cacheLock)
-            _lastKnownDevices.TryGetValue(syspath, out cached);
-
-        var device = cached ?? new DeviceInfo { Id = syspath };
-
-        _logger.LogDebug("Device deactivated (unbind): {DeviceId}", device.Id);
-        DeviceDeactivated?.Invoke(this, new DeviceChangeEventArgs(device));
-    }
-
-    private void HandleChange(IntPtr dev, string syspath)
-    {
-        var current = LinuxDeviceProvider.ToDeviceInfo(dev, syspath);
-        if (current is null) return;
-
-        DeviceInfo? previous;
+        UdevStep step;
         lock (_cacheLock)
         {
-            _lastKnownDevices.TryGetValue(syspath, out previous);
-            _lastKnownDevices[current.Id] = current;
+            step = UdevDispatch.Step(_lastKnownDevices, e);
+            _lastKnownDevices = step.Devices;
         }
 
-        if (previous is null) return;
+        foreach (var edge in step.Edges)
+            Raise(action, edge);
+    }
 
-        var changed = DeviceInfoDiff.Compute(previous, current);
-        if (changed.Count == 0) return;
-
-        // Fire connect/disconnect for soft state transitions
-        if (changed.Contains(nameof(DeviceInfo.IsActive)))
+    private void Raise(string action, UdevEdge edge)
+    {
+        _logger.LogDebug("udev {Action} {Edge}: {DeviceId} ({DeviceName})",
+            action, edge.Kind, edge.Device.Id, edge.Device.Name ?? "(unnamed)");
+        var args = new DeviceChangeEventArgs(edge.Device);
+        switch (edge.Kind)
         {
-            if (current.IsActive)
-            {
-                _logger.LogDebug("Device activated (soft): {DeviceId}", current.Id);
-                DeviceActivated?.Invoke(this, new DeviceChangeEventArgs(current));
-            }
-            else
-            {
-                _logger.LogDebug("Device deactivated (soft): {DeviceId}", current.Id);
-                DeviceDeactivated?.Invoke(this, new DeviceChangeEventArgs(current));
-            }
+            case UdevEdgeKind.Appeared: DeviceAppeared?.Invoke(this, args); break;
+            case UdevEdgeKind.Disappeared: DeviceDisappeared?.Invoke(this, args); break;
+            case UdevEdgeKind.Activated: DeviceActivated?.Invoke(this, args); break;
+            case UdevEdgeKind.Deactivated: DeviceDeactivated?.Invoke(this, args); break;
+            case UdevEdgeKind.PropertyChanged:
+                DevicePropertyChanged?.Invoke(this, new DeviceModificationEventArgs(edge.Previous!, edge.Device));
+                break;
         }
-
-        DevicePropertyChanged?.Invoke(this, new DeviceModificationEventArgs(previous, current));
     }
 
     private void CleanupHandles()
