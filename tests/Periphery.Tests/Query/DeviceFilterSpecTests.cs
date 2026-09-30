@@ -47,6 +47,7 @@ public class DeviceFilterSpecTests
         [nameof(DeviceFilter.WithMacAddress)] = [nameof(DeviceFilterSpec.MacAddress)],
         [nameof(DeviceFilter.WithPortName)] = [nameof(DeviceFilterSpec.PortName)],
         [nameof(DeviceFilter.WithBusType)] = [nameof(DeviceFilterSpec.BusType)],
+        [nameof(DeviceFilter.WithBluetoothTransport)] = [nameof(DeviceFilterSpec.BluetoothTransport)],
         [nameof(DeviceFilter.WithStatus)] = [nameof(DeviceFilterSpec.Status)],
         [nameof(DeviceFilter.WithDriveType)] = [nameof(DeviceFilterSpec.DriveType)],
         [nameof(DeviceFilter.WithUsbSpeed)] = [nameof(DeviceFilterSpec.UsbSpeed)],

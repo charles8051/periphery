@@ -169,6 +169,13 @@ public sealed class DeviceQuery : IAsyncEnumerable<DeviceInfo>
         return this;
     }
 
+    /// <inheritdoc cref="DeviceFilter.WithBluetoothTransport"/>
+    public DeviceQuery WithBluetoothTransport(BluetoothTransport transport)
+    {
+        _filter.WithBluetoothTransport(transport);
+        return this;
+    }
+
     /// <summary>Keep only devices with the specified status.</summary>
     public DeviceQuery WithStatus(DeviceStatus status)
     {

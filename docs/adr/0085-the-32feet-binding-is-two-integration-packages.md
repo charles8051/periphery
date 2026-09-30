@@ -71,6 +71,15 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 >   build with only `InTheHand.BluetoothLE`. On the Linux device rig, the join resolved the btvirt
 >   bond through 32feet, connected, and read the peer's PnP ID over GATT. The bytes matched the
 >   modalias BlueZ reports.
+>
+> **Amendment (2026-09-30), D5's transport.** Core now carries the transport beside the address
+> (issue #302). `DeviceInfo.BluetoothTransports` is a flags value, `BrEdr` and `LowEnergy`, on a
+> paired peripheral, and `null` on everything else, a peripheral's service and function nodes
+> included. `None` means the transport is not known. On Windows it comes from the link node's
+> instance id, exactly, one transport per node. `WithBluetoothTransport(BluetoothTransport)` keeps
+> peripherals known to support the transport, which selects the LE link node the D7 join takes
+> without the caller parsing an id. The flags mean *supports*, not *bonded over*, because that is
+> what Linux can report. ADR-0091 records where Linux takes it from.
 
 ## Status
 

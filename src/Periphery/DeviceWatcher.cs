@@ -375,6 +375,15 @@ public sealed class DeviceWatcher : IAsyncDisposable
         return this;
     }
 
+    /// <inheritdoc cref="DeviceFilter.WithBluetoothTransport"/>
+    public DeviceWatcher WithBluetoothTransport(BluetoothTransport transport)
+    {
+        ThrowIfDisposed();
+        ThrowIfStarted();
+        _filter.WithBluetoothTransport(transport);
+        return this;
+    }
+
     /// <summary>Keep only devices with the specified status.</summary>
     public DeviceWatcher WithStatus(DeviceStatus status)
     {

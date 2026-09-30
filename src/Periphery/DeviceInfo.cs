@@ -135,6 +135,21 @@ public sealed record DeviceInfo
     [JsonConverter(typeof(PhysicalAddressJsonConverter))]
     public PhysicalAddress? MacAddress { get; init; }
 
+    /// <summary>
+    /// The Bluetooth transports a paired peripheral is known to support. <see langword="null"/> on
+    /// anything that is not a paired peripheral, including adapters and a peripheral's service and
+    /// function nodes.
+    /// </summary>
+    /// <remarks>
+    /// <para>On Windows it is exact, and set on the peripheral's link node: a
+    /// <c>BTHENUM\DEV_…</c> node is <see cref="Periphery.BluetoothTransports.BrEdr"/>, and a
+    /// <c>BTHLE\DEV_…</c> node is <see cref="Periphery.BluetoothTransports.LowEnergy"/>. A dual-mode
+    /// peripheral has one node per transport.</para>
+    /// <para><see cref="Periphery.BluetoothTransports.None"/> means the peripheral's transport is not
+    /// known. Filter with <see cref="DeviceFilter.WithBluetoothTransport"/>.</para>
+    /// </remarks>
+    public BluetoothTransports? BluetoothTransports { get; init; }
+
     /// <summary>IP addresses assigned to a network adapter.</summary>
     [JsonConverter(typeof(IPAddressArrayJsonConverter))]
     public ImmutableArray<IPAddress>? IPAddresses { get; init; }
