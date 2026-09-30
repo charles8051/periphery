@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 namespace Periphery.Tests.Linux;
 
@@ -25,19 +26,21 @@ public class UdevMoveRigTests
     {
         if (!Enabled) return;
 
-        string suffix = (Environment.ProcessId % 10000).ToString(System.Globalization.CultureInfo.InvariantCulture);
-        string before = $"pmove{suffix}a", after = $"pmove{suffix}b";
+        // The test deletes only the interface it created. `ip link add` and the rename both fail on a
+        // name already in use, so neither can take over someone else's interface.
+        string tag = Convert.ToHexString(RandomNumberGenerator.GetBytes(3)).ToLowerInvariant();
+        string before = $"pmv{tag}a", after = $"pmv{tag}b";
         string oldId = $"/sys/devices/virtual/net/{before}", newId = $"/sys/devices/virtual/net/{after}";
 
-        await SudoAsync("ip", "link", "del", before);
-        await SudoAsync("ip", "link", "del", after);
         var (added, addOutput) = await SudoAsync("ip", "link", "add", before, "type", "dummy");
         Assert.True(added == 0, $"Could not create {before}: {addOutput}");
-        // Let udev finish the add, so its edge cannot land after the watcher's enumeration.
-        await RunAsync("udevadm", "settle");
+        string owned = before;
 
         try
         {
+            // Let udev finish the add, so its edge cannot land after the watcher's enumeration.
+            await RunAsync("udevadm", "settle");
+
             var edges = new ConcurrentQueue<string>();
             var arrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -53,6 +56,7 @@ public class UdevMoveRigTests
 
             var (renamed, renameOutput) = await SudoAsync("ip", "link", "set", before, "name", after);
             Assert.True(renamed == 0, $"Could not rename {before}: {renameOutput}");
+            owned = after;
 
             // A safety net that bounds a failure; the Appeared edge is the signal (ADR-0089 D5).
             using var safety = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -76,8 +80,7 @@ public class UdevMoveRigTests
         }
         finally
         {
-            await SudoAsync("ip", "link", "del", after);
-            await SudoAsync("ip", "link", "del", before);
+            await SudoAsync("ip", "link", "del", owned);
         }
     }
 

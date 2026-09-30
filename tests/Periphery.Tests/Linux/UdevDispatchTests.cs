@@ -131,6 +131,14 @@ public class UdevDispatchTests
     }
 
     [Fact]
+    public void Change_ThatAltersNoMappedField_RaisesNothing()
+    {
+        var step = UdevDispatch.Step(Holding(Port(Detached)), new("change", Detached, Port(Detached)));
+
+        Assert.Empty(step.Edges);
+    }
+
+    [Fact]
     public void Change_OfADeviceNeverSeen_IsHeldSilently()
     {
         var step = UdevDispatch.Step(None, new("change", Detached, Port(Detached)));
