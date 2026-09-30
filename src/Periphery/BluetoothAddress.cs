@@ -15,11 +15,12 @@ namespace Periphery;
 /// <para><b>A join key, not an identity</b> (ADR-0083, ADR-0085 D5). It matches a Periphery
 /// device node to a Bluetooth library's device object, and it lasts only as long as the address it
 /// was read from. On Windows (issue #232) it held across disconnects, peripheral reboots, host
-/// reboots and RPA rotations, for a static-random peripheral and for one using private addresses.
-/// A re-pair is where it can change. Windows keys a private-address bond by the address it saw
-/// at pairing, so a re-paired private-address peripheral comes back under a new address, as
-/// does one that picks a new static address when it re-pairs. A peripheral that keeps one static
-/// address keeps its key.</para>
+/// reboots and RPA rotations, for a static-random peripheral and for one using private addresses,
+/// and across disconnects and peripheral reboots for a public-address one. A re-pair is where it
+/// can change. Windows keys a private-address bond by the address it saw at pairing, so a
+/// re-paired private-address peripheral comes back under a new address, as does one that picks a
+/// new static address when it re-pairs. A peripheral that keeps one public or static address
+/// keeps its key.</para>
 /// <para>Only Windows instance IDs carry the address; see <see cref="TryParseInstanceId"/>. A
 /// paired peripheral's <see cref="DeviceInfo.MacAddress"/> holds it too: on Windows its link node's
 /// (issue #301), and on Linux the BlueZ bond's (ADR-0091).</para>

@@ -10,11 +10,15 @@ Runs west inside the nRF Connect SDK toolchain and copies each image to <OutDir>
 The sources are copied to <OutDir>\app first. west computes the source path relative to the SDK
 workspace, which fails when the two are on different drives, and a Zephyr build tree nested in a
 deep checkout overruns the Windows path limit.
+
+.PARAMETER Only
+Build only the images with these names, such as nrf52833dk-bench-public. Default: all.
 #>
 param(
     [string]$NcsVersion = 'v3.4.1',
     [string]$NcsRoot = 'C:\ncs',
-    [string]$OutDir = 'C:\blebench'
+    [string]$OutDir = 'C:\blebench',
+    [string[]]$Only = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,11 +36,12 @@ New-Item -ItemType Directory -Force $imagesDir | Out-Null
 $images = @(
     @{ Name = 'nrf52833dk-bench';         Board = 'nrf52833dk/nrf52833'; Extra = '' }
     @{ Name = 'nrf52833dk-bench-privacy'; Board = 'nrf52833dk/nrf52833'; Extra = "$app/privacy.conf" }
+    @{ Name = 'nrf52833dk-bench-public';  Board = 'nrf52833dk/nrf52833'; Extra = "$app/public.conf" }
     @{ Name = 'nrf52833dk-bench-twin';    Board = 'nrf52833dk/nrf52833'; Extra = "$app/twin.conf" }
     @{ Name = 'thingy52-bench-twin';      Board = 'thingy52/nrf52832';   Extra = "$app/twin.conf" }
 )
 
-foreach ($image in $images) {
+foreach ($image in $images | Where-Object { $Only.Count -eq 0 -or $Only -contains $_.Name }) {
     $buildDir = (Join-Path $OutDir "build/$($image.Name)") -replace '\\', '/'
     $westArgs = @('west', 'build', '--pristine', 'always', '--board', $image.Board, '--build-dir', $buildDir, $app)
     if ($image.Extra) {

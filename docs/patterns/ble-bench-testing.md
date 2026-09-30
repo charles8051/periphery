@@ -86,6 +86,7 @@ command set. Heart Rate carries a notify, a read and a write characteristic for 
 |---|---|---|
 | `nrf52833dk-bench.hex` | DK | Harness-driven peripheral on a static random identity |
 | `nrf52833dk-bench-privacy.hex` | DK | The same with `CONFIG_BT_PRIVACY=y` and a 30 s RPA timeout |
+| `nrf52833dk-bench-public.hex` | DK | The same on a public identity, `00:AA:01:50:0B:01` |
 | `nrf52833dk-bench-twin.hex` | DK | The bench app with `twin.conf`, as "Periphery Bench Twin", for step 4 |
 | `thingy52-bench-twin.hex` | Thingy:52 | The same image for the Thingy |
 | `sniffer_nrf52833dk_nrf52833_4.1.1.hex` | DK | nRF Sniffer, copied from the `nrfutil ble-sniffer` install |
@@ -125,8 +126,14 @@ are stored in flash, so they survive the reboot.
   `bt id-create <addr>` adds a chosen one.
 - **Resolvable private** is the privacy image with `bench adv start rpa`. The advertising
   set is created without `BT_LE_ADV_OPT_USE_IDENTITY`.
-- **Public** is not available. Nordic parts have no factory public address, and neither image
-  sets one. Zephyr's vendor HCI command Write BD_ADDR is the likely route. Untried.
+- **Public** is the public image. Nordic parts have no factory public address, so `main()` writes
+  `CONFIG_BENCH_PUBLIC_ADDRESS` to the controller with `bt_ctlr_set_public_addr` before the stack
+  starts. The host makes it identity 0 only when settings hold no stored identity, so flash the
+  image with `--options chip_erase_mode=ERASE_ALL`. That erases every identity and bond on the
+  board. Dump the board first with `nrfutil device dump-to-file <file>.hex --code --uicr` and
+  program the dump with `ERASE_ALL` afterwards: it restores the image, the identities and the bond
+  keys, so the host's existing bond works again without a re-pair. Reprogramming the public
+  image without `ERASE_ALL` also lost the board's bond here.
 
 One host can bond only one of the DK's identities at a time. Zephyr refuses a second bond with
 the same peer on another identity ("Refusing new pairing. The old bond must be unpaired first.",
@@ -139,9 +146,10 @@ Every event a harness waits on is a log line from the `bench` module:
 
 | Line | When |
 |---|---|
+| `bench: public address …` | Boot, public image, before `ready` |
 | `bench: ready board=… privacy=…` | Boot |
 | `bench: adv started mode=… id=…` | `bench adv start` succeeded |
-| `bench: adv address <addr> (random)` | After each start, and after each RPA rotation |
+| `bench: adv address <addr> (<type>)` | After each start, and after each RPA rotation |
 | `bench: rpa expired` | The RPA timeout fired |
 | `bench: connected peer=… err=…` | A link came up |
 | `bench: disconnected peer=… reason=…` | A link went down |
@@ -222,8 +230,8 @@ These are the same rules the Linux device rig follows.
    `scratch/BluetoothHciEventProbe` and `scratch/BleOsProbe` run, with `-Drop disconnect` or
    `-Drop reset`. The HCI event covers LE, and core already raises the edges, so ADR-0090 has no
    motivating case on Windows. Results are in [the OS APIs exploration][the OS APIs exploration].
-3. **[#232]'s matrix.** Done 2026-09-28 on Windows for static-random and private addresses; the
-   public column is not run. `scratch/BleKeyDurabilityProbe` watches the node and three trackers
+3. **[#232]'s matrix.** Done 2026-09-28 on Windows for static-random and private addresses, and
+   2026-09-30 for public addresses except the host reboot. `scratch/BleKeyDurabilityProbe` watches the node and three trackers
    through each transition. The key held everywhere except a private-address re-pair, so
    `BleDeviceProxy` is no longer blocked on Windows. Results are in
    [the OS APIs exploration][the OS APIs exploration].

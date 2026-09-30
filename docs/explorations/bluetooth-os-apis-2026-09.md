@@ -175,17 +175,19 @@ pairing mode, not from RPA rotation. The host does not record whether it is the 
 #232's matrix was run on Windows on 2026-09-28 against the [BLE bench](../patterns/ble-bench-testing.md).
 The static-random column used the nRF52833 DK's identity 0 and, for the host reboot, the Thingy:52.
 The resolvable-private column used the DK's identity 1 under the privacy image, with a 30 s RPA
-timeout. The public column was not run: Nordic parts have no public address.
+timeout. The public column was run on 2026-09-30 with the DK's public image, which writes
+`00:AA:01:50:0B:01` to the controller before the stack starts, so identity 0 is public. Windows'
+scan reported the address type as `Public`.
 [`scratch/BleKeyDurabilityProbe`](../../scratch/BleKeyDurabilityProbe) snapshotted the
 `BTHLE\DEV_` node before and after each transition, and bound three `DeviceTracker`s at start:
 by instance id, by container id, and by parsed `BluetoothAddress`.
 
-| Transition | Static random | Resolvable private |
-|---|---|---|
-| Disconnect and reconnect | Id, container and address kept; id and address trackers resolve | Kept, across RPAs Windows had not seen |
-| Peripheral reboot | Kept | Kept; the peripheral reloaded its IRK and advertised a new RPA |
-| Unpair and re-pair | Kept | **New node**, keyed by the new pairing-time RPA, with a new container |
-| Host reboot | Kept (Thingy:52) | Kept |
+| Transition | Public | Static random | Resolvable private |
+|---|---|---|---|
+| Disconnect and reconnect | Kept | Id, container and address kept; id and address trackers resolve | Kept, across RPAs Windows had not seen |
+| Peripheral reboot | Kept | Kept | Kept; the peripheral reloaded its IRK and advertised a new RPA |
+| Unpair and re-pair | Kept | Kept | **New node**, keyed by the new pairing-time RPA, with a new container |
+| Host reboot | Not run | Kept (Thingy:52) | Kept |
 
 "Kept" means the instance id, the container id and D5's `BluetoothAddress` were the same afterwards,
 and the id and address trackers bound before the transition were `Active` again after it.
@@ -198,6 +200,9 @@ and the id and address trackers bound before the transition were `Active` again 
   pairing. The trackers bound to the old node went `Absent` and never resolved again. All three
   private re-pairs run did this. On the third, the probe located the replacement node at the
   address the peripheral logged when it paired.
+- The public peripheral behaved as the static one did in every cell run. Each reconnect, including
+  after a peripheral reboot, re-encrypted from the stored bond, and its re-pair came back on the
+  same instance id and container.
 - The static peripheral's re-pair came back with the same instance id and container. A consumer
   saw `Disappeared` on unpair and a live `Appeared` about 8 s later. The live `Appeared` carried the
   id as `BTHLE\Dev_ee2984e48fd0\a&ede6a8a&0&ee2984e48fd0`, while enumeration reports
@@ -247,7 +252,10 @@ trackers keyed on the shared name while each link was brought up and released.
 measurement host both Ids were twelve uppercase hex digits and ordinal-equal to
 `BluetoothAddress.ToString("X12")` (Measured). Neither address starts with a zero nibble. An address
 beginning `00:` produces a ten-digit Id, while D5's regex always captures twelve digits. A string
-comparison between a D5 `BluetoothAddress` and a 32feet Id fails for every such address.
+comparison between a D5 `BluetoothAddress` and a 32feet Id fails for every such address. Measured on
+2026-09-30 with the bench's public identity `00:AA:01:50:0B:01`: the Id was `AA01500B01`, and
+`FromIdAsync` accepted both `00AA01500B01` and `AA01500B01`. `BleBenchDeviceTests` joined it and
+read GATT, since it compares parsed addresses.
 
 Public addresses often begin `00:`. Static random addresses and RPAs cannot, because their top bits
 are `11` and `01`.

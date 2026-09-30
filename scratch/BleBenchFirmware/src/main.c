@@ -19,6 +19,7 @@
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/controller.h>
 #include <zephyr/bluetooth/services/hrs.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/kernel.h>
@@ -56,7 +57,19 @@ static void log_adv_address(struct k_work *work)
 		return;
 	}
 
-	bt_addr_le_to_str(info.addr, addr, sizeof(addr));
+	/* A set on a public identity holds no random address; it advertises the identity's. */
+	const bt_addr_le_t *on_air = info.addr;
+	bt_addr_le_t ids[CONFIG_BT_ID_MAX];
+	size_t count = ARRAY_SIZE(ids);
+
+	if (on_air->type == BT_ADDR_LE_PUBLIC) {
+		bt_id_get(ids, &count);
+		if (info.id < count) {
+			on_air = &ids[info.id];
+		}
+	}
+
+	bt_addr_le_to_str(on_air, addr, sizeof(addr));
 	LOG_INF("adv address %s", addr);
 }
 
@@ -380,8 +393,29 @@ static void hrs_tick(struct k_work *work)
 	k_work_schedule(&hrs_work, K_SECONDS(1));
 }
 
+/*
+ * The host reads the controller's public address when the stack starts, and makes it identity 0
+ * only if settings hold no stored identity (host/settings.c). A board that ran another image
+ * needs a full erase first.
+ */
+static void set_public_address(void)
+{
+	bt_addr_t addr;
+
+	if (sizeof(CONFIG_BENCH_PUBLIC_ADDRESS) <= 1) {
+		return;
+	}
+	if (bt_addr_from_str(CONFIG_BENCH_PUBLIC_ADDRESS, &addr) != 0) {
+		LOG_ERR("bad public address %s", CONFIG_BENCH_PUBLIC_ADDRESS);
+		return;
+	}
+	bt_ctlr_set_public_addr(addr.val);
+	LOG_INF("public address %s", CONFIG_BENCH_PUBLIC_ADDRESS);
+}
+
 int main(void)
 {
+	set_public_address();
 	bt_conn_auth_info_cb_register(&auth_info_cb);
 	k_work_schedule(&hrs_work, K_SECONDS(1));
 
