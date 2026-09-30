@@ -9,6 +9,12 @@ namespace Periphery.MacOS.Bluetooth.Core;
 internal readonly record struct IOBluetoothBond(string Address, string? Name, bool Connected, uint ClassOfDevice);
 
 /// <summary>
+/// A connected Bluetooth HID device's IOKit node: its <c>DeviceAddress</c> and <c>Transport</c>. It
+/// exists only while the link is up, and reading it needs no Bluetooth permission.
+/// </summary>
+internal readonly record struct HidLink(string Address, string Transport);
+
+/// <summary>
 /// <c>CBManagerAuthorization</c>: whether this process may use Bluetooth. macOS decides it per
 /// responsible process, so a console program inherits its terminal's answer.
 /// </summary>
@@ -66,11 +72,41 @@ internal static class IOBluetoothInventory
     };
 
     /// <summary>D3: the bonds as devices, one per address.</summary>
-    internal static ImmutableArray<DeviceInfo> Map(IEnumerable<IOBluetoothBond> bonds) =>
-        [.. bonds.Select(ToDeviceInfo).OfType<DeviceInfo>().DistinctBy(d => d.Id)];
+    internal static ImmutableArray<DeviceInfo> Map(
+        IEnumerable<IOBluetoothBond> bonds, ImmutableDictionary<BluetoothAddress, BluetoothTransports>? known = null) =>
+        [.. bonds.Select(bond => ToDeviceInfo(bond, known)).OfType<DeviceInfo>().DistinctBy(d => d.Id)];
 
-    /// <summary>D3: one bond. <see langword="null"/> when its address does not parse.</summary>
-    internal static DeviceInfo? ToDeviceInfo(IOBluetoothBond bond)
+    /// <summary>The transport an IOKit HID node's <c>Transport</c> names, or <see cref="BluetoothTransports.None"/>.</summary>
+    internal static BluetoothTransports TransportOf(string transport) => transport switch
+    {
+        "Bluetooth Low Energy" => BluetoothTransports.LowEnergy,
+        "Bluetooth" => BluetoothTransports.BrEdr,
+        _ => BluetoothTransports.None,
+    };
+
+    /// <summary>
+    /// D3 amendment: adds what <paramref name="links"/> show to what is <paramref name="known"/>.
+    /// A transport once seen stays known, since a peripheral does not stop supporting it when its link
+    /// drops.
+    /// </summary>
+    internal static ImmutableDictionary<BluetoothAddress, BluetoothTransports> Learn(
+        ImmutableDictionary<BluetoothAddress, BluetoothTransports> known, IEnumerable<HidLink> links)
+    {
+        foreach (var link in links)
+        {
+            var transport = TransportOf(link.Transport);
+            if (transport != BluetoothTransports.None && BluetoothAddress.TryParse(link.Address, out var address))
+                known = known.SetItem(address, known.GetValueOrDefault(address) | transport);
+        }
+        return known;
+    }
+
+    /// <summary>
+    /// D3: one bond. <see langword="null"/> when its address does not parse. <paramref name="known"/>
+    /// adds the transports its HID node has shown.
+    /// </summary>
+    internal static DeviceInfo? ToDeviceInfo(
+        IOBluetoothBond bond, ImmutableDictionary<BluetoothAddress, BluetoothTransports>? known = null)
     {
         if (!BluetoothAddress.TryParse(bond.Address, out var address))
             return null;
@@ -84,8 +120,9 @@ internal static class IOBluetoothInventory
             Status = DeviceStatus.OK,
             IsActive = bond.Connected,
             MacAddress = address.ToPhysicalAddress(),
-            // A class of device is BR/EDR evidence. Nothing public says LE, so an LE bond is None.
-            BluetoothTransports = bond.ClassOfDevice != 0 ? BluetoothTransports.BrEdr : BluetoothTransports.None,
+            // A class of device is BR/EDR evidence. LE evidence comes only from a HID node seen connected.
+            BluetoothTransports = (bond.ClassOfDevice != 0 ? BluetoothTransports.BrEdr : BluetoothTransports.None)
+                | (known?.GetValueOrDefault(address) ?? BluetoothTransports.None),
         };
     }
 

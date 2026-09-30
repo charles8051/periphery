@@ -31,6 +31,7 @@ internal sealed class MacOSDeviceProvider : IDeviceProvider
     internal static IOBluetoothDeviceSource SharedBluetooth { get; } = new(
         IOBluetoothInterop.ReadAuthorization,
         IOBluetoothInterop.ReadBonds,
+        IOBluetoothInterop.ReadHidLinks,
         PeripheryLoggerFactory.CreateLogger<IOBluetoothDeviceSource>());
 
     public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(

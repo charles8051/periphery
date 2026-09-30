@@ -17,14 +17,23 @@ internal sealed class IOBluetoothDeviceSource
 {
     private readonly Func<BluetoothAuthorization?> _authorization;
     private readonly Func<ImmutableArray<IOBluetoothBond>?> _bonds;
+    private readonly Func<ImmutableArray<HidLink>> _links;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, byte> _logged = new(StringComparer.Ordinal);
 
+    // D3 amendment: the transports each address's HID node has shown, kept for the process.
+    private ImmutableDictionary<BluetoothAddress, BluetoothTransports> _known =
+        ImmutableDictionary<BluetoothAddress, BluetoothTransports>.Empty;
+
     internal IOBluetoothDeviceSource(
-        Func<BluetoothAuthorization?> authorization, Func<ImmutableArray<IOBluetoothBond>?> bonds, ILogger logger)
+        Func<BluetoothAuthorization?> authorization,
+        Func<ImmutableArray<IOBluetoothBond>?> bonds,
+        Func<ImmutableArray<HidLink>> links,
+        ILogger logger)
     {
         _authorization = authorization;
         _bonds = bonds;
+        _links = links;
         _logger = logger;
     }
 
@@ -52,7 +61,9 @@ internal sealed class IOBluetoothDeviceSource
             return null;
         }
 
-        return [.. IOBluetoothInventory.Map(bonds).Select(device => EnrichmentPipeline.RunRegisteredSync(device, ct, _logger))];
+        ImmutableInterlocked.Update(ref _known, (current, links) => IOBluetoothInventory.Learn(current, links), _links());
+        var known = Volatile.Read(ref _known);
+        return [.. IOBluetoothInventory.Map(bonds, known).Select(device => EnrichmentPipeline.RunRegisteredSync(device, ct, _logger))];
     }
 
     /// <summary>The bonds, or none when IOBluetooth cannot be asked.</summary>

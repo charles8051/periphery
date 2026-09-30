@@ -88,6 +88,58 @@ internal static partial class IOBluetoothInterop
         }
     }
 
+    /// <summary>
+    /// The <c>DeviceAddress</c> and <c>Transport</c> of every IOKit HID node that has both, which are
+    /// the Bluetooth HID devices connected now. Plain IOKit, so no Bluetooth permission is needed.
+    /// </summary>
+    internal static ImmutableArray<HidLink> ReadHidLinks()
+    {
+        IntPtr matching = IOKitInterop.IOServiceMatching(MacOSCategoryMap.IOHIDDevice);
+        if (matching == IntPtr.Zero)
+            return [];
+        // IOServiceGetMatchingServices consumes the matching dictionary.
+        if (IOKitInterop.IOServiceGetMatchingServices(IOKitInterop.kIOMasterPortDefault, matching, out uint iterator) != IOKitInterop.kIOReturnSuccess)
+            return [];
+
+        var links = ImmutableArray.CreateBuilder<HidLink>();
+        try
+        {
+            uint service;
+            while ((service = IOKitInterop.IOIteratorNext(iterator)) != 0)
+            {
+                try
+                {
+                    if (IOKitInterop.IORegistryEntryCreateCFProperties(service, out IntPtr properties, IntPtr.Zero, 0) != IOKitInterop.kIOReturnSuccess
+                        || properties == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+                    try
+                    {
+                        if (IOKitInterop.GetCFStringValue(properties, "DeviceAddress") is { } address
+                            && IOKitInterop.GetCFStringValue(properties, "Transport") is { } transport)
+                        {
+                            links.Add(new HidLink(address, transport));
+                        }
+                    }
+                    finally
+                    {
+                        IOKitInterop.CFRelease(properties);
+                    }
+                }
+                finally
+                {
+                    IOKitInterop.IOObjectRelease(service);
+                }
+            }
+        }
+        finally
+        {
+            IOKitInterop.IOObjectRelease(iterator);
+        }
+        return links.ToImmutable();
+    }
+
     private static string? String(IntPtr nsString) =>
         nsString == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(Send(nsString, s_utf8String));
 
