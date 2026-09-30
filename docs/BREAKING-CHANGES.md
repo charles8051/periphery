@@ -9,6 +9,24 @@ change does not, so behaviour changes are listed too. [CHANGELOG.md](../CHANGELO
 is the full record of each release. Releases before `v4.2.0-alpha.1` are described only
 there.
 
+## Unreleased — since `v4.3.0`
+
+### 1. On Linux, Bluetooth results are bonds, not connection objects
+
+`OfCategory(DeviceCategory.Bluetooth)`, `All`, and unfiltered queries and watchers on Linux
+returned the adapters, plus one `/sys/…/hciN:<handle>` object per live connection. That object
+had no name and no address, and it raised `Appeared` and `Disappeared` once per connection. It
+is gone. The results are now the adapters, plus one device per bond BlueZ holds, with `Id`
+`bluez:<adapter address>/<device address>` (ADR-0091).
+
+> **This one does not announce itself.** Code that treated a `hciN:<handle>` object's arrival
+> as "something connected" sees nothing now.
+
+Watch the bond instead. Its `IsActive` is true while it is connected, and it raises `Activated`
+and `Deactivated`. Its `MacAddress` is the peer's address. A `bluetoothd` restart, or removing
+the adapter, raises `Disappeared` for each of that adapter's bonds and `Appeared` when they
+return. If the system bus or BlueZ cannot be reached, only the adapters are returned.
+
 ## `v4.3.0` — since `v4.2.0`
 
 ### 1. An empty profile list no longer throws

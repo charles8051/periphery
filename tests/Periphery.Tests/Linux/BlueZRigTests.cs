@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 
@@ -53,15 +54,71 @@ public class BlueZRigTests
         Assert.DoesNotContain(devices, d => d.Id.Value.StartsWith("bluez:", StringComparison.Ordinal));
     }
 
-    private static async Task<string> BluetoothctlAsync(params string[] args)
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Connection_RaisesActivatedThenDeactivated_AndNoLinkNodeAppears()
     {
-        var start = new ProcessStartInfo("bluetoothctl") { RedirectStandardOutput = true, RedirectStandardError = true };
+        if (!Enabled) return;
+
+        string bond = $"bluez:{Central}/{Peripheral}";
+        var activated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deactivated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var seen = new ConcurrentQueue<string>();
+
+        await using var watcher = Devices.Watch().OfCategory(DeviceCategory.Bluetooth);
+        watcher.Appeared += (_, e) => seen.Enqueue(e.Device.Id.Value);
+        watcher.Activated += (_, e) =>
+        {
+            seen.Enqueue(e.Device.Id.Value);
+            if (e.Device.Id.Value == bond)
+                activated.TrySetResult();
+        };
+        watcher.Deactivated += (_, e) =>
+        {
+            if (e.Device.Id.Value == bond && activated.Task.IsCompleted)
+                deactivated.TrySetResult();
+        };
+        await watcher.StartAsync();
+
+        // hci1 advertises, hci0 connects to it and holds the link, then disconnects. The pauses are
+        // bluetoothctl's; the test waits on the watcher's edges.
+        var drive = RunAsync("bash", "-c",
+            "{ echo 'select 00:AA:01:01:00:01'; sleep 1; echo 'advertise peripheral'; sleep 2; "
+            + "echo 'select 00:AA:01:00:00:00'; sleep 1; echo 'connect 00:AA:01:01:00:01'; sleep 6; "
+            + "echo 'disconnect 00:AA:01:01:00:01'; sleep 3; echo 'select 00:AA:01:01:00:01'; sleep 1; "
+            + "echo 'advertise off'; sleep 1; echo quit; } | bluetoothctl");
+
+        // A safety net that bounds a failure; the edges are the signals (ADR-0089 D5).
+        using var safety = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var first = await Task.WhenAny(activated.Task, drive).WaitAsync(safety.Token);
+        if (first != activated.Task)
+            Assert.Fail($"No Activated for {bond} before bluetoothctl finished. It said: {await drive}");
+
+        var during = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
+        Assert.True(during.Single(d => d.Id.Value == bond).IsActive);
+        Assert.DoesNotContain(during, d => IsLinkNode(d.Id.Value));
+
+        await deactivated.Task.WaitAsync(safety.Token);
+        string output = await drive;
+
+        // Positive control: BlueZ itself reports the connection the edges describe.
+        Assert.Contains("Connection successful", output);
+        Assert.DoesNotContain(seen, IsLinkNode);
+    }
+
+    private static bool IsLinkNode(string id) => id.Contains("/hci0:") || id.Contains("/hci1:");
+
+    private static Task<string> BluetoothctlAsync(params string[] args) => RunAsync("bluetoothctl", args);
+
+    private static async Task<string> RunAsync(string program, params string[] args)
+    {
+        var start = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var arg in args)
             start.ArgumentList.Add(arg);
 
         using var process = Process.Start(start)!;
-        // A safety net, not an assertion: bluetoothctl answers in milliseconds (ADR-0089 D5).
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // A safety net, not an assertion (ADR-0089 D5).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         string output = await process.StandardOutput.ReadToEndAsync(cts.Token);
         await process.WaitForExitAsync(cts.Token);
         return output;

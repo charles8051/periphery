@@ -32,6 +32,20 @@ internal static class BlueZFixtures
         Assert.True(DBusCodec.TryDecode(Bytes(name), out var message, out _), $"{name} did not decode.");
         return message;
     }
+
+    /// <summary>Every message in <see cref="MonitorStream"/>, in the order the bus delivered them.</summary>
+    public static IReadOnlyList<DBusMessage> StreamMessages()
+    {
+        byte[] stream = Bytes(MonitorStream);
+        var messages = new List<DBusMessage>();
+        for (int offset = 0; offset < stream.Length;)
+        {
+            Assert.True(DBusCodec.TryDecode(stream.AsSpan(offset), out var message, out int consumed));
+            messages.Add(message);
+            offset += consumed;
+        }
+        return messages;
+    }
 }
 
 /// <summary>

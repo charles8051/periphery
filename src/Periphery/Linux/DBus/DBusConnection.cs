@@ -79,8 +79,7 @@ internal sealed class DBusConnection : IAsyncDisposable
     /// </summary>
     internal async Task<DBusMessage> CallAsync(DBusMessage call, CancellationToken ct)
     {
-        uint serial = ++_lastSerial;
-        await WriteAsync(DBusCodec.Encode(call with { Serial = serial }), ct).ConfigureAwait(false);
+        uint serial = await SendAsync(call, ct).ConfigureAwait(false);
         while (true)
         {
             var message = await ReceiveAsync(ct).ConfigureAwait(false);
@@ -89,6 +88,17 @@ internal sealed class DBusConnection : IAsyncDisposable
                 && (message.Sender == call.Destination || message.Sender == BusName))
                 return message;
         }
+    }
+
+    /// <summary>
+    /// Sends <paramref name="message"/> under the next serial and returns the serial, without
+    /// waiting for a reply. One reader may be inside <see cref="ReceiveAsync"/> meanwhile.
+    /// </summary>
+    internal async Task<uint> SendAsync(DBusMessage message, CancellationToken ct)
+    {
+        uint serial = Interlocked.Increment(ref _lastSerial);
+        await WriteAsync(DBusCodec.Encode(message with { Serial = serial }), ct).ConfigureAwait(false);
+        return serial;
     }
 
     /// <summary>Returns the next whole message from the bus.</summary>
