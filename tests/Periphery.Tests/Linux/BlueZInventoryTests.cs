@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Net.NetworkInformation;
 using Periphery.Linux.BlueZ.Core;
 using Periphery.Linux.DBus.Core;
+using static Periphery.Tests.Linux.BlueZObjectsBuilder;
 
 namespace Periphery.Tests.Linux;
 
@@ -166,34 +167,4 @@ public class BlueZInventoryTests
     [InlineData("org.bluez.Error.Failed", (int)BlueZFailureKind.Error)]
     public void Errors_AreClassifiedByName(string errorName, int expected) =>
         Assert.Equal((BlueZFailureKind)expected, BlueZInventory.ClassifyError(errorName));
-
-    // ── Helpers ────────────────────────────────────────────────────────
-
-    private static readonly DBusDictEntry Adapter0 =
-        Object("/org/bluez/hci0", Interface(BlueZInventory.AdapterInterface, ("Address", S("00:AA:01:00:00:00"))));
-
-    private static DBusValue Body(string fixture) => Assert.Single(BlueZFixtures.Message(fixture).Body);
-
-    private static DBusString S(string value) => new('s', value);
-
-    private static DBusValue Managed(params DBusDictEntry[] objects) => new DBusArray("{oa{sa{sv}}}", [.. objects]);
-
-    private static DBusDictEntry Object(string path, params DBusDictEntry[] interfaces) =>
-        new(new DBusString('o', path), new DBusArray("{sa{sv}}", [.. interfaces]));
-
-    private static DBusDictEntry Interface(string name, params (string Key, DBusValue Value)[] properties) =>
-        new(S(name), new DBusArray("{sv}", properties
-            .Select(p => (DBusValue)new DBusDictEntry(S(p.Key), new DBusVariant(SignatureOf(p.Value), p.Value)))
-            .ToImmutableArray()));
-
-    private static DBusDictEntry Device(string node, string address, params (string Key, DBusValue Value)[] properties) =>
-        Object($"/org/bluez/hci0/{node}", Interface(BlueZInventory.DeviceInterface,
-            [("Address", S(address)), ("Adapter", new DBusString('o', "/org/bluez/hci0")), .. properties]));
-
-    private static string SignatureOf(DBusValue value) => value switch
-    {
-        DBusBoolean => "b",
-        DBusString s => s.Code.ToString(),
-        _ => throw new ArgumentException(value.GetType().Name),
-    };
 }

@@ -39,6 +39,13 @@ internal static class LinuxCategoryMap
     };
 
     /// <summary>
+    /// ADR-0091 D7: a Bluetooth <c>link</c> node, <c>hciN:&lt;handle&gt;</c>, left out of every result.
+    /// It repeats its bond's connection state, which BlueZ reports on the device, with no address.
+    /// </summary>
+    internal static bool IsBluetoothLink(string? subsystem, string? devtype) =>
+        subsystem == "bluetooth" && devtype == "link";
+
+    /// <summary>
     /// Resolves a udev subsystem and device properties to a <see cref="DeviceCategory"/>.
     /// Uses property hints (<c>ID_INPUT_KEYBOARD</c>, <c>ID_INPUT_MOUSE</c>, etc.) to
     /// disambiguate shared subsystems (e.g. <c>input</c> → Keyboard vs. Mouse vs. Hid).

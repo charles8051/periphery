@@ -1,7 +1,7 @@
 ---
 title: "ADR-0091: Linux reads bonded Bluetooth devices from BlueZ, in core, over a managed D-Bus client"
-status: "Proposed"
-status_note: "No code. Written for issue #258. The BlueZ facts were measured on 2026-09-29 against BlueZ 5.72 with two btvirt controllers, and traced in the BlueZ 5.72 and dbus 1.14.10 sources. Revised the same day after four independent reviews: the transport moved from libdbus-1 to a managed client, and presence now follows BlueZ across restarts."
+status: "Accepted"
+status_note: "No code. Written for issue #258. The BlueZ facts were measured on 2026-09-29 against BlueZ 5.72 with two btvirt controllers, and traced in the BlueZ 5.72 and dbus 1.14.10 sources. Revised the same day after four independent reviews: the transport moved from libdbus-1 to a managed client, and presence now follows BlueZ across restarts. Accepted 2026-09-30: enumeration shipped in #305, and watching with D7 in the change that accepted it."
 date: "2026-09-29"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "linux", "bluez", "d-bus", "device-enumeration", "device-monitor", "pure-core"]
@@ -14,6 +14,14 @@ depends_on: ["0004-two-level-device-state-model.md", "0010-udev-linux-provider.m
 
 > Number `0091` is provisional until merge (the next free number after ADR-0090), per this repo's
 > "assign the number at merge" convention.
+>
+> **Amendment (2026-09-30), D8's shell.** The BlueZ watch runs its own receive loop on its
+> connection's stream. It does not add the bus socket to `LinuxDeviceMonitorProvider`'s udev poll.
+> The client is a managed `Stream` (D2), whose reads take a cancellation token and whose waits take
+> a `TimeProvider`, which a raw descriptor in a `poll()` loop would give up. BlueZ's edges and
+> udev's therefore reach the watcher on different threads. `DeviceWatcher` locks around every
+> provider event, and the Windows provider already raises Bluetooth link edges from a thread of
+> their own.
 
 **Tracks:** `LinuxDeviceProvider`, `LinuxDeviceMonitorProvider`, and `DeviceCategory.Bluetooth` on
 Linux. Issue #258.
@@ -22,7 +30,7 @@ Linux. Issue #258.
 
 ## Status
 
-Proposed 2026-09-29. No code.
+Accepted 2026-09-30. Enumeration (D1–D4) shipped in #305. Watching (D5–D8) and D7 shipped with this status change.
 
 ---
 

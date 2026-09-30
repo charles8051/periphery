@@ -4,6 +4,9 @@
 using System.Collections.Immutable;
 using System.Net.NetworkInformation;
 using Periphery.Linux.DBus.Core;
+using BlueZObjects = System.Collections.Immutable.ImmutableDictionary<string,
+    System.Collections.Immutable.ImmutableDictionary<string,
+        System.Collections.Immutable.ImmutableDictionary<string, Periphery.Linux.DBus.Core.DBusValue>>>;
 
 namespace Periphery.Linux.BlueZ.Core;
 
@@ -63,9 +66,11 @@ internal static class BlueZInventory
     /// cannot be read is left out. When two bonded objects map to one <c>Id</c>, the connected one
     /// wins, then the lower object path by ordinal comparison.
     /// </summary>
-    internal static ImmutableArray<DeviceInfo> Map(DBusValue managedObjects)
+    internal static ImmutableArray<DeviceInfo> Map(DBusValue managedObjects) => Map(ReadObjects(managedObjects));
+
+    /// <summary>The same mapping over objects already read: path, then interface, then property.</summary>
+    internal static ImmutableArray<DeviceInfo> Map(BlueZObjects objects)
     {
-        var objects = ReadObjects(managedObjects);
         var candidates = new List<(string Path, DeviceInfo Device)>();
         foreach (var path in objects.Keys.Order(StringComparer.Ordinal))
         {
@@ -91,7 +96,7 @@ internal static class BlueZInventory
     private static DeviceInfo? ToDeviceInfo(
         string path,
         IReadOnlyDictionary<string, DBusValue> device,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, DBusValue>>> objects)
+        BlueZObjects objects)
     {
         if (!BluetoothAddress.TryParse(Text(device, "Address", 's'), out var address))
             return null;
@@ -144,34 +149,51 @@ internal static class BlueZInventory
             ? s.Value
             : null;
 
-    // a{oa{sa{sv}}} as path → interface → property → variant. Entries of another shape are skipped.
-    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, DBusValue>>> ReadObjects(DBusValue managedObjects)
+    /// <summary>
+    /// <c>a{oa{sa{sv}}}</c> as path, then interface, then property. Entries of another shape are
+    /// skipped.
+    /// </summary>
+    internal static BlueZObjects ReadObjects(DBusValue managedObjects)
     {
-        var objects = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, DBusValue>>>(StringComparer.Ordinal);
+        var objects = BlueZObjects.Empty.WithComparers(StringComparer.Ordinal).ToBuilder();
         if (managedObjects is not DBusArray { Items: var entries })
-            return objects;
+            return objects.ToImmutable();
 
         foreach (var entry in entries)
         {
-            if (entry is not DBusDictEntry { Key: DBusString { Code: 'o', Value: var path }, Value: DBusArray { Items: var interfaceEntries } })
-                continue;
-
-            var interfaces = new Dictionary<string, IReadOnlyDictionary<string, DBusValue>>(StringComparer.Ordinal);
-            foreach (var interfaceEntry in interfaceEntries)
-            {
-                if (interfaceEntry is not DBusDictEntry { Key: DBusString { Value: var name }, Value: DBusArray { Items: var propertyEntries } })
-                    continue;
-
-                var properties = new Dictionary<string, DBusValue>(StringComparer.Ordinal);
-                foreach (var propertyEntry in propertyEntries)
-                {
-                    if (propertyEntry is DBusDictEntry { Key: DBusString { Value: var property }, Value: var value })
-                        properties[property] = value;
-                }
-                interfaces[name] = properties;
-            }
-            objects[path] = interfaces;
+            if (entry is DBusDictEntry { Key: DBusString { Code: 'o', Value: var path }, Value: var interfaces })
+                objects[path] = ReadInterfaces(interfaces);
         }
-        return objects;
+        return objects.ToImmutable();
+    }
+
+    /// <summary><c>a{sa{sv}}</c> as interface, then property.</summary>
+    internal static ImmutableDictionary<string, ImmutableDictionary<string, DBusValue>> ReadInterfaces(DBusValue interfaces)
+    {
+        var result = ImmutableDictionary.CreateBuilder<string, ImmutableDictionary<string, DBusValue>>(StringComparer.Ordinal);
+        if (interfaces is not DBusArray { Items: var entries })
+            return result.ToImmutable();
+
+        foreach (var entry in entries)
+        {
+            if (entry is DBusDictEntry { Key: DBusString { Value: var name }, Value: var properties })
+                result[name] = ReadProperties(properties);
+        }
+        return result.ToImmutable();
+    }
+
+    /// <summary><c>a{sv}</c> as property name to variant.</summary>
+    internal static ImmutableDictionary<string, DBusValue> ReadProperties(DBusValue properties)
+    {
+        var result = ImmutableDictionary.CreateBuilder<string, DBusValue>(StringComparer.Ordinal);
+        if (properties is not DBusArray { Items: var entries })
+            return result.ToImmutable();
+
+        foreach (var entry in entries)
+        {
+            if (entry is DBusDictEntry { Key: DBusString { Value: var property }, Value: var value })
+                result[property] = value;
+        }
+        return result.ToImmutable();
     }
 }

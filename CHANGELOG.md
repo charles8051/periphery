@@ -8,7 +8,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## Unreleased
 
 ### Added
-- **Bonded Bluetooth devices enumerate on Linux** (ADR-0091, issue #258). `OfCategory(DeviceCategory.Bluetooth)`, `All`, or an unfiltered query now returns one device per bond BlueZ holds, beside the adapters and link objects udev already gave. Each has `Id` `bluez:<adapter address>/<device address>`, the peer's address in `MacAddress`, its alias as `Name`, and `IsActive` set while it is connected. Core reads BlueZ over its own D-Bus client on the system bus socket, with no new package or native library. It never starts `bluetoothd`. If the bus, BlueZ, or permission to reach it is missing, the query returns what udev gave and logs once per process. Watching these devices is not in this release.
+- **Bonded Bluetooth devices enumerate and are watched on Linux** (ADR-0091, issue #258). `OfCategory(DeviceCategory.Bluetooth)`, `All`, or an unfiltered query or watcher now reports one device per bond BlueZ holds.
+  - **The device:** `Id` is `bluez:<adapter address>/<device address>`, `MacAddress` is the peer's address, `Name` is its alias, and `IsActive` is set while it is connected.
+  - **Events:** a watcher raises `Appeared` when a bond is made, `Activated` and `Deactivated` as it connects and disconnects, `DevicePropertyChanged` when it is renamed, and `Disappeared` when it is removed.
+  - **How:** core reads BlueZ over its own D-Bus client on the system bus socket, with no new package or native library, and never starts `bluetoothd`.
+  - **Without BlueZ:** if the bus, BlueZ, or permission to reach it is missing, only the adapters are reported, and it logs once per process.
+
+### Changed
+- **Linux no longer reports a Bluetooth connection as its own device** (ADR-0091 D7). The `hciN:<handle>` objects udev creates per connection are left out. They had no name or address, and the bond's `IsActive` now reports the connection. See [BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md).
 - **`periphery camera capture`** saves frames from one camera through `CameraFrameSinks.SaveToDirectoryAsync`. MJPEG frames are written as `.jpg`. Other formats are written as `.raw`, with the dimensions and pixel format in the filename. The camera is chosen with `--name` or `--id`, or implicitly when only one is connected. `--format` sets the preferred pixel format (default `mjpeg`), `--max-resolution` caps the size, `--frames` sets the count, and `--skip` discards frames while auto-exposure settles. Stdout carries only the saved paths. Progress and errors go to stderr.
 
 ## 4.3.0 - 2026-09-23

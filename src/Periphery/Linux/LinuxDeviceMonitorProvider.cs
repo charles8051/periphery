@@ -7,6 +7,9 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Periphery.Linux.BlueZ;
+using Periphery.Linux.BlueZ.Core;
+using Periphery.Linux.DBus;
 
 namespace Periphery.Linux;
 
@@ -36,6 +39,7 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
 
     private CancellationTokenSource? _monitorCts;
     private Task? _monitorTask;
+    private BlueZMonitor? _bluez;
 
     private readonly object _cacheLock = new();
     // Keyed by DeviceId so the cache cannot drift from DeviceId's equality contract.
@@ -55,7 +59,7 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
     public event EventHandler<DeviceChangeEventArgs>? DeviceDeactivated;
     public event EventHandler<DeviceModificationEventArgs>? DevicePropertyChanged;
 
-    public Task StartAsync(DeviceFilter filter, CancellationToken ct = default)
+    public async Task StartAsync(DeviceFilter filter, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
@@ -114,7 +118,6 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
                 TaskScheduler.Default).Unwrap();
 
             _logger.LogInformation("Device monitor started; polling udev_monitor fd={Fd}", _monitorFd);
-            return Task.CompletedTask;
         }
         catch (DllNotFoundException ex)
         {
@@ -134,6 +137,34 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
             CleanupHandles();
             _logger.LogError(ex, "Failed to start device monitor");
             throw new DeviceProviderException($"Failed to start device monitor: {ex.Message}", ex);
+        }
+
+        // ADR-0091: bonded Bluetooth devices are watched in BlueZ, on their own connection and loop.
+        // StartAsync returns once BlueZ's first snapshot has seeded the watch, or BlueZ is found absent.
+        if (BlueZInventory.ShouldQuery(filter))
+        {
+            _bluez = new BlueZMonitor(
+                DBusConnection.ConnectSystemBusAsync,
+                TimeProvider.System,
+                PeripheryLoggerFactory.CreateLogger<BlueZMonitor>(),
+                RaiseBlueZ);
+            await _bluez.StartAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private void RaiseBlueZ(BlueZEdge edge)
+    {
+        _logger.LogDebug("BlueZ {Edge}: {DeviceId} ({DeviceName})", edge.Kind, edge.Device.Id, edge.Device.Name ?? "(unnamed)");
+        var args = new DeviceChangeEventArgs(edge.Device);
+        switch (edge.Kind)
+        {
+            case BlueZEdgeKind.Appeared: DeviceAppeared?.Invoke(this, args); break;
+            case BlueZEdgeKind.Disappeared: DeviceDisappeared?.Invoke(this, args); break;
+            case BlueZEdgeKind.Activated: DeviceActivated?.Invoke(this, args); break;
+            case BlueZEdgeKind.Deactivated: DeviceDeactivated?.Invoke(this, args); break;
+            case BlueZEdgeKind.PropertyChanged:
+                DevicePropertyChanged?.Invoke(this, new DeviceModificationEventArgs(edge.Previous!, edge.Device));
+                break;
         }
     }
 
@@ -243,6 +274,12 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
         var syspath = UdevInterop.PtrToString(syspathPtr);
 
         if (action is null || syspath is null) return;
+
+        // ADR-0091 D7. Checked here as well as in ToDeviceInfo, because a remove or unbind raises an
+        // edge for a syspath without building a DeviceInfo.
+        var subsystem = UdevInterop.PtrToString(UdevInterop.udev_device_get_subsystem(dev));
+        if (LinuxCategoryMap.IsBluetoothLink(subsystem, UdevInterop.GetPropertyValue(dev, "DEVTYPE")))
+            return;
 
         switch (action)
         {
@@ -370,6 +407,12 @@ internal sealed class LinuxDeviceMonitorProvider : IDeviceMonitorProvider
     public async ValueTask DisposeAsync()
     {
         _logger.LogInformation("Stopping device monitor");
+
+        if (_bluez is not null)
+        {
+            await _bluez.DisposeAsync().ConfigureAwait(false);
+            _bluez = null;
+        }
 
         // Cancel and await the polling task before releasing handles
         if (_monitorCts is not null)

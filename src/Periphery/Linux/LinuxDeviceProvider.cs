@@ -157,6 +157,8 @@ internal sealed class LinuxDeviceProvider : IDeviceProvider
 
         var subsystemPtr = UdevInterop.udev_device_get_subsystem(dev);
         var subsystem = UdevInterop.PtrToString(subsystemPtr);
+        if (LinuxCategoryMap.IsBluetoothLink(subsystem, UdevInterop.GetPropertyValue(dev, "DEVTYPE")))
+            return null;
 
         // Read udev properties
         var idModel = UdevInterop.GetPropertyValue(dev, "ID_MODEL");
