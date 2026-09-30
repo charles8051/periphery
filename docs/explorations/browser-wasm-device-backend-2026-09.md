@@ -11,6 +11,17 @@ existed. The .NET runtime constraints are from primary sources. The spike is not
 **Scope:** what an `IDeviceProvider` / `IDeviceMonitorProvider` backend can supply inside a browser,
 and what the rest of core does when it gets one. Out of scope: non-Chromium browsers, WebRTC and
 WebGPU device categories, and packaging.
+**Decided in:** [ADR-0092](../adr/0092-browser-devices-come-from-grants.md) (Proposed).
+
+**Errata (2026-09-30).** Three statements below are wrong. The body is left as written.
+
+- Tier 1 says the Windows provider raises no live arrival. #186 (2026-09-06) made it raise
+  `Appeared` from the devnode stream.
+- "Runtime timeline" and the closing table call the enrichment blocker finding 4. It is finding 5.
+- Tier 1 maps a Web Serial `disconnect` to `Deactivated` only. `getPorts()` lists only available
+  ports, a wired port is available only while connected, and a replug creates a new port with a new
+  token (Web Serial spec; Chromium `serial_device_enumerator.cc`). A disconnect removes the port
+  from the grant list.
 
 ## Evidence labels
 
