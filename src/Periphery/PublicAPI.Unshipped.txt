@@ -14,6 +14,17 @@ Periphery.BluetoothTransport
 Periphery.BluetoothTransport.BrEdr = 1 -> Periphery.BluetoothTransport
 Periphery.BluetoothTransport.LowEnergy = 2 -> Periphery.BluetoothTransport
 Periphery.BluetoothTransport.Unknown = 0 -> Periphery.BluetoothTransport
+Periphery.BluetoothTransports
+Periphery.BluetoothTransports.BrEdr = 1 -> Periphery.BluetoothTransports
+Periphery.BluetoothTransports.LowEnergy = 2 -> Periphery.BluetoothTransports
+Periphery.BluetoothTransports.None = 0 -> Periphery.BluetoothTransports
+Periphery.DeviceFilter.WithBluetoothTransport(Periphery.BluetoothTransport transport) -> Periphery.DeviceFilter!
+Periphery.DeviceFilterSpec.BluetoothTransport.get -> Periphery.BluetoothTransport?
+Periphery.DeviceFilterSpec.BluetoothTransport.init -> void
+Periphery.DeviceInfo.BluetoothTransports.get -> Periphery.BluetoothTransports?
+Periphery.DeviceInfo.BluetoothTransports.init -> void
+Periphery.DeviceQuery.WithBluetoothTransport(Periphery.BluetoothTransport transport) -> Periphery.DeviceQuery!
+Periphery.DeviceWatcher.WithBluetoothTransport(Periphery.BluetoothTransport transport) -> Periphery.DeviceWatcher!
 override Periphery.BluetoothAddress.ToString() -> string!
 static Periphery.BluetoothAddress.Parse(string! s) -> Periphery.BluetoothAddress
 static Periphery.BluetoothAddress.TryParse(string? s, out Periphery.BluetoothAddress result) -> bool

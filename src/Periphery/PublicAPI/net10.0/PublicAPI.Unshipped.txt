@@ -1,1 +1,5 @@
 #nullable enable
+~Periphery.DeviceFilterSpecJsonContext.BluetoothTransport.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransport>
+~Periphery.DeviceFilterSpecJsonContext.NullableBluetoothTransport.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransport?>
+~Periphery.DeviceInfoJsonContext.BluetoothTransports.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransports>
+~Periphery.DeviceInfoJsonContext.NullableBluetoothTransports.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransports?>
