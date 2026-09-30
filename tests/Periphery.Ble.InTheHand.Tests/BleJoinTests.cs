@@ -40,21 +40,13 @@ public class BleJoinTests
     [Theory]
     [InlineData(BluetoothTransports.LowEnergy)]
     [InlineData(BluetoothTransports.LowEnergy | BluetoothTransports.BrEdr)]
-    [InlineData(BluetoothTransports.None)]   // BlueZ revealed nothing: let through (#302)
-    public void AddressOf_BlueZBond_ThatMaySupportLe_IsAccepted(BluetoothTransports transports)
+    [InlineData(BluetoothTransports.None)]   // BlueZ revealed nothing
+    [InlineData(BluetoothTransports.BrEdr)]  // before 5.84, Class alone does not rule LE out (#302)
+    public void AddressOf_BlueZBond_IsAccepted_WhateverItsTransports(BluetoothTransports transports)
     {
         var bond = Node("bluez:00:AA:01:00:00:00/C1:D2:E3:F4:A5:B6", "C1-D2-E3-F4-A5-B6", transports);
 
         Assert.Equal(BleJoinPlatform.Linux, BleJoin.AddressOf(bond).Platform);
-    }
-
-    [Fact]
-    public void AddressOf_BlueZBond_KnownClassicOnly_Throws()
-    {
-        var bond = Node("bluez:00:AA:01:00:00:00/C1:D2:E3:F4:A5:B6", "C1-D2-E3-F4-A5-B6", BluetoothTransports.BrEdr);
-
-        var ex = Assert.Throws<ArgumentException>(() => BleJoin.AddressOf(bond));
-        Assert.Contains("BrEdr", ex.Message);
     }
 
     [Theory]

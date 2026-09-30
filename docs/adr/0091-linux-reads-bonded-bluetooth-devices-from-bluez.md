@@ -45,6 +45,9 @@ depends_on: ["0004-two-level-device-state-model.md", "0010-udev-linux-provider.m
 >   and this clue alone classifies them as LE.
 > - **Not read:** `/var/lib/bluetooth/<adapter>/<device>/info` records `SupportedTechnologies`
 >   exactly, but it is `0700 root`.
+> - **Before 5.84 a flag is positive evidence.** A missing flag does not show the transport is
+>   absent. A dual-mode device bonded over BR/EDR can show only `Class`. Nothing concludes absence
+>   from the flags, and `Periphery.Ble.InTheHand`'s join accepts any bond.
 >
 > The watch needs no change. A `UUIDs`, `Appearance` or `Class` change, or a bearer interface
 > added, changes the mapped `DeviceInfo`, which raises `DevicePropertyChanged`.

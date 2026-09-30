@@ -145,6 +145,10 @@ public sealed record DeviceInfo
     /// <c>BTHENUM\DEV_…</c> node is <see cref="Periphery.BluetoothTransports.BrEdr"/>, and a
     /// <c>BTHLE\DEV_…</c> node is <see cref="Periphery.BluetoothTransports.LowEnergy"/>. A dual-mode
     /// peripheral has one node per transport.</para>
+    /// <para>On Linux it is set on a bond BlueZ holds (ADR-0091). From BlueZ 5.84 it is exact. Before
+    /// that, BlueZ merges both transports into one bond, and each flag is evidence that the
+    /// peripheral supports that transport: a missing flag does not show the transport is
+    /// absent.</para>
     /// <para><see cref="Periphery.BluetoothTransports.None"/> means the peripheral's transport is not
     /// known. Filter with <see cref="DeviceFilter.WithBluetoothTransport"/>.</para>
     /// </remarks>

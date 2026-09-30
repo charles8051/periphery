@@ -45,7 +45,7 @@ On Linux:
 - 32feet uses the first adapter BlueZ reports, so a bond on a second adapter resolves to `null`.
 - BlueZ's `Device1` merges both bearers into one bond. Periphery reads the transport from what
   BlueZ does reveal: the per-bearer interfaces from BlueZ 5.84, else a random address, a cached
-  GATT service, `Appearance` or `Class` (#302). A bond with none of these has transport `None`,
-  which `WithBluetoothTransport` leaves out and the join accepts. The join throws for a bond
-  known to support only BR/EDR.
+  GATT service, `Appearance` or `Class` (#302). Before BlueZ 5.84 these only show support, so a
+  bond without `LowEnergy` may still speak LE. `WithBluetoothTransport` leaves such a bond out,
+  and the join accepts any bond; a classic-only one fails at `Gatt.ConnectAsync()`.
 - The package reaches BlueZ through 32feet, over `Linux.Bluetooth` and `Tmds.DBus`.

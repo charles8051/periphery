@@ -29,9 +29,9 @@ internal static class BleJoin
     /// the address in its instance id. A BlueZ bond carries it in <see cref="DeviceInfo.MacAddress"/>.
     /// </summary>
     /// <remarks>
-    /// A BlueZ bond known not to support LE is refused. One whose transport is not known is
-    /// accepted, since <c>Device1</c> merges both bearers (issue #302). A Windows node must be the LE
-    /// one.
+    /// A BlueZ bond is accepted whatever its <see cref="DeviceInfo.BluetoothTransports"/>. Before
+    /// BlueZ 5.84 those are evidence of support, so a missing <c>LowEnergy</c> does not show LE is
+    /// absent (issue #302). A Windows node must be the LE one.
     /// </remarks>
     /// <exception cref="ArgumentException">The device is neither.</exception>
     internal static (BluetoothAddress Address, BleJoinPlatform Platform) AddressOf(DeviceInfo device)
@@ -45,14 +45,6 @@ internal static class BleJoin
         if (device.Id.Value.StartsWith(BlueZIdPrefix, StringComparison.Ordinal)
             && device.MacAddress?.GetAddressBytes() is { Length: 6 } bytes)
         {
-            // Known and without LE, it has no GATT to reach. Unknown is let through (issue #302).
-            if (device.BluetoothTransports is { } known and not BluetoothTransports.None
-                && !known.HasFlag(BluetoothTransports.LowEnergy))
-            {
-                throw new ArgumentException(
-                    $"'{device.Id.Value}' is known to support only {known}, not Bluetooth LE.", nameof(device));
-            }
-
             ulong value = 0;
             foreach (byte b in bytes)
                 value = (value << 8) | b;
