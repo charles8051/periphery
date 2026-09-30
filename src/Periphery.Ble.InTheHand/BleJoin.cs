@@ -29,8 +29,9 @@ internal static class BleJoin
     /// the address in its instance id. A BlueZ bond carries it in <see cref="DeviceInfo.MacAddress"/>.
     /// </summary>
     /// <remarks>
-    /// BlueZ's <c>Device1</c> merges both bearers into one bond (issue #302), so this accepts any. A
-    /// Windows node must be the LE one.
+    /// A BlueZ bond is accepted whatever its <see cref="DeviceInfo.BluetoothTransports"/>. Before
+    /// BlueZ 5.84 those are evidence of support, so a missing <c>LowEnergy</c> does not show LE is
+    /// absent (issue #302). A Windows node must be the LE one.
     /// </remarks>
     /// <exception cref="ArgumentException">The device is neither.</exception>
     internal static (BluetoothAddress Address, BleJoinPlatform Platform) AddressOf(DeviceInfo device)

@@ -8,12 +8,13 @@ namespace Periphery.Ble.InTheHand.Tests;
 /// </summary>
 public class BleJoinTests
 {
-    private static DeviceInfo Node(string id, string? mac = null) => new()
+    private static DeviceInfo Node(string id, string? mac = null, BluetoothTransports? transports = null) => new()
     {
         Id = id,
         Name = "Test peripheral",
         Category = DeviceCategory.Bluetooth,
         MacAddress = mac is null ? null : PhysicalAddress.Parse(mac),
+        BluetoothTransports = transports,
     };
 
     // ── Windows: the LE link node ──────────────────────────────────────
@@ -34,6 +35,18 @@ public class BleJoinTests
         var bond = Node("bluez:00:AA:01:00:00:00/C1:D2:E3:F4:A5:B6", "C1-D2-E3-F4-A5-B6");
 
         Assert.Equal((new BluetoothAddress(0xC1D2E3F4A5B6), BleJoinPlatform.Linux), BleJoin.AddressOf(bond));
+    }
+
+    [Theory]
+    [InlineData(BluetoothTransports.LowEnergy)]
+    [InlineData(BluetoothTransports.LowEnergy | BluetoothTransports.BrEdr)]
+    [InlineData(BluetoothTransports.None)]   // BlueZ revealed nothing
+    [InlineData(BluetoothTransports.BrEdr)]  // before 5.84, Class alone does not rule LE out (#302)
+    public void AddressOf_BlueZBond_IsAccepted_WhateverItsTransports(BluetoothTransports transports)
+    {
+        var bond = Node("bluez:00:AA:01:00:00:00/C1:D2:E3:F4:A5:B6", "C1-D2-E3-F4-A5-B6", transports);
+
+        Assert.Equal(BleJoinPlatform.Linux, BleJoin.AddressOf(bond).Platform);
     }
 
     [Theory]

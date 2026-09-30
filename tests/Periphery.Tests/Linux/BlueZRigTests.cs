@@ -41,6 +41,11 @@ public class BlueZRigTests
         Assert.Equal(BusType.Bluetooth, bond.BusType);
         Assert.Equal(DeviceStatus.OK, bond.Status);
         Assert.Equal($"/org/bluez/hci0/dev_{Peripheral.Replace(':', '_')}", bond.LocationPath);
+
+        // BlueZ 5.72 hides the bearer. The bond's cached GATT services say LE (#302).
+        Assert.Equal(BluetoothTransports.LowEnergy, bond.BluetoothTransports);
+        var le = await Devices.Enumerate().WithBluetoothTransport(BluetoothTransport.LowEnergy).ToListAsync();
+        Assert.Contains(le, d => d.Id == bond.Id);
     }
 
     [Fact]

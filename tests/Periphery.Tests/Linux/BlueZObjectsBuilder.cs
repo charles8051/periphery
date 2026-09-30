@@ -108,10 +108,15 @@ internal static class BlueZObjectsBuilder
         Body = [S(name), S(oldOwner), S(newOwner)],
     };
 
+    /// <summary>A <c>UUIDs</c> value: an array of strings.</summary>
+    public static DBusArray Uuids(params string[] uuids) => new("s", [.. uuids.Select(u => (DBusValue)S(u))]);
+
     private static string SignatureOf(DBusValue value) => value switch
     {
         DBusBoolean => "b",
         DBusString s => s.Code.ToString(),
+        DBusInteger i => i.Code.ToString(),
+        DBusArray a => "a" + a.ElementSignature,
         _ => throw new ArgumentException(value.GetType().Name),
     };
 }

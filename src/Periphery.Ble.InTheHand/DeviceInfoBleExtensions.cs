@@ -29,10 +29,10 @@ public static class DeviceInfoBleExtensions
     /// re-paired peripheral that uses private addresses comes back under a new node and a new
     /// address.</para>
     /// <para>On Linux, 32feet uses the first adapter BlueZ reports. A bond on another adapter
-    /// resolves to <see langword="null"/>. BlueZ's <c>Device1</c> merges both bearers into one
-    /// bond, so this does not check whether it is LE (issue #302). A classic-only bond resolves
-    /// too, and its <c>Gatt.ConnectAsync()</c> fails. A successful join does not mean the device
-    /// speaks LE.</para>
+    /// resolves to <see langword="null"/>. Any bond resolves, whatever its
+    /// <see cref="DeviceInfo.BluetoothTransports"/>, and a classic-only one fails at
+    /// <c>Gatt.ConnectAsync()</c>. Select bonds with <c>WithBluetoothTransport(BluetoothTransport.LowEnergy)</c>
+    /// to keep those known to support LE (issue #302).</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
