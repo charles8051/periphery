@@ -49,6 +49,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
     private Exception? _lastFault;
     private bool _disposed;
     private int _reconnectInProgress;
+    private int _trackerWasActive;   // OpensWhilePresent only: the last state the tracker reported
     private int _faultedRecoveryInProgress;
     private int _resetCount;
 
@@ -112,6 +113,20 @@ public abstract class DeviceProxyBase<TDevice, TException>
     /// override it with a fake they advance.
     /// </summary>
     protected virtual TimeProvider TimeProvider => TimeProvider.System;
+
+    /// <summary>
+    /// <see langword="true"/> for a device that becomes active only once it is opened, such as a
+    /// Bluetooth LE peripheral that has no link until a central connects (ADR-0088 amendment). The
+    /// proxy then opens while the device is present, not only while it is active. A drop from
+    /// active back to present while open closes the session and connects again.
+    /// <see langword="false"/> by default: a device opens only while it is active.
+    /// </summary>
+    protected virtual bool OpensWhilePresent => false;
+
+    // ADR-0088: activity gates an open, unless the leaf opens while present.
+    private bool CanOpenNow => OpensWhilePresent ? _tracker.Device is not null : _tracker.IsActive;
+
+    private bool CanOpen(DeviceTrackerState state) => OpensWhilePresent ? state.IsPresent : state.IsActive;
 
     // Monotonic id of the live connection. Bumped under the open lock each time a
     // session opens; the stable-open dwell captures it and only clears the budget if
@@ -220,7 +235,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
     /// </summary>
     protected void CheckInitialState()
     {
-        if (_tracker.IsActive && _tracker.Device is { } device)
+        if (CanOpenNow && _tracker.Device is { } device)
             Forget(TryOpenDeviceAsync(device), nameof(TryOpenDeviceAsync));
         else if (_tracker.Device is { } present)
             MaybeStartFaultedNodeRecovery(present);   // already enumerated-but-faulted at construction
@@ -455,7 +470,8 @@ public abstract class DeviceProxyBase<TDevice, TException>
 
     private void OnTrackerStateChanged(object? sender, DeviceTrackerState state)
     {
-        if (state.IsActive)
+        bool wasActive = Interlocked.Exchange(ref _trackerWasActive, state.IsActive ? 1 : 0) == 1;
+        if (CanOpen(state))
         {
             // Re-enumeration is a fresh start: a power-cycled / replugged device
             // gets a clean reconnect budget. Clear a prior give-up, the last fault,
@@ -472,6 +488,12 @@ public abstract class DeviceProxyBase<TDevice, TException>
                 // GaveUp) is kept and is orthogonal to the stable-open dwell. It can
                 // only run from GaveUp, where there is no open session and therefore no
                 // pending dwell, so the two never double-clear or cancel each other.
+            }
+            // OpensWhilePresent: the link dropped under an open session, which is dead now.
+            if (OpensWhilePresent && wasActive && !state.IsActive && IsOpen)
+            {
+                Forget(ReopenAsync(state.Device!), nameof(ReopenAsync));
+                return;
             }
             Forget(TryOpenDeviceAsync(state.Device!), nameof(TryOpenDeviceAsync));
         }
@@ -849,7 +871,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
     {
         try
         {
-            while (!_disposed && !IsOpen && _tracker.IsActive)
+            while (!_disposed && !IsOpen && CanOpenNow)
             {
                 var deviceInfo = _tracker.Device;
                 if (deviceInfo is null) return;
@@ -875,7 +897,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
                         try { await Task.Delay(retry.Delay, TimeProvider, _disposeCts.Token).ConfigureAwait(false); }
                         catch (OperationCanceledException) { return; }
 
-                        if (_disposed || IsOpen || !_tracker.IsActive) return;
+                        if (_disposed || IsOpen || !CanOpenNow) return;
                         if (await TryOpenDeviceAsync(deviceInfo, requestReconnectOnFailure: false).ConfigureAwait(false))
                             return;                          // success -> TryOpen set State = Open
                         break;
@@ -900,7 +922,7 @@ public abstract class DeviceProxyBase<TDevice, TException>
 
             // Re-arm unless we deliberately gave up — and not while a reset is still
             // in flight (ExecuteResetAsync owns the loop until it returns).
-            if (!_disposed && !IsOpen && _tracker.IsActive
+            if (!_disposed && !IsOpen && CanOpenNow
                 && _state != ConnectionState.GaveUp && _state != ConnectionState.Resetting)
                 RequestReconnect();
         }
@@ -1068,6 +1090,15 @@ public abstract class DeviceProxyBase<TDevice, TException>
             {
             }
         }
+    }
+
+    // OpensWhilePresent: close the dead session, then connect again. A failed open re-arms the
+    // recovery loop, which backs off while the device stays silent.
+    private async Task ReopenAsync(DeviceInfo deviceInfo)
+    {
+        await CloseDeviceAsync().ConfigureAwait(false);
+        if (!_disposed && CanOpenNow)
+            await TryOpenDeviceAsync(_tracker.Device ?? deviceInfo).ConfigureAwait(false);
     }
 
     private async Task CloseDeviceAsync()

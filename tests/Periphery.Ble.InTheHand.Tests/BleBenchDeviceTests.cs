@@ -1,5 +1,7 @@
 #if WINDOWS
+using System.Diagnostics;
 using System.Net.NetworkInformation;
+using System.Threading.Channels;
 using InTheHand.Bluetooth;
 
 namespace Periphery.Ble.InTheHand.Tests;
@@ -9,6 +11,9 @@ namespace Periphery.Ble.InTheHand.Tests;
 /// when <c>PERIPHERY_BLE_DEVICE_TESTS=1</c>, with <c>PERIPHERY_BLE_BENCH_ADDRESS</c> naming a bench
 /// peripheral paired with this host and running a bench image, which serves Heart Rate and notifies
 /// once a second. When enabled, a missing peripheral is a failure, never a skip.
+/// The proxy test also needs <c>PERIPHERY_BLE_BENCH_JLINK</c>, the serial of the peripheral's J-Link,
+/// and <c>nrfutil</c> on <c>PATH</c> or in <c>PERIPHERY_BLE_BENCH_NRFUTIL</c>: it halts the
+/// peripheral to drop the link, then resets it.
 /// </summary>
 public class BleBenchDeviceTests
 {
@@ -35,6 +40,76 @@ public class BleBenchDeviceTests
         Assert.True(BluetoothAddress.TryParseInstanceId(node.Id.Value, out var parsed, out _) && parsed == address,
             $"'{node.Id.Value}' is not the link node of {address}.");
         return node;
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Proxy_ConnectsWhilePresent_AndReconnectsAfterTheLinkDrops()
+    {
+        if (!Enabled) return;
+
+        string? jlink = Environment.GetEnvironmentVariable("PERIPHERY_BLE_BENCH_JLINK");
+        Assert.False(string.IsNullOrEmpty(jlink), "Set PERIPHERY_BLE_BENCH_JLINK to the bench peripheral's J-Link serial.");
+        var node = await FindBenchNodeAsync();
+        var profile = new DeviceProfile(f => f
+            .OfCategory(DeviceCategory.Bluetooth)
+            .WithMacAddress(node.MacAddress!)
+            .WithBluetoothTransport(BluetoothTransport.LowEnergy), "bench");
+
+        var opened = Channel.CreateUnbounded<BleSession>();
+        var closed = Channel.CreateUnbounded<bool>();
+        var failed = Channel.CreateUnbounded<BleException>();
+        await using var proxy = await BleDeviceProxy.OpenAsync(profile);
+        proxy.DeviceOpened += (_, session) => opened.Writer.TryWrite(session);
+        proxy.DeviceClosed += (_, _) => closed.Writer.TryWrite(true);
+        proxy.OpenFailed += (_, ex) => failed.Writer.TryWrite(ex);
+        try
+        {
+            // Bounds that turn a stuck proxy into a failure; the proxy's own events are the
+            // signals (ADR-0089 D5). A connect to a silent peripheral took about 23 s here.
+            var first = proxy.Device ?? await opened.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(60));
+            Assert.Single(await ReadBodySensorLocationAsync(first));
+            while (opened.Reader.TryRead(out _)) { }   // the first open, if it raced the subscription
+
+            await NrfutilAsync("halt", jlink!);
+            await closed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+
+            // While the peripheral is silent, an attempt fails rather than opening a dead session.
+            var failure = await failed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(90));
+            Assert.Contains("did not connect", failure.Message);
+            Assert.False(proxy.IsOpen);
+
+            await NrfutilAsync("reset", jlink!);
+            var second = await opened.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(120));
+            Assert.NotSame(first, second);
+            Assert.Single(await ReadBodySensorLocationAsync(second));
+        }
+        finally
+        {
+            // Never leave the peripheral halted.
+            await NrfutilAsync("reset", jlink!);
+        }
+    }
+
+    private static async Task<byte[]> ReadBodySensorLocationAsync(BleSession session)
+    {
+        var service = await session.Gatt.GetPrimaryServiceAsync(HeartRateService);
+        Assert.NotNull(service);
+        var location = await service.GetCharacteristicAsync(BodySensorLocation);
+        Assert.NotNull(location);
+        return await location.ReadValueAsync() ?? [];
+    }
+
+    private static async Task NrfutilAsync(string verb, string serial)
+    {
+        string nrfutil = Environment.GetEnvironmentVariable("PERIPHERY_BLE_BENCH_NRFUTIL") ?? "nrfutil";
+        var start = new ProcessStartInfo(nrfutil) { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "device", verb, "--serial-number", serial })
+            start.ArgumentList.Add(arg);
+        using var process = Process.Start(start)!;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await process.WaitForExitAsync(cts.Token);
+        Assert.True(process.ExitCode == 0, $"nrfutil device {verb} exited {process.ExitCode}: {await process.StandardError.ReadToEndAsync()}");
     }
 
     [Fact]

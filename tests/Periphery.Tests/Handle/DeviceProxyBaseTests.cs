@@ -43,8 +43,10 @@ public class DeviceProxyBaseTests
         private readonly TimeSpan? _resetReopenTimeout;
         private readonly TimeSpan? _resetReopenPollInterval;
         private readonly TimeProvider? _timeProvider;
+        private readonly bool _opensWhilePresent;
 
         public FakeDevice? LastOpenedDevice { get; private set; }
+        public int OpenCount;
 
         public TestHandle(
             DeviceTracker tracker,
@@ -61,10 +63,12 @@ public class DeviceProxyBaseTests
             TimeSpan? faultedSettleWindow = null,
             TimeSpan? resetReopenTimeout = null,
             TimeSpan? resetReopenPollInterval = null,
-            TimeProvider? timeProvider = null)
+            TimeProvider? timeProvider = null,
+            bool opensWhilePresent = false)
             : base(tracker, watcher, recoveryPolicy, deviceReset, resetSafetyGate, faultedNodeRecovery)
         {
             _timeProvider = timeProvider;
+            _opensWhilePresent = opensWhilePresent;
             _openDevice = openDevice;
             _onActivated = onActivated;
             _onDeactivated = onDeactivated;
@@ -90,11 +94,14 @@ public class DeviceProxyBaseTests
         // system clock, where the delay's length changes how long they take but not what they see.
         protected override TimeProvider TimeProvider => _timeProvider ?? base.TimeProvider;
 
+        protected override bool OpensWhilePresent => _opensWhilePresent;
+
         protected override Task<FakeDevice> OpenDeviceAsync(
             DeviceInfo deviceInfo, CancellationToken ct)
         {
             var device = new FakeDevice();
             LastOpenedDevice = device;
+            Interlocked.Increment(ref OpenCount);
             return _openDevice?.Invoke(deviceInfo, ct)
                 ?? Task.FromResult(device);
         }
@@ -209,6 +216,98 @@ public class DeviceProxyBaseTests
         await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.True(fakeDevice.IsDisposed);
+    }
+
+    // ── OpensWhilePresent (ADR-0088 amendment) ─────────────────────────
+    // A BLE peripheral has no link until a central connects, so its proxy opens on presence.
+
+    private static readonly IRecoveryPolicy RetryAtOnce = new ExponentialBackoffRecoveryPolicy(TimeSpan.Zero, TimeSpan.Zero);
+
+    [Fact]
+    public async Task OpensWhilePresent_OpensAPresentDevice_ThatIsNotActive()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var opened = new TaskCompletionSource();
+        var handle = new TestHandle(tracker, watcher, opensWhilePresent: true);
+        handle.DeviceOpened += (_, _) => opened.TrySetResult();
+
+        tracker.OnDeviceAppeared(MakeDevice(isActive: false));
+        await opened.Task.WaitAsync(ProxyWait.Bound);
+
+        Assert.True(handle.IsOpen);
+        Assert.Equal(DeviceActivityStatus.Present, tracker.ActivityStatus);
+    }
+
+    [Fact]
+    public void ByDefault_APresentDevice_IsNotOpened()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var handle = new TestHandle(tracker, watcher);
+
+        // The state handler decides synchronously, so an open would have been started by now.
+        tracker.OnDeviceAppeared(MakeDevice(isActive: false));
+
+        Assert.Equal(0, handle.OpenCount);
+        Assert.False(handle.IsOpen);
+    }
+
+    [Fact]
+    public async Task OpensWhilePresent_KeepsTrying_WhileThePeripheralIsSilent()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        int attempts = 0;
+        var opened = new TaskCompletionSource();
+        var handle = new TestHandle(tracker, watcher, opensWhilePresent: true, recoveryPolicy: RetryAtOnce,
+            openDevice: (_, _) => ++attempts < 3
+                ? Task.FromException<FakeDevice>(new TimeoutException("silent"))
+                : Task.FromResult(new FakeDevice()));
+        handle.DeviceOpened += (_, _) => opened.TrySetResult();
+
+        tracker.OnDeviceAppeared(MakeDevice(isActive: false));
+        await opened.Task.WaitAsync(ProxyWait.Bound);
+
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task OpensWhilePresent_ALinkDrop_ClosesTheSession_AndConnectsAgain()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var device = MakeDevice(isActive: false);
+        var handle = new TestHandle(tracker, watcher, opensWhilePresent: true);
+        var closed = new TaskCompletionSource();
+        handle.DeviceClosed += (_, _) => closed.TrySetResult();
+
+        tracker.OnDeviceAppeared(device);
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen);
+        var first = handle.LastOpenedDevice!;
+
+        tracker.OnDeviceConnected(device with { IsActive = true });   // our connect made the link
+        Assert.Equal(1, handle.OpenCount);
+
+        tracker.OnDeviceDisconnected(device);                          // the link dropped
+        await closed.Task.WaitAsync(ProxyWait.Bound);
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen && handle.OpenCount == 2);
+
+        Assert.True(first.IsDisposed);
+    }
+
+    [Fact]
+    public async Task OpensWhilePresent_ClosesWhenTheDeviceLeaves()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var device = MakeDevice(isActive: false);
+        var handle = new TestHandle(tracker, watcher, opensWhilePresent: true);
+        var closed = new TaskCompletionSource();
+        handle.DeviceClosed += (_, _) => closed.TrySetResult();
+
+        tracker.OnDeviceAppeared(device);
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen);
+
+        tracker.OnDeviceDisappeared(device);
+        await closed.Task.WaitAsync(ProxyWait.Bound);
+
+        Assert.False(handle.IsOpen);
     }
 
     // ── Init gate (OnActivatedAsync) ──────────────────────────────────

@@ -106,6 +106,14 @@ as a Bluetooth peripheral going out of range, produces no close edge at all on W
 > **Amendment (2026-09-27).** The Bluetooth example no longer holds. A Bluetooth peripheral's
 > link node now gets `Deactivated` on Windows when its link drops, from the Bluetooth driver's
 > `GUID_BLUETOOTH_HCI_EVENT` (issue #286). The rule stands for every other device.
+>
+> **Amendment (2026-09-30), a device that goes active only once opened.** A bonded Bluetooth LE
+> peripheral that is not a HID device has no link until a central connects, so its link node
+> stays Present. A proxy that waited for Active never opened one within 60 s, on the Windows BLE
+> bench and on the Linux rig. `DeviceProxyBase.OpensWhilePresent` lets a leaf open while its
+> device is present. A drop from Active back to Present while open closes the session and
+> connects again. `BleDeviceProxy` (issue #314) is the only leaf that sets it; every other device
+> still opens on activity.
 
 `DeviceProxyBase` absorbs this with its reopen and readiness loops. A hand-rolled consumer will
 hold a handle across a soft stop it never hears about. This is the strongest argument for D3, and

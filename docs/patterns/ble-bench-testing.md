@@ -248,8 +248,13 @@ These are the same rules the Linux device rig follows.
 
    ```bash
    PERIPHERY_BLE_DEVICE_TESTS=1 PERIPHERY_BLE_BENCH_ADDRESS=EE:29:84:E4:8F:D0 \
+     PERIPHERY_BLE_BENCH_JLINK=685387386 \
      dotnet test tests/Periphery.Ble.InTheHand.Tests -f net10.0-windows10.0.19041.0 --filter Category=Integration
    ```
+
+   `BleDeviceProxy`'s test halts the peripheral through its J-Link to drop the link, waits for an
+   attempt to fail while it is silent, then resets it and waits for the reconnect. It needs
+   `PERIPHERY_BLE_BENCH_JLINK` and `nrfutil`, on `PATH` or in `PERIPHERY_BLE_BENCH_NRFUTIL`.
 
 ---
 
