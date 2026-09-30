@@ -91,7 +91,8 @@ public class BlueZRigTests
         // A safety net that bounds a failure; the edges are the signals (ADR-0089 D5).
         using var safety = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var first = await Task.WhenAny(activated.Task, drive).WaitAsync(safety.Token);
-        Assert.True(first == activated.Task, $"No Activated for {bond} before bluetoothctl finished. It said: {await drive}");
+        if (first != activated.Task)
+            Assert.Fail($"No Activated for {bond} before bluetoothctl finished. It said: {await drive}");
 
         var during = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
         Assert.True(during.Single(d => d.Id.Value == bond).IsActive);
