@@ -29,7 +29,7 @@ internal static class BleJoin
     /// the address in its instance id. A BlueZ bond carries it in <see cref="DeviceInfo.MacAddress"/>.
     /// </summary>
     /// <remarks>
-    /// A BlueZ bond does not say whether it is LE or BR/EDR (issue #302), so this accepts any. A
+    /// BlueZ's <c>Device1</c> merges both bearers into one bond (issue #302), so this accepts any. A
     /// Windows node must be the LE one.
     /// </remarks>
     /// <exception cref="ArgumentException">The device is neither.</exception>

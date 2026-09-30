@@ -64,7 +64,8 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 >   throws for the other platform's shape. On Linux it calls `Bluetooth.GetAvailabilityAsync()`
 >   first, because 32feet's Linux `FromIdAsync` reads an adapter that only its `Bluetooth` calls
 >   initialise. That adapter is the first BlueZ reports, so a bond on another adapter resolves to
->   null. BlueZ does not report a bond's transport (#302), so the Linux join does not check it.
+>   null. BlueZ's `Device1` merges both bearers into one bond, and its per-bearer interfaces,
+>   added in 5.84, are experimental (#302). So the Linux join does not check the transport.
 > - **Measured.** Against a packed build, `net10.0` builds with `Tmds.DBus` 0.95.1 and no audit
 >   warning, `net10.0-windows` fails with the D3 message, and `10.0.19041.0` and `10.0.22621.0`
 >   build with only `InTheHand.BluetoothLE`. On the Linux device rig, the join resolved the btvirt
