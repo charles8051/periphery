@@ -211,7 +211,9 @@ port can be Bluetooth RFCOMM), and `SetSignalsAsync(dtr, rts)` for bootloader en
 `DeviceId`.
 
 The first form uses the three facts Chromium keys a persisted grant on. It is the platform's
-identity, not one Periphery composed. When two attached devices share it, both get session ids. The
+identity, not one Periphery composed. It names a serial number, not a physical unit: two units that
+share a serial and are never attached together get the same id, as they do in a Windows USB instance
+ID and in Chromium's grant. When two attached devices share it, both get session ids. The
 first draft gave the durable id to whichever enumerated first, which after a reload can name the
 other unit. That is the fingerprint-as-fact problem [ADR-0083](0083-ble-identity-does-not-survive-repairing.md)
 D1 rules out.
@@ -250,9 +252,10 @@ the hook set, it opens through the hook. With the hook unset, the exception name
 
 The WebUSB backend:
 
-- awaits `open()`. If no configuration is active, it calls `selectConfiguration(1)`. That call is
-  not implemented on Windows, where the OS configures the device, so on Windows a device with no
-  active configuration fails to open;
+- awaits `open()`. If no configuration is active, it calls `selectConfiguration` with the
+  `configurationValue` of the device's first configuration, which need not be 1. That call is not
+  implemented on Windows, where the OS configures the device, so on Windows a device with no active
+  configuration fails to open;
 - claims interface 0 at open. `ClaimInterface(0)` and `ReleaseInterface(0)` are no-ops until
   dispose, and any other interface throws `NotSupportedException`, all as in `WinUsbBackend`;
 - reads the device and configuration descriptors with `GET_DESCRIPTOR` and parses them with the
@@ -294,9 +297,12 @@ Bulk and interrupt IN:
    over instead of issuing another. A second concurrent `transferIn` would take the next packet out
    of order.
 3. Bytes that arrive beyond the reading caller's buffer are kept in the endpoint's queue. The next
-   read drains the queue before it issues a transfer. This matches WinUSB's default partial-read
-   policy. `LibUsbBackend` reports an overflow instead (`LibUsbBackend.cs:876`), so Linux desktop
-   and the browser differ here.
+   read drains the queue before it issues a transfer. Rules 1 and 2 are what make surplus possible:
+   a transfer rounded up to a packet, or one sized by an earlier caller, can return more than the
+   current buffer holds. The host has already taken those bytes from the device, so reporting an
+   overflow would drop them. WinUSB's default partial-read policy behaves the same way.
+   `LibUsbBackend` reports an overflow instead (`LibUsbBackend.cs:876`), so Linux desktop and the
+   browser differ here.
 4. An abandoned transfer that ends in a fault holds the fault. The next read on that endpoint gets
    it.
 
@@ -318,10 +324,16 @@ Control transfers on endpoint 0:
 8. A control transfer never takes over and never holds. A new one waits for an abandoned one to
    settle, and the abandoned result is discarded. A DFU `UPLOAD`'s flash bytes must never be read as
    the reply to a later `GETSTATUS`.
+9. Because of rule 8, an abandoned control OUT, such as a DFU `DNLOAD`, reaches the device before
+   any later control transfer. Its effect on the device is unknown to the caller. A caller must
+   re-read device state before it retries a request that is not idempotent. `Stm32DfuProgrammer`
+   does: it opens with no transfer timeout, never retries a `DNLOAD`, and starts each operation from
+   `EnsureIdleAsync`, which reads `GETSTATUS` and aborts to `dfuIDLE`
+   (`Stm32DfuProgrammer.cs:72,109,172-191`).
 
 Disposal:
 
-9. `DisposeAsync` fails every waiting caller, discards held data and faults, then calls `close()`.
+10. `DisposeAsync` fails every waiting caller, discards held data and faults, then calls `close()`.
 
 ### D8 — Nothing in the browser path blocks on a task
 
@@ -441,6 +453,7 @@ reopens the decision it names.
 | Abandon and take over | On a raw `UsbDevice`, a read on `0x82` times out while the device is silent. The device then answers, and the next read on `0x82` returns those bytes. The `0x81` report read never faults. | D7 |
 | Board-level timeout | On `TreehopperBoard`, a timed-out response read latches the desync (`TreehopperBoard.cs:875-876`), and a following pin reconcile succeeds. | D7 |
 | STM32 DFU | `Stm32DfuProgrammer` reads the bootloader version from a granted STM32 in DFU mode, on Windows and on Linux. Record whether Windows needed a driver step. | D1, D6 |
+| DFU after a cancel | Cancel a flash mid-download, then flash again with a new `Stm32DfuProgrammer`. The second flash verifies. | D7 rule 9 |
 | Web Serial pipe | `Stm32SerialProgrammer` syncs over `BrowserSerialPort` with bootloader entry through `SetSignalsAsync`. The exploration's spike already passed this; the gate re-runs it on the package. | D4 |
 
 ---
