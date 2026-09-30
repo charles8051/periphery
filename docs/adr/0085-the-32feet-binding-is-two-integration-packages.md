@@ -53,9 +53,11 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 >   colon form.
 > - **The package.** It ships `net10.0` (Linux, 32feet's BlueZ provider), `net10.0-windows10.0.19041.0`
 >   (WinRT), and D3's `net10.0-windows` sentinel again. The sentinel is needed once more, because
->   an unversioned Windows consumer would otherwise fall back to the `net10.0` asset. Its error
->   target now runs before `PrepareForBuild`, so the consumer sees the D3 message rather than a
->   compile error.
+>   an unversioned Windows consumer would otherwise fall back to the `net10.0` asset. D3's two
+>   framework-routed `buildTransitive` files become one root-level target that every consumer
+>   imports. It errors when the consumer's `TargetPlatformVersion` is below 10.0.19041, so the
+>   boundary is stated once. It runs before `PrepareForBuild`, so the consumer sees the D3 message
+>   rather than a compile error.
 > - **D4's exposure is gone.** `InTheHand.BluetoothLE` 4.0.45 pins `Tmds.DBus` 0.95.1 for its
 >   Linux asset. 4.0.44 took 0.20.0 (CVE-2026-39959) through `Linux.Bluetooth`.
 > - **The join.** It accepts a `BTHLE\DEV_` node on Windows and a `bluez:` bond on Linux, and

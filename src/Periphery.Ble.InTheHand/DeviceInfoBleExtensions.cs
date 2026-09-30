@@ -30,7 +30,8 @@ public static class DeviceInfoBleExtensions
     /// address.</para>
     /// <para>On Linux, 32feet uses the first adapter BlueZ reports. A bond on another adapter
     /// resolves to <see langword="null"/>. BlueZ does not say whether a bond is LE or BR/EDR, so
-    /// this does not check.</para>
+    /// this does not check: a classic-only bond resolves too, and its <c>Gatt.ConnectAsync()</c>
+    /// fails. A successful join does not mean the device speaks LE.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">

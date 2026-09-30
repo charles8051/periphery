@@ -43,13 +43,11 @@
     <Compile Remove="**/*.cs" />
   </ItemGroup>
 
-  <!-- A consumer's build picks the nearest buildTransitive folder for its own framework. An
-       unversioned Windows target lands on the error; 10.0.19041 or later lands on the empty file. -->
+  <!-- Imported by every consumer. The target fails the build only for a Windows version below
+       10.0.19041, the boundary the net10.0-windows10.0.19041.0 target above names. -->
   <ItemGroup>
-    <None Include="buildTransitive/RequiresWindows10.targets" Pack="true"
-          PackagePath="buildTransitive/net10.0-windows7.0/Periphery.Ble.InTheHand.targets" />
-    <None Include="buildTransitive/Empty.targets" Pack="true"
-          PackagePath="buildTransitive/net10.0-windows10.0.19041/Periphery.Ble.InTheHand.targets" />
+    <None Include="buildTransitive/Periphery.Ble.InTheHand.targets" Pack="true"
+          PackagePath="buildTransitive/Periphery.Ble.InTheHand.targets" />
   </ItemGroup>
 
   <ItemGroup>

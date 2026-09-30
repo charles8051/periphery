@@ -42,5 +42,6 @@ a new node and address after it is re-paired.
 
 On Linux:
 - 32feet uses the first adapter BlueZ reports, so a bond on a second adapter resolves to `null`.
-- BlueZ does not say whether a bond is LE or BR/EDR, so the join does not check.
+- BlueZ does not say whether a bond is LE or BR/EDR, so the join does not check. A classic-only
+  bond resolves too, and `Gatt.ConnectAsync()` fails on it.
 - The package reaches BlueZ through 32feet, over `Linux.Bluetooth` and `Tmds.DBus`.

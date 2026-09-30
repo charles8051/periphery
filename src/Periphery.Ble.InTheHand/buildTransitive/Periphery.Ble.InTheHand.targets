@@ -1,0 +1,10 @@
+<Project>
+  <!-- ADR-0085 D3. One target for every consumer, conditioned on its own Windows version. Below
+       10.0.19041, NuGet hands a Windows consumer the net10.0-windows sentinel, which has no surface,
+       because 32feet's only Windows GATT asset needs 10.0.19041. Runs before PrepareForBuild, so the
+       consumer sees this rather than a compile error for the namespace the sentinel does not carry. -->
+  <Target Name="PeripheryBleRequiresWindows10" BeforeTargets="PrepareForBuild"
+          Condition="'$(TargetPlatformIdentifier)' == 'Windows' and $([MSBuild]::VersionLessThan('$(TargetPlatformVersion)', '10.0.19041.0'))">
+    <Error Text="Periphery.Ble.InTheHand needs net10.0-windows10.0.19041.0 or later on Windows. 32feet's only Windows GATT asset targets 10.0.19041, so an older Windows target gets no API. Raise your TargetFramework." />
+  </Target>
+</Project>
