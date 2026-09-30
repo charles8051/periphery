@@ -1,0 +1,4 @@
+<Project>
+  <!-- Packed for net10.0-windows10.0.19041 so that target and later ones resolve here rather than
+       to the unversioned Windows error in RequiresWindows10.targets. Deliberately empty. -->
+</Project>
