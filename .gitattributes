@@ -29,3 +29,6 @@
 *.gz   binary
 *.tar  binary
 *.nupkg binary
+
+# Captured binary fixtures (ADR-0091 D-Bus messages)
+*.bin binary

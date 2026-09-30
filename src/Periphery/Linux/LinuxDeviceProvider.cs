@@ -10,6 +10,9 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Periphery.Linux.BlueZ;
+using Periphery.Linux.BlueZ.Core;
+using Periphery.Linux.DBus;
 
 namespace Periphery.Linux;
 
@@ -22,6 +25,19 @@ internal sealed class LinuxDeviceProvider : IDeviceProvider
 {
     private static readonly ILogger<LinuxDeviceProvider> _logger =
         PeripheryLoggerFactory.CreateLogger<LinuxDeviceProvider>();
+
+    // ADR-0091 D3: one instance for the process, so each BlueZ failure is logged once and an
+    // AccessDenied is remembered.
+    private static readonly BlueZDeviceSource _sharedBlueZ = new(
+        DBusConnection.ConnectSystemBusAsync,
+        TimeProvider.System,
+        PeripheryLoggerFactory.CreateLogger<BlueZDeviceSource>());
+
+    private readonly BlueZDeviceSource _bluez;
+
+    public LinuxDeviceProvider() : this(_sharedBlueZ) { }
+
+    internal LinuxDeviceProvider(BlueZDeviceSource bluez) => _bluez = bluez;
 
     public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
         DeviceFilter filter,
@@ -124,8 +140,12 @@ internal sealed class LinuxDeviceProvider : IDeviceProvider
             UdevInterop.udev_unref(udev);
         }
 
-        // Satisfy the compiler — async iterator requires at least one await.
-        await Task.CompletedTask.ConfigureAwait(false);
+        // ADR-0091 D1: bonded Bluetooth devices live in BlueZ, not in udev.
+        if (BlueZInventory.ShouldQuery(filter))
+        {
+            foreach (var device in await _bluez.EnumerateAsync(ct).ConfigureAwait(false))
+                yield return device;
+        }
     }
 
     /// <summary>

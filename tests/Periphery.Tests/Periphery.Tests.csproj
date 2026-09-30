@@ -26,4 +26,9 @@
     <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Raw D-Bus messages captured from BlueZ (ADR-0091), read by the codec and mapping tests. -->
+    <None Include="Linux\Fixtures\**\*.bin" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
