@@ -23,6 +23,10 @@ namespace Periphery.Ble.InTheHand;
 /// </remarks>
 public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
 {
+    // The session of the latest connect attempt. A late cleanup of an abandoned attempt disconnects
+    // only while no newer attempt has started, since on Linux a disconnect drops the link for all.
+    private BleSession? _latest;
+
     private BleDeviceProxy(DeviceTracker tracker, DeviceWatcher watcher, IRecoveryPolicy? recoveryPolicy)
         : base(tracker, watcher, recoveryPolicy, NullDeviceReset.Instance) { }
 
@@ -53,9 +57,11 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
 
         // Subscribed before connecting, so a drop during the connect is not missed.
         var session = new BleSession(device);
-        var connect = device.Gatt.ConnectAsync();
+        Volatile.Write(ref _latest, session);
+        Task? connect = null;
         try
         {
+            connect = device.Gatt.ConnectAsync();
             await connect.WaitAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -68,7 +74,8 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
             // ConnectAsync takes no token and runs on. Disconnect again once it settles, so a
             // connection that completes after the cancel is not left up.
             await session.DisposeAsync().ConfigureAwait(false);
-            _ = DisconnectWhenSettledAsync(connect, session);
+            if (connect is not null)
+                _ = DisconnectWhenSettledAsync(connect, session);
             throw;
         }
 
@@ -81,7 +88,7 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
         return session;
     }
 
-    private static async Task DisconnectWhenSettledAsync(Task connect, BleSession session)
+    private async Task DisconnectWhenSettledAsync(Task connect, BleSession session)
     {
         try
         {
@@ -91,7 +98,8 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
         {
             // A connect that failed left nothing to disconnect.
         }
-        session.Gatt.Disconnect();
+        if (ReferenceEquals(Volatile.Read(ref _latest), session))
+            session.Gatt.Disconnect();
     }
 
     /// <summary>Fails when the link drops, which closes the session and connects again.</summary>
