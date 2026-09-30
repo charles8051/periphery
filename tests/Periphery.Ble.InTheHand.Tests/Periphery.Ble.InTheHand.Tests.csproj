@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- The package is Windows only. net10.0 compiles its pure join in, so those tests run on every
-         CI host. On Windows the project also builds for the package's framework, which adds the
-         device tests. -->
+    <!-- net10.0 builds on every host and references the package's BlueZ build, so the pure join
+         tests run everywhere and the Linux rig tests run on the rig. On Windows the project also
+         builds the package's Windows framework, which adds the bench device tests. -->
     <TargetFrameworks>net10.0</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -26,13 +26,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <Compile Include="..\..\src\Periphery.Ble.InTheHand\BleJoin.cs" Link="BleJoin.cs" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0'">
     <ProjectReference Include="..\..\src\Periphery.Ble.InTheHand\Periphery.Ble.InTheHand.csproj" />
   </ItemGroup>
 

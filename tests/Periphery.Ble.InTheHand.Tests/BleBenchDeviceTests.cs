@@ -44,7 +44,7 @@ public class BleBenchDeviceTests
         Assert.NotNull(device);
         // 32feet's Windows Id drops leading zeros, so the two meet as parsed addresses.
         Assert.True(BluetoothAddress.TryParse(device.Id, out var joined), $"32feet Id '{device.Id}' is not an address.");
-        Assert.Equal(BleJoin.LeAddressOf(node), joined);
+        Assert.Equal(BleJoin.AddressOf(node).Address, joined);
     }
 
     [Fact]
