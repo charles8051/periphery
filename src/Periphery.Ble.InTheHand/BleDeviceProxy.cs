@@ -29,6 +29,7 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
     // attempt takes to claim it.
     private readonly object _linkGate = new();
     private BleSession? _owner;
+    private BleSession? _stale;   // an abandoned connect that settled while another attempt owned the link
 
     private BleDeviceProxy(DeviceTracker tracker, DeviceWatcher watcher, IRecoveryPolicy? recoveryPolicy)
         : base(tracker, watcher, recoveryPolicy, NullDeviceReset.Instance) { }
@@ -88,6 +89,10 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
             await ReleaseAsync(session).ConfigureAwait(false);
             throw new BleException($"'{deviceInfo.Id}' did not connect; it may be out of range.");
         }
+
+        // The open session wants the link, so a stale connection no longer needs dropping.
+        lock (_linkGate)
+            _stale = null;
         return session;
     }
 
@@ -105,6 +110,8 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
         {
             if (_owner is null)
                 session.Gatt.Disconnect();
+            else
+                _stale = session;   // the owner's release drops it if the owner fails
         }
     }
 
@@ -114,12 +121,20 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
             _owner = session;
     }
 
+    // A failed attempt gives up the link, and drops a stale connection left for it.
     private ValueTask ReleaseAsync(BleSession session)
     {
         lock (_linkGate)
         {
             if (ReferenceEquals(_owner, session))
+            {
                 _owner = null;
+                if (_stale is { } stale)
+                {
+                    _stale = null;
+                    stale.Gatt.Disconnect();
+                }
+            }
         }
         return session.DisposeAsync();
     }
