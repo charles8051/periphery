@@ -122,7 +122,6 @@ public class MacOSCategoryMapTests
 
     [Theory]
     [InlineData(DeviceCategory.Usb, MacOSCategoryMap.IOUSBDevice)]
-    [InlineData(DeviceCategory.Bluetooth, MacOSCategoryMap.IOBluetoothDevice)]
     [InlineData(DeviceCategory.Network, MacOSCategoryMap.IONetworkInterface)]
     [InlineData(DeviceCategory.Display, MacOSCategoryMap.IODisplayConnect)]
     [InlineData(DeviceCategory.Hid, MacOSCategoryMap.IOHIDDevice)]
@@ -135,5 +134,16 @@ public class MacOSCategoryMapTests
         var classes = MacOSCategoryMap.GetIOKitClasses(category);
 
         Assert.Contains(expectedClass, classes);
+    }
+
+    // ── Bluetooth (ADR-0093) ───────────────────────────────────────────
+
+    [Fact]
+    public void GetIOKitClasses_Bluetooth_QueriesNoRegistryClass()
+    {
+        // The registry's IOBluetoothDevice is the Mac's own incoming serial service; bonds come
+        // from IOBluetooth.
+        Assert.Empty(MacOSCategoryMap.GetIOKitClasses(DeviceCategory.Bluetooth));
+        Assert.DoesNotContain(MacOSCategoryMap.IOBluetoothDevice, MacOSCategoryMap.GetIOKitClasses(DeviceCategory.All));
     }
 }

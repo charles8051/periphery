@@ -34,7 +34,7 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | # | Issue | Platforms | Evidence | Resolves with |
 |---|---|---|---|---|
 | 1 | `OfCategory(Bluetooth)` returns adapters and address-less link objects. It never returns a bonded device. | Linux | Source | Nothing in core. Bonds exist only in BlueZ, over D-Bus. |
-| 2 | `OfCategory(Bluetooth)` matches `IOBluetoothDevice` registry objects. Those historically existed only for connected BR/EDR devices, and may not exist at all under the macOS 12 userspace stack. | macOS | Reported | `ioreg -r -l -c IOBluetoothDevice` on macOS 13+ with a connected BR/EDR device, then a connected LE device. |
+| 2 | `OfCategory(Bluetooth)` matched `IOBluetoothDevice` registry objects. On macOS 26.4 the only one is the Mac's own incoming serial service, never a bond. | macOS | Measured | Settled by ADR-0093: bonds come from IOBluetooth's `pairedDevices`. |
 | 3 | 32feet's `BluetoothDevice.Id` has a different format on each platform. On Windows it drops leading zeros. | All | Source, Measured | Parse to a number before comparing. |
 | 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented | Nothing. It is a platform privacy decision. |
 | 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, and read-only on BlueZ 5.80+. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS is unverified. |
@@ -42,7 +42,7 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. Later RPAs resolve to that devnode; a re-pair creates a new one. | Windows | Measured | Settled on Windows; see [Durability, measured](#durability-measured). |
 | 8 | A BlueZ `Device1` object is not a bond. Discovery creates temporary objects that BlueZ removes after 30 s. `Bonded` exists only from BlueZ 5.65, and Ubuntu 22.04 ships 5.64. | Linux | Documented, Source | Select on `Paired`. Treat `Bonded` as optional. |
 | 9 | Pairing has three shapes: an API on Windows, an agent on Linux, and no API on macOS. On macOS, 32feet's `IsPaired` is always `false`. | All | Documented, Source | No common surface. See [Pairing](#pairing). |
-| 10 | TCC attributes a console process's CoreBluetooth use to the terminal. A binary built against the macOS 11+ SDK without `NSBluetoothAlwaysUsageDescription` is terminated on first use. | macOS | Reported | Run the CLI and an example on a Mac, from a terminal with and without Bluetooth permission. |
+| 10 | TCC attributes a console process's Bluetooth use to its responsible process: the terminal app, or `sshd-keygen-wrapper` over SSH. Without access, IOBluetooth returns no bonds and no error, and `CBManager.authorization` reads not determined without prompting. A binary built against the macOS 11+ SDK without `NSBluetoothAlwaysUsageDescription` is terminated on first use. | macOS | Measured, Reported | The termination is unmeasured: every run here was a console binary. |
 | 11 | Windows records LE address type and privacy in `DEVPKEY_Bluetooth_DeviceFlags`. Core can read both without WinRT. | Windows | Measured | Freshness across a re-pair is unmeasured. |
 | 12 | Every WinRT Bluetooth Id embeds the local radio's address. The Microsoft stack runs one radio at a time. | Windows | Measured, Reported | Swap the adapter and compare Ids. |
 

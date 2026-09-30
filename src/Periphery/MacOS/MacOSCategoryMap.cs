@@ -38,11 +38,13 @@ internal static class MacOSCategoryMap
     /// </summary>
     internal static string[] GetIOKitClasses(DeviceCategory? category) => category switch
     {
-        null or DeviceCategory.All => [IOUSBDevice, IOUSBHostDevice, IOBluetoothDevice,
+        null or DeviceCategory.All => [IOUSBDevice, IOUSBHostDevice,
             IONetworkInterface, IODisplayConnect, IOHIDDevice, IOAudioDevice, IOMedia,
             AppleSmartBattery, IOVideoDevice, IOSerialBSDClient, IOUSBSmartCardController],
         DeviceCategory.Usb       => [IOUSBDevice, IOUSBHostDevice],
-        DeviceCategory.Bluetooth => [IOBluetoothDevice],
+        // ADR-0093: bonds come from IOBluetooth. The registry's one IOBluetoothDevice is the Mac's
+        // own incoming serial service, which Ports already reports.
+        DeviceCategory.Bluetooth => [],
         DeviceCategory.Network   => [IONetworkInterface],
         DeviceCategory.Display   => [IODisplayConnect],
         DeviceCategory.Monitor   => [IODisplayConnect],

@@ -11,6 +11,8 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Periphery.MacOS.Bluetooth;
+using Periphery.MacOS.Bluetooth.Core;
 using Periphery.MacOS.Core;
 
 namespace Periphery.MacOS;
@@ -24,6 +26,12 @@ internal sealed class MacOSDeviceProvider : IDeviceProvider
 {
     private static readonly ILogger<MacOSDeviceProvider> _logger =
         PeripheryLoggerFactory.CreateLogger<MacOSDeviceProvider>();
+
+    /// <summary>ADR-0093 D2: one instance for the process, so each reason for no bonds is logged once.</summary>
+    internal static IOBluetoothDeviceSource SharedBluetooth { get; } = new(
+        IOBluetoothInterop.ReadAuthorization,
+        IOBluetoothInterop.ReadBonds,
+        PeripheryLoggerFactory.CreateLogger<IOBluetoothDeviceSource>());
 
     public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
         DeviceFilter filter,
@@ -121,6 +129,13 @@ internal sealed class MacOSDeviceProvider : IDeviceProvider
         _logger.LogInformation(
             "Device enumeration completed. Found: {DeviceCount}, Skipped: {SkippedCount}",
             deviceCount, skippedCount);
+
+        // ADR-0093 D1: bonded Bluetooth devices live in IOBluetooth, not in the IOKit registry.
+        if (IOBluetoothInventory.ShouldQuery(filter))
+        {
+            foreach (var device in SharedBluetooth.Enumerate(ct))
+                yield return device;
+        }
 
         // Satisfy the compiler: async iterator must contain at least one await
         await Task.CompletedTask.ConfigureAwait(false);
