@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Periphery.MacOS.Core;
 
 namespace Periphery.MacOS;
 
@@ -143,24 +144,21 @@ internal sealed class MacOSDeviceProvider : IDeviceProvider
         DeviceInfo device;
         if (kr != IOKitInterop.kIOReturnSuccess || properties == IntPtr.Zero)
         {
-            device = new DeviceInfo
-            {
-                Id = deviceId,
-                Category = MacOSCategoryMap.ResolveCategory(ioKitClass),
-                IOServiceClass = ioKitClass,
-                BusType = MacOSCategoryMap.InferBusType(ioKitClass),
-            };
+            device = IOKitDeviceMap.Unreadable(deviceId, ioKitClass);
         }
         else
         {
+            IOKitProperties snapshot;
             try
             {
-                device = BuildDeviceInfoFromProperties(service, deviceId, ioKitClass, properties, networkInfo);
+                snapshot = ReadProperties(properties);
             }
             finally
             {
                 IOKitInterop.CFRelease(properties);
             }
+
+            device = WithNetwork(IOKitDeviceMap.ToDeviceInfo(deviceId, ioKitClass, snapshot), snapshot, networkInfo);
         }
 
         // ADR-0051 §5: run the registered enricher pass so capability tags
@@ -188,172 +186,39 @@ internal sealed class MacOSDeviceProvider : IDeviceProvider
         }
     }
 
-    private static DeviceInfo BuildDeviceInfoFromProperties(
-        uint service, string deviceId, string ioKitClass, IntPtr properties,
-        Dictionary<string, NetworkInterfaceEntry>? networkInfo)
+    /// <summary>Reads the keys <see cref="IOKitDeviceMap"/> names from a registry entry's properties.</summary>
+    private static IOKitProperties ReadProperties(IntPtr properties)
     {
-        // Name: try multiple known keys
-        string? name = IOKitInterop.GetCFStringValue(properties, "USB Product Name")
-            ?? IOKitInterop.GetCFStringValue(properties, "Product")
-            ?? IOKitInterop.GetCFStringValue(properties, "IOHIDProduct")
-            ?? IOKitInterop.GetCFStringValue(properties, "IOClass");
+        var values = ImmutableDictionary.CreateBuilder<string, object>(StringComparer.Ordinal);
+        foreach (var key in IOKitDeviceMap.StringKeys)
+            if (IOKitInterop.GetCFStringValue(properties, key) is { } text)
+                values[key] = text;
+        foreach (var key in IOKitDeviceMap.NumberKeys)
+            if (IOKitInterop.GetCFNumberLongValue(properties, key) is { } number)
+                values[key] = number;
+        foreach (var key in IOKitDeviceMap.BoolKeys)
+            if (IOKitInterop.GetCFBooleanValue(properties, key) is { } flag)
+                values[key] = flag;
+        foreach (var key in IOKitDeviceMap.DataKeys)
+            if (IOKitInterop.GetCFDataValue(properties, key) is { } data)
+                values[key] = data;
+        return new IOKitProperties(values.ToImmutable());
+    }
 
-        // Manufacturer
-        string? manufacturer = IOKitInterop.GetCFStringValue(properties, "USB Vendor Name")
-            ?? IOKitInterop.GetCFStringValue(properties, "IOHIDManufacturer");
-
-        // VendorId / ProductId
-        HardwareId? vendorId = null;
-        HardwareId? productId = null;
-        int? vidInt = IOKitInterop.GetCFNumberIntValue(properties, "idVendor")
-            ?? IOKitInterop.GetCFNumberIntValue(properties, "HIDVendorID");
-        int? pidInt = IOKitInterop.GetCFNumberIntValue(properties, "idProduct")
-            ?? IOKitInterop.GetCFNumberIntValue(properties, "HIDProductID");
-        if (vidInt is > 0 and <= ushort.MaxValue)
-            vendorId = (HardwareId)(ushort)vidInt.Value;
-        if (pidInt is > 0 and <= ushort.MaxValue)
-            productId = (HardwareId)(ushort)pidInt.Value;
-
-        // Serial number
-        string? serialNumber = IOKitInterop.GetCFStringValue(properties, "USB Serial Number")
-            ?? IOKitInterop.GetCFStringValue(properties, "IOHIDSerialNumber");
-
-        // Category (resolve from IOKit class, with subcategory refinement)
-        DeviceCategory category = MacOSCategoryMap.ResolveCategory(ioKitClass);
-        int? hidUsagePage = null;
-        int? hidUsage = null;
-        if (ioKitClass == MacOSCategoryMap.IOHIDDevice)
+    /// <summary>Adds the addresses of the interface the entry names in <c>BSD Name</c>.</summary>
+    private static DeviceInfo WithNetwork(
+        DeviceInfo device, IOKitProperties properties, Dictionary<string, NetworkInterfaceEntry>? networkInfo)
+    {
+        if (properties.String("BSD Name") is not { } interfaceName || networkInfo is null
+            || !networkInfo.TryGetValue(interfaceName, out var entry))
         {
-            hidUsagePage = IOKitInterop.GetCFNumberIntValue(properties, "PrimaryUsagePage");
-            hidUsage = IOKitInterop.GetCFNumberIntValue(properties, "PrimaryUsage");
-            category = MacOSCategoryMap.ResolveHidCategory(hidUsagePage, hidUsage);
-        }
-        else if (ioKitClass is MacOSCategoryMap.IOUSBDevice or MacOSCategoryMap.IOUSBHostDevice)
-        {
-            // Tier 2 (ADR-0013): refine USB category via bDeviceClass descriptor field
-            int? usbDeviceClass = IOKitInterop.GetCFNumberIntValue(properties, "bDeviceClass");
-            category = MacOSCategoryMap.ResolveUsbCategory(usbDeviceClass) ?? category;
+            return device;
         }
 
-        // Bus type
-        BusType busType = MacOSCategoryMap.InferBusType(ioKitClass);
-
-        // IsActive — presence of sessionID property indicates an active session
-        bool isConnected = IOKitInterop.GetCFNumberLongValue(properties, "sessionID") is not null;
-
-        // Driver info
-        string? driver = IOKitInterop.GetCFStringValue(properties, "CFBundleIdentifier");
-        string? driverVersionStr = IOKitInterop.GetCFStringValue(properties, "CFBundleVersion");
-        Version? driverVersion = driverVersionStr is not null && Version.TryParse(driverVersionStr, out var ver) ? ver : null;
-
-        // MAC address (IONetworkController stores as 6-byte CFData under "IOMACAddress")
-        PhysicalAddress? macAddress = null;
-        byte[]? macBytes = IOKitInterop.GetCFDataValue(properties, "IOMACAddress");
-        if (macBytes is { Length: 6 })
-            macAddress = new PhysicalAddress(macBytes);
-
-        // Network interface name → IP addresses and network
-        ImmutableArray<IPAddress>? ipAddresses = null;
-        IPNetwork? network = null;
-        string? interfaceName = IOKitInterop.GetCFStringValue(properties, "BSD Name");
-        if (interfaceName is not null && networkInfo is not null &&
-            networkInfo.TryGetValue(interfaceName, out var netEntry))
+        return device with
         {
-            if (netEntry.Addresses.Count > 0)
-                ipAddresses = [.. netEntry.Addresses];
-            network = netEntry.Network;
-        }
-
-        // Battery info
-        int? batteryChargePercent = null;
-        BatteryStatus? batteryStatus = null;
-        bool? isExternalPowerConnected = null;
-        if (ioKitClass == MacOSCategoryMap.AppleSmartBattery)
-        {
-            int? currentCapacity = IOKitInterop.GetCFNumberIntValue(properties, "CurrentCapacity");
-            int? maxCapacity = IOKitInterop.GetCFNumberIntValue(properties, "MaxCapacity");
-            if (currentCapacity is not null && maxCapacity is not null and > 0)
-                batteryChargePercent = (int)((double)currentCapacity.Value / maxCapacity.Value * 100);
-
-            bool? isCharging = IOKitInterop.GetCFBooleanValue(properties, "IsCharging");
-            bool? externalConnected = IOKitInterop.GetCFBooleanValue(properties, "ExternalConnected");
-            isExternalPowerConnected = externalConnected;
-
-            batteryStatus = (isCharging, externalConnected, batteryChargePercent) switch
-            {
-                (true, _, _) => Periphery.BatteryStatus.Charging,
-                (false, true, >= 100) => Periphery.BatteryStatus.Full,
-                (false, true, _) => Periphery.BatteryStatus.NotCharging,
-                (false, false or null, _) => Periphery.BatteryStatus.Discharging,
-                _ => Periphery.BatteryStatus.Unknown,
-            };
-
-            // Battery devices are always considered "connected" if we can read their properties
-            isConnected = true;
-        }
-
-        // For network interfaces, consider connected if link status is active
-        if (ioKitClass == MacOSCategoryMap.IONetworkInterface)
-        {
-            // Network interfaces in the registry are present → connected
-            isConnected = true;
-        }
-
-        // Display resolution
-        System.Drawing.Size? displayResolution = null;
-        if (ioKitClass == MacOSCategoryMap.IODisplayConnect)
-        {
-            int? hRes = IOKitInterop.GetCFNumberIntValue(properties, "IODisplayPrefsKey");
-            // Display resolution from IOKit is complex; basic fallback
-            isConnected = true;
-        }
-
-        // Serial port name (ADR-0013 Tier 1: IOSerialBSDClient)
-        SerialPortName? portName = null;
-        if (ioKitClass == MacOSCategoryMap.IOSerialBSDClient)
-        {
-            // Prefer the callout device (/dev/cu.*) over the dialin device (/dev/tty.*)
-            // because callout is the standard path for initiating serial communication.
-            string? calloutDevice = IOKitInterop.GetCFStringValue(properties, "IOCalloutDevice");
-            string? dialinDevice = IOKitInterop.GetCFStringValue(properties, "IODialinDevice");
-            string? portPath = calloutDevice ?? dialinDevice;
-            if (portPath is not null)
-                portName = new SerialPortName(portPath);
-
-            // Serial port devices are considered connected when present in the registry
-            isConnected = true;
-        }
-
-        // Location path — use the IOKit class and device ID as a stable location
-        string locationPath = $"IOService:/{ioKitClass}/{deviceId}";
-
-        return new DeviceInfo
-        {
-            Id = deviceId,
-            Name = name,
-            Category = category,
-            Manufacturer = manufacturer,
-            VendorId = vendorId,
-            ProductId = productId,
-            SerialNumber = serialNumber,
-            IsActive = isConnected,
-            Status = DeviceStatus.OK,
-            BusType = busType,
-            LocationPath = locationPath,
-            Driver = driver,
-            DriverVersion = driverVersion,
-            MacAddress = macAddress,
-            IPAddresses = ipAddresses,
-            Network = network,
-            BatteryChargePercent = batteryChargePercent,
-            BatteryStatus = batteryStatus,
-            IsExternalPowerConnected = isExternalPowerConnected,
-            DisplayResolution = displayResolution,
-            PortName = portName,
-            HidUsagePage = (ushort?)hidUsagePage,
-            HidUsage = (ushort?)hidUsage,
-            IOServiceClass = ioKitClass,
-            Properties = ImmutableDictionary<string, object?>.Empty,
+            IPAddresses = entry.Addresses.Count > 0 ? [.. entry.Addresses] : null,
+            Network = entry.Network,
         };
     }
 
