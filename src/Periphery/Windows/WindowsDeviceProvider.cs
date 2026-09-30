@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
@@ -213,6 +214,7 @@ public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
             DriveType = driveType,
             PortName = portName,
             UsbClassCode = usbClassCode,
+            MacAddress = BluetoothMacAddressOf(instanceId),
             BluetoothTransports = BluetoothTransportsOf(instanceId),
             Properties = propertiesBuilder.ToImmutable(),
         };
@@ -225,6 +227,15 @@ public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
     internal static BluetoothTransports? BluetoothTransportsOf(string instanceId) =>
         BluetoothAddress.TryParseInstanceId(instanceId, out _, out var transport)
             ? (BluetoothTransports)(int)transport
+            : null;
+
+    /// <summary>
+    /// A paired peripheral's link node carries its address in its instance id (issue #301). Service
+    /// and function nodes embed it too and get none: they read active while the link is down (#294).
+    /// </summary>
+    internal static PhysicalAddress? BluetoothMacAddressOf(string instanceId) =>
+        BluetoothAddress.TryParseInstanceId(instanceId, out var address, out _)
+            ? address.ToPhysicalAddress()
             : null;
 
     /// <summary>

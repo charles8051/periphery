@@ -27,6 +27,17 @@ and `Deactivated`. Its `MacAddress` is the peer's address. A `bluetoothd` restar
 the adapter, raises `Disappeared` for each of that adapter's bonds and `Appeared` when they
 return. If the system bus or BlueZ cannot be reached, only the adapters are returned.
 
+### 2. On Windows, a Bluetooth peripheral's link node has a `MacAddress`
+
+`MacAddress` was null on every Windows Bluetooth node. A paired peripheral's `BTHENUM\DEV_` or
+`BTHLE\DEV_` link node now carries the peripheral's address (issue #301). Linux bonds carry it
+too (section 1).
+
+> **This one does not announce itself.** Code that selected network adapters with
+> `Where(d => d.MacAddress is not null)` now also gets these nodes.
+
+Select network adapters by category instead: `OfCategory(DeviceCategory.Network)`.
+
 ## `v4.3.0` — since `v4.2.0`
 
 ### 1. An empty profile list no longer throws

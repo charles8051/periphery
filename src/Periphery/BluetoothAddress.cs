@@ -3,6 +3,7 @@
 
 using System;
 using System.Globalization;
+using System.Net.NetworkInformation;
 
 namespace Periphery;
 
@@ -19,10 +20,9 @@ namespace Periphery;
 /// at pairing, so a re-paired private-address peripheral comes back under a new address, as
 /// does one that picks a new static address when it re-pairs. A peripheral that keeps one static
 /// address keeps its key.</para>
-/// <para>Only Windows instance IDs carry the address; see <see cref="TryParseInstanceId"/>. On
-/// Windows <see cref="DeviceInfo.MacAddress"/> is <see langword="null"/> for a Bluetooth node (issue
-/// #301). On Linux a bonded device comes from BlueZ, and its <see cref="DeviceInfo.MacAddress"/>
-/// holds the address (ADR-0091).</para>
+/// <para>Only Windows instance IDs carry the address; see <see cref="TryParseInstanceId"/>. A
+/// paired peripheral's <see cref="DeviceInfo.MacAddress"/> holds it too: on Windows its link node's
+/// (issue #301), and on Linux the BlueZ bond's (ADR-0091).</para>
 /// </remarks>
 public readonly record struct BluetoothAddress : IFormattable
 {
@@ -165,6 +165,15 @@ public readonly record struct BluetoothAddress : IFormattable
     /// Windows, <c>Device1.AddressType</c> on BlueZ. A BR/EDR address is always public.
     /// </remarks>
     public BluetoothRandomAddressKind ClassifyAsRandom() => (BluetoothRandomAddressKind)(Value >> 46);
+
+    /// <summary>The six octets, most significant first, as <see cref="DeviceInfo.MacAddress"/> carries them.</summary>
+    internal PhysicalAddress ToPhysicalAddress()
+    {
+        var bytes = new byte[6];
+        for (int i = 0; i < bytes.Length; i++)
+            bytes[i] = (byte)(Value >> (40 - 8 * i));
+        return new PhysicalAddress(bytes);
+    }
 
     // ── Formatting ─────────────────────────────────────────────────────
 
