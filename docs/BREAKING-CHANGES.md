@@ -38,7 +38,19 @@ too (section 1).
 
 Select network adapters by category instead: `OfCategory(DeviceCategory.Network)`.
 
-### 3. On macOS, a HID device reads active, and a serial port is named after its tty
+### 3. On macOS, Bluetooth results are bonds, and need Bluetooth permission
+
+`OfCategory(DeviceCategory.Bluetooth)` on macOS returned the IOKit registry's `IOBluetoothDevice`
+entries. On current macOS the only one is the Mac's own incoming serial service, with no name and
+no address. It now returns one device per bond, with `Id` `iobluetooth:<address>` (ADR-0093). The
+serial service is still reported under `Ports`.
+
+> **This one does not announce itself.** Bonds are reported only when the process has Bluetooth
+> permission. A program run over SSH, under `launchd` or in CI gets none, and logs why once.
+
+Give the terminal app Bluetooth access under Privacy & Security, or have an app bundle request it.
+
+### 4. On macOS, a HID device reads active, and a serial port is named after its tty
 
 A macOS `IOHIDDevice` reported `IsActive = false` and raised `Appeared` without `Activated`. It
 now reports `true` while it is in the registry, and a watcher raises `Activated` after `Appeared`

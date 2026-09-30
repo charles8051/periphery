@@ -115,7 +115,8 @@ The core package only discovers devices. Extension packages talk to them.
 
 - [.NET 10](https://dotnet.microsoft.com/) or later. A best-effort `net8.0` build also ships.
 - **Linux:** `libudev.so.1`. `Periphery.Usb` also needs `libusb-1.0` 1.0.23 or newer.
-- **Windows and macOS:** no native dependencies.
+- **Windows and macOS:** no native dependencies. On macOS, Bluetooth bonds are reported only to a
+  process with Bluetooth permission (ADR-0093).
 
 ## Design principles
 

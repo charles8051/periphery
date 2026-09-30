@@ -9,6 +9,8 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Periphery.MacOS.Bluetooth;
+using Periphery.MacOS.Bluetooth.Core;
 
 namespace Periphery.MacOS;
 
@@ -47,6 +49,7 @@ internal sealed class MacOSDeviceMonitorProvider : IDeviceMonitorProvider
 
     private CancellationTokenSource? _scanCts;
     private Task? _scanTask;
+    private IOBluetoothMonitor? _bluetooth;
     private readonly object _cacheLock = new();
     // Keyed by DeviceId for consistency with the other two providers. On macOS
     // DeviceInfo.Id is an IOKit registry entry id rendered as DECIMAL DIGITS
@@ -158,6 +161,17 @@ internal sealed class MacOSDeviceMonitorProvider : IDeviceMonitorProvider
 
             _scanCts = new CancellationTokenSource();
             _scanTask = Task.Run(() => ScanLoopAsync(_scanCts.Token));
+
+            // ADR-0093 D4: bonds are polled from IOBluetooth beside the IOKit notifications.
+            if (IOBluetoothInventory.ShouldQuery(_filter))
+            {
+                _bluetooth = new IOBluetoothMonitor(
+                    () => MacOSDeviceProvider.SharedBluetooth.Snapshot(),
+                    TimeProvider.System,
+                    PeripheryLoggerFactory.CreateLogger<IOBluetoothMonitor>(),
+                    RaiseBluetooth);
+                _bluetooth.Start();
+            }
 
             _logger.LogInformation(
                 "Device notifications registered; scan loop started (interval: {Interval} s).",
@@ -460,11 +474,33 @@ internal sealed class MacOSDeviceMonitorProvider : IDeviceMonitorProvider
         }
     }
 
+    private void RaiseBluetooth(IOBluetoothEdge edge)
+    {
+        _logger.LogDebug("IOBluetooth {Edge}: {DeviceId} ({DeviceName})", edge.Kind, edge.Device.Id, edge.Device.Name ?? "(unnamed)");
+        var args = new DeviceChangeEventArgs(edge.Device);
+        switch (edge.Kind)
+        {
+            case IOBluetoothEdgeKind.Appeared: DeviceAppeared?.Invoke(this, args); break;
+            case IOBluetoothEdgeKind.Disappeared: DeviceDisappeared?.Invoke(this, args); break;
+            case IOBluetoothEdgeKind.Activated: DeviceActivated?.Invoke(this, args); break;
+            case IOBluetoothEdgeKind.Deactivated: DeviceDeactivated?.Invoke(this, args); break;
+            case IOBluetoothEdgeKind.PropertyChanged:
+                DevicePropertyChanged?.Invoke(this, new DeviceModificationEventArgs(edge.Previous!, edge.Device));
+                break;
+        }
+    }
+
     // ── Disposal ───────────────────────────────────────────────────────
 
     public async ValueTask DisposeAsync()
     {
         _logger.LogInformation("Stopping device monitor, cancelling scan loop and releasing IOKit handles");
+
+        if (_bluetooth is not null)
+        {
+            await _bluetooth.DisposeAsync().ConfigureAwait(false);
+            _bluetooth = null;
+        }
 
         if (_scanCts is not null)
         {
