@@ -17,6 +17,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   - **Without BlueZ:** if the bus, BlueZ, or permission to reach it is missing, only the adapters are reported, and it logs once per process.
 
 ### Changed
+- **A Windows Bluetooth link node has a `MacAddress`** (issue #301). A paired peripheral's `BTHENUM\DEV_` or `BTHLE\DEV_` node carries the address from its instance id, so `WithMacAddress` selects it. It was null on every Bluetooth node. A peripheral's service and function nodes still carry none. Code that took `MacAddress is not null` to mean a network adapter now also gets these nodes; see [BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md).
 - **Linux no longer reports a Bluetooth connection as its own device** (ADR-0091 D7). The `hciN:<handle>` objects udev creates per connection are left out. They had no name or address, and the bond's `IsActive` now reports the connection. See [BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md).
 - **`periphery camera capture`** saves frames from one camera through `CameraFrameSinks.SaveToDirectoryAsync`. MJPEG frames are written as `.jpg`. Other formats are written as `.raw`, with the dimensions and pixel format in the filename. The camera is chosen with `--name` or `--id`, or implicitly when only one is connected. `--format` sets the preferred pixel format (default `mjpeg`), `--max-resolution` caps the size, `--frames` sets the count, and `--skip` discards frames while auto-exposure settles. Stdout carries only the saved paths. Progress and errors go to stderr.
 

@@ -1,4 +1,5 @@
 using System;
+using System.Net.NetworkInformation;
 
 namespace Periphery.Tests;
 
@@ -163,5 +164,14 @@ public class BluetoothAddressTests
 
         Assert.Equal(address, BluetoothAddress.Parse(address.ToString()));
         Assert.Equal(address, BluetoothAddress.Parse(address.ToString("X12", null)));
+    }
+
+    // ── MacAddress ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void ToPhysicalAddress_IsMostSignificantOctetFirst()
+    {
+        Assert.Equal(PhysicalAddress.Parse("A0-B1-C2-D3-E4-F5"), new BluetoothAddress(Keyboard).ToPhysicalAddress());
+        Assert.Equal(PhysicalAddress.Parse("00-00-00-00-00-01"), new BluetoothAddress(1).ToPhysicalAddress());
     }
 }

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using System.Collections.Immutable;
-using System.Net.NetworkInformation;
 using Periphery.Linux.DBus.Core;
 using BlueZObjects = System.Collections.Immutable.ImmutableDictionary<string,
     System.Collections.Immutable.ImmutableDictionary<string,
@@ -125,7 +124,7 @@ internal static class BlueZInventory
             BusType = BusType.Bluetooth,
             Status = DeviceStatus.OK,
             IsActive = Flag(device, "Connected"),
-            MacAddress = ToPhysicalAddress(address),
+            MacAddress = address.ToPhysicalAddress(),
             BluetoothTransports = TransportsOf(interfaces, device),
             LocationPath = path,
         };
@@ -182,14 +181,6 @@ internal static class BlueZInventory
         device.TryGetValue("UUIDs", out var value) && value is DBusVariant { Value: DBusArray { Items: var items } }
             ? items.OfType<DBusString>().Select(s => s.Value.ToLowerInvariant())
             : [];
-
-    private static PhysicalAddress ToPhysicalAddress(BluetoothAddress address)
-    {
-        var bytes = new byte[6];
-        for (int i = 0; i < 6; i++)
-            bytes[i] = (byte)(address.Value >> (40 - 8 * i));
-        return new PhysicalAddress(bytes);
-    }
 
     private static bool Flag(IReadOnlyDictionary<string, DBusValue> properties, string name) =>
         properties.TryGetValue(name, out var value) && value is DBusVariant { Value: DBusBoolean { Value: true } };

@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using System.Runtime.Versioning;
 using Periphery.Windows;
 
@@ -18,6 +19,18 @@ public class WindowsDeviceProviderTests
     [InlineData(@"USB\VID_046D&PID_C52B\5&3A1B2C&0&2", null)]
     public void BluetoothTransportsOf_OnlyALinkNodeNamesATransport(string instanceId, BluetoothTransports? expected) =>
         Assert.Equal(expected, WindowsDeviceProvider.BluetoothTransportsOf(instanceId));
+
+    // ── Bluetooth address (#301) ───────────────────────────────────────
+    // The link node carries the peripheral's address. A GATT service node embeds the same address
+    // and must not match WithMacAddress, since it reads active while the link is down (#294).
+    [Theory]
+    [InlineData(@"BTHENUM\DEV_AABBCCDDEEFF\A&16071615&0&BLUETOOTHDEVICE_AABBCCDDEEFF", "AABBCCDDEEFF")]
+    [InlineData(@"BTHLE\Dev_0011223344FF\A&EDE6A8A&0&0011223344FF", "0011223344FF")]
+    [InlineData(@"BTHENUM\{0000110B-0000-1000-8000-00805F9B34FB}_VID&00010000_PID&0000\A&16071615&0&AABBCCDDEEFF_C00000000", null)]
+    [InlineData(@"BTHLEDEVICE\{00001801-0000-1000-8000-00805F9B34FB}_112233445566\B&22CEDFE8&0&0001", null)]
+    [InlineData(@"USB\VID_046D&PID_C52B\5&3A1B2C&0&2", null)]
+    public void BluetoothMacAddressOf_OnlyALinkNodeCarriesTheAddress(string instanceId, string? expected) =>
+        Assert.Equal(expected is null ? null : PhysicalAddress.Parse(expected), WindowsDeviceProvider.BluetoothMacAddressOf(instanceId));
 
     [Fact]
     public void ResolveCategory_MediaGuid_MapsToAudio()

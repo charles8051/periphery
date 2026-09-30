@@ -1,4 +1,5 @@
 #if WINDOWS
+using System.Net.NetworkInformation;
 using InTheHand.Bluetooth;
 
 namespace Periphery.Ble.InTheHand.Tests;
@@ -23,12 +24,16 @@ public class BleBenchDeviceTests
         Assert.True(BluetoothAddress.TryParse(text, out var address),
             "Set PERIPHERY_BLE_BENCH_ADDRESS to the bench peripheral's address.");
 
-        var nodes = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
-        var node = nodes.SingleOrDefault(d =>
-            BluetoothAddress.TryParseInstanceId(d.Id.Value, out var a, out var t)
-            && t == BluetoothTransport.LowEnergy
-            && a == address);
+        // The filters alone select the LE link node (#301, #302); the id check proves they did.
+        var nodes = await Devices.Enumerate()
+            .OfCategory(DeviceCategory.Bluetooth)
+            .WithMacAddress(PhysicalAddress.Parse(address.ToString()))
+            .WithBluetoothTransport(BluetoothTransport.LowEnergy)
+            .ToListAsync();
+        var node = nodes.SingleOrDefault();
         Assert.True(node is not null, $"No paired LE node for {address}. Pair the bench peripheral with this host.");
+        Assert.True(BluetoothAddress.TryParseInstanceId(node.Id.Value, out var parsed, out _) && parsed == address,
+            $"'{node.Id.Value}' is not the link node of {address}.");
         return node;
     }
 

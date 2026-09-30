@@ -1,7 +1,7 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
 status: "Accepted"
-status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. 2026-09-30 amendment: net10.0 ships again for Linux, joining ADR-0091's BlueZ bonds, on InTheHand.BluetoothLE 4.0.45. BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. 2026-09-30 amendment: net10.0 ships again for Linux, joining ADR-0091's BlueZ bonds, on InTheHand.BluetoothLE 4.0.45. 2026-09-30 amendment: a link node's MacAddress holds its address (#301). BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
 date: "2026-09-02"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm", "api-design", "device-proxy"]
@@ -80,6 +80,12 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > peripherals known to support the transport, which selects the LE link node the D7 join takes
 > without the caller parsing an id. The flags mean *supports*, not *bonded over*, because that is
 > what Linux can report. ADR-0091 records where Linux takes it from.
+>
+> **Amendment (2026-09-30), D5's `MacAddress`.** D5 recorded `MacAddress` as null on every
+> Bluetooth node. A paired peripheral's link node now carries its address there, parsed from the
+> instance id (issue #301), so `WithMacAddress` selects it. Its service and function nodes still
+> carry none, since they read active while the link is down (#294). `BluetoothAddress` stays the
+> join key: the join reads the instance id, not `MacAddress`.
 
 ## Status
 

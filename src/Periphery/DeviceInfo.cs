@@ -128,7 +128,9 @@ public sealed record DeviceInfo
     // ── Network ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// MAC address for network adapters and Bluetooth devices.
+    /// MAC address for network adapters and Bluetooth devices. A paired Bluetooth peripheral carries
+    /// its address: on Windows its <c>BTHENUM\DEV_…</c> or <c>BTHLE\DEV_…</c> link node, and on
+    /// Linux its BlueZ bond. Its service and function nodes carry none.
     /// Uses <see cref="System.Net.NetworkInformation.PhysicalAddress"/>
     /// from the BCL — supports parsing, formatting, and value equality.
     /// </summary>
