@@ -6,4 +6,12 @@ config BENCH_AUTO_ADVERTISE
 	help
 	  For a board with no console to type `bt init` into, such as the Thingy:52.
 
+config BENCH_PUBLIC_ADDRESS
+	string "Public address to give the controller before the stack starts"
+	default ""
+	help
+	  Nordic parts have no public address. When set, main() writes this one
+	  (AA:BB:CC:DD:EE:FF) to the controller, and identity 0 becomes public on
+	  a board whose flash holds no stored identity.
+
 source "Kconfig.zephyr"
