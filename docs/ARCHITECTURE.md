@@ -849,7 +849,7 @@ This section captures concrete issues identified by comparing the Windows provid
 |----------|---------------|
 | Usb | `/sys/bus/usb/devices/` |
 | Network | `/sys/class/net/` |
-| Bluetooth | `/sys/class/bluetooth/` (basic) or D-Bus/BlueZ |
+| Bluetooth | adapters from `/sys/class/bluetooth/`; bonded devices from BlueZ over D-Bus (ADR-0091) |
 | Hid | `/sys/class/input/`, `/sys/bus/hid/devices/` |
 | Display | `/sys/class/drm/` |
 | Audio | `/sys/class/sound/` |

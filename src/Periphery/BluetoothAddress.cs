@@ -19,8 +19,10 @@ namespace Periphery;
 /// at pairing, so a re-paired private-address peripheral comes back under a new address, as
 /// does one that picks a new static address when it re-pairs. A peripheral that keeps one static
 /// address keeps its key.</para>
-/// <para>Only Windows instance IDs carry the address; see <see cref="TryParseInstanceId"/>.
-/// <see cref="DeviceInfo.MacAddress"/> is always <see langword="null"/> for a Bluetooth node.</para>
+/// <para>Only Windows instance IDs carry the address; see <see cref="TryParseInstanceId"/>. On
+/// Windows <see cref="DeviceInfo.MacAddress"/> is <see langword="null"/> for a Bluetooth node (issue
+/// #301). On Linux a bonded device comes from BlueZ, and its <see cref="DeviceInfo.MacAddress"/>
+/// holds the address (ADR-0091).</para>
 /// </remarks>
 public readonly record struct BluetoothAddress : IFormattable
 {

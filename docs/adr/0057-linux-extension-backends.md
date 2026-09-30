@@ -14,6 +14,11 @@ superseded_by: ""
 **Related:** ADR-0010 (udev Linux core provider), ADR-0020 (HID extension; sketched the hidraw plan), ADR-0035 (camera foundation; named V4L2), ADR-0038 (USB extension; named libusb and rejected LibUsbDotNet), ADR-0052 (Treehopper pure core — rides the USB seam unchanged)
 
 > **Number provisional.** Per this repo's convention the ADR number is assigned at merge; renumber if `0057` is taken by a parallel branch.
+>
+> **Amendment (2026-09-30).** The device rig also runs `btvirt -L -l2` from `bluez-test-tools`:
+> two virtual LE controllers under `bluetoothd`, hci0 `00:AA:01:00:00:00` bonded to hci1
+> `00:AA:01:01:00:01`. ADR-0091's BlueZ tests use it, and the CI preflight checks
+> `periphery-btvirt.service`.
 
 ---
 

@@ -111,7 +111,7 @@ jobs:
         # missing — a silent skip here would rot the rig unnoticed.
         #
         # Every fixture checked here is SYNTHESIZED (v4l2loopback, vivid, uhid,
-        # QEMU-emulated USB HID), so it can be rebuilt on demand and a red run
+        # QEMU-emulated USB HID, btvirt Bluetooth controllers), so it can be rebuilt on demand and a red run
         # always means something this repo can fix. The rig also has a physical
         # UVC webcam, and it is deliberately NOT checked: CI must not depend on
         # hardware a person has to plug in, and the tests that need it are
@@ -120,6 +120,7 @@ jobs:
           ls -l /dev/video10
           ls -l /dev/video20
           systemctl is-active periphery-testpattern.service periphery-uhid-ups.service
+          systemctl is-active periphery-btvirt.service bluetooth.service
           lsusb | grep -q "0627:0001" && echo "QEMU USB HID present"
 
       - name: Restore

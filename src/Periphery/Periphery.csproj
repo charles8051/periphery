@@ -12,7 +12,7 @@
 
     <!-- Package Metadata -->
     <PackageId>Periphery</PackageId>
-<Description>Cross-platform .NET library for discovering hardware devices (USB, Bluetooth, network adapters, displays, etc.). Discovery-only — no protocol I/O. Uses SetupAPI/cfgmgr32 on Windows, libudev on Linux, and IOKit on macOS.</Description>
+<Description>Cross-platform .NET library for discovering hardware devices (USB, Bluetooth, network adapters, displays, etc.). Discovery-only — no protocol I/O. Uses SetupAPI/cfgmgr32 on Windows, libudev and BlueZ on Linux, and IOKit on macOS.</Description>
     <PackageTags>hardware;usb;bluetooth;device-enumeration;wmi;cross-platform;device-discovery;hid;network-adapter</PackageTags>
 
     <!-- SourceLink: lets consumers step into library source while debugging -->
