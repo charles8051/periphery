@@ -235,6 +235,8 @@ public abstract class DeviceProxyBase<TDevice, TException>
     /// </summary>
     protected void CheckInitialState()
     {
+        // OpensWhilePresent needs the starting activity, so a first drop from Active is seen.
+        Interlocked.Exchange(ref _trackerWasActive, _tracker.IsActive ? 1 : 0);
         if (CanOpenNow && _tracker.Device is { } device)
             Forget(TryOpenDeviceAsync(device), nameof(TryOpenDeviceAsync));
         else if (_tracker.Device is { } present)

@@ -53,9 +53,10 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
 
         // Subscribed before connecting, so a drop during the connect is not missed.
         var session = new BleSession(device);
+        var connect = device.Gatt.ConnectAsync();
         try
         {
-            await device.Gatt.ConnectAsync().WaitAsync(ct).ConfigureAwait(false);
+            await connect.WaitAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -64,7 +65,10 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
         }
         catch
         {
+            // ConnectAsync takes no token and runs on. Disconnect again once it settles, so a
+            // connection that completes after the cancel is not left up.
             await session.DisposeAsync().ConfigureAwait(false);
+            _ = DisconnectWhenSettledAsync(connect, session);
             throw;
         }
 
@@ -75,6 +79,19 @@ public sealed class BleDeviceProxy : DeviceProxyBase<BleSession, BleException>
             throw new BleException($"'{deviceInfo.Id}' did not connect; it may be out of range.");
         }
         return session;
+    }
+
+    private static async Task DisconnectWhenSettledAsync(Task connect, BleSession session)
+    {
+        try
+        {
+            await connect.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A connect that failed left nothing to disconnect.
+        }
+        session.Gatt.Disconnect();
     }
 
     /// <summary>Fails when the link drops, which closes the session and connects again.</summary>

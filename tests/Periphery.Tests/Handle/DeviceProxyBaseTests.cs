@@ -96,6 +96,8 @@ public class DeviceProxyBaseTests
 
         protected override bool OpensWhilePresent => _opensWhilePresent;
 
+        public void CheckInitialStateForTest() => CheckInitialState();
+
         protected override Task<FakeDevice> OpenDeviceAsync(
             DeviceInfo deviceInfo, CancellationToken ct)
         {
@@ -290,6 +292,24 @@ public class DeviceProxyBaseTests
         await ProxyWait.UntilAsync(handle, () => handle.IsOpen && handle.OpenCount == 2);
 
         Assert.True(first.IsDisposed);
+    }
+
+    [Fact]
+    public async Task OpensWhilePresent_ADropFromAnActiveStart_ClosesAndConnectsAgain()
+    {
+        var (tracker, watcher) = CreateTestInfra();
+        var device = MakeDevice(isActive: false);
+        SimulateConnect(tracker, device with { IsActive = true });   // active before the proxy exists
+
+        var handle = new TestHandle(tracker, watcher, opensWhilePresent: true);
+        var closed = new TaskCompletionSource();
+        handle.DeviceClosed += (_, _) => closed.TrySetResult();
+        handle.CheckInitialStateForTest();
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen);
+
+        tracker.OnDeviceDisconnected(device);
+        await closed.Task.WaitAsync(ProxyWait.Bound);
+        await ProxyWait.UntilAsync(handle, () => handle.IsOpen && handle.OpenCount == 2);
     }
 
     [Fact]
