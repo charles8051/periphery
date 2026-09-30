@@ -38,6 +38,18 @@ too (section 1).
 
 Select network adapters by category instead: `OfCategory(DeviceCategory.Network)`.
 
+### 3. On macOS, a HID device reads active, and a serial port is named after its tty
+
+A macOS `IOHIDDevice` reported `IsActive = false` and raised `Appeared` without `Activated`. It
+now reports `true` while it is in the registry, and a watcher raises `Activated` after `Appeared`
+(issue #203). A serial port's `Name` was its IOKit class, `IOSerialBSDClient`; it is now its tty
+name, such as `debug-console`.
+
+> **This one does not announce itself.** A macOS filter on `IsActive` now includes HID devices,
+> and code matching a port by the name `IOSerialBSDClient` matches nothing.
+
+Match a serial port by `PortName` instead.
+
 ## `v4.3.0` — since `v4.2.0`
 
 ### 1. An empty profile list no longer throws
