@@ -55,6 +55,69 @@ public class BlueZInventoryTests
         Assert.Equal(new[] { CentralBond, PeripheralBond }, devices.Select(d => d.Id.Value));
     }
 
+    // ── Transport (#302) ───────────────────────────────────────────────
+
+    [Fact]
+    public void CapturedReply_BothBondsAreLowEnergy_ByTheirCachedGattServices()
+    {
+        // The btvirt bonds have public addresses and no Appearance or Class. Their cached Generic
+        // Access and Generic Attribute services are the only evidence, and they are enough.
+        var devices = BlueZInventory.Map(Body(BlueZFixtures.ManagedObjectsDisconnected));
+
+        Assert.All(devices, d => Assert.Equal(BluetoothTransports.LowEnergy, d.BluetoothTransports));
+    }
+
+    public static TheoryData<string, BluetoothTransports> Clues() => new()
+    {
+        { "random address", BluetoothTransports.LowEnergy },
+        { "appearance", BluetoothTransports.LowEnergy },
+        { "gatt service", BluetoothTransports.LowEnergy },
+        { "class", BluetoothTransports.BrEdr },
+        { "class and appearance", BluetoothTransports.BrEdr | BluetoothTransports.LowEnergy },
+        { "nothing", BluetoothTransports.None },
+    };
+
+    [Theory]
+    [MemberData(nameof(Clues))]
+    public void Before584_TheTransportIsTheUnionOfDevice1sClues(string clue, BluetoothTransports expected)
+    {
+        var properties = new List<(string, DBusValue)> { ("Bonded", B(true)) };
+        properties.AddRange(clue switch
+        {
+            "random address" => [("AddressType", S("random"))],
+            "appearance" => [("Appearance", new DBusInteger('q', 0x03C1))],
+            "gatt service" => [("UUIDs", Uuids("0000180a-0000-1000-8000-00805f9b34fb", "00001801-0000-1000-8000-00805F9B34FB"))],
+            "class" => [("Class", new DBusInteger('u', 0x240404))],
+            "class and appearance" => [("Class", new DBusInteger('u', 0x240404)), ("Appearance", new DBusInteger('q', 0x03C1))],
+            _ => [("AddressType", S("public")), ("UUIDs", Uuids("0000110b-0000-1000-8000-00805f9b34fb"))],
+        });
+
+        var device = Assert.Single(BlueZInventory.Map(Managed(Adapter0, Device("dev_11", "11:22:33:44:55:66", [.. properties]))));
+
+        Assert.Equal(expected, device.BluetoothTransports);
+    }
+
+    [Theory]
+    [InlineData(true, false, BluetoothTransports.LowEnergy)]
+    [InlineData(false, true, BluetoothTransports.BrEdr)]
+    [InlineData(true, true, BluetoothTransports.LowEnergy | BluetoothTransports.BrEdr)]
+    public void From584_TheBearerInterfacesDecide_OverTheClues(bool le, bool brEdr, BluetoothTransports expected)
+    {
+        // A Class would say BR/EDR. The bearer interfaces are exact, so they win.
+        var interfaces = new List<DBusDictEntry>
+        {
+            Interface(BlueZInventory.DeviceInterface,
+                ("Address", S("11:22:33:44:55:66")), ("Adapter", new DBusString('o', "/org/bluez/hci0")),
+                ("Bonded", B(true)), ("Class", new DBusInteger('u', 0x240404))),
+        };
+        if (le) interfaces.Add(Interface(BlueZInventory.LowEnergyBearerInterface));
+        if (brEdr) interfaces.Add(Interface(BlueZInventory.BrEdrBearerInterface));
+
+        var device = Assert.Single(BlueZInventory.Map(Managed(Adapter0, Object("/org/bluez/hci0/dev_11", [.. interfaces]))));
+
+        Assert.Equal(expected, device.BluetoothTransports);
+    }
+
     // ── D1: what counts as a bond ──────────────────────────────────────
 
     [Theory]

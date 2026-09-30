@@ -129,6 +129,30 @@ public class BlueZWatchTests
     }
 
     [Fact]
+    public void TransportEvidence_ArrivingLater_IsAPropertyChange()
+    {
+        // BlueZ updates UUIDs whenever GATT or SDP discovery finds services.
+        var state = Seed(Managed(Adapter0, Bonded("dev_11", connected: true))).State;
+        Assert.Equal(BluetoothTransports.None, state.Devices[Bond].BluetoothTransports);
+
+        var step = Step(state, new MessageReceived(PropertiesChanged("dev_11", [("UUIDs", Uuids("00001800-0000-1000-8000-00805f9b34fb"))])));
+
+        var edge = Assert.Single(step.Edges);
+        Assert.Equal(BlueZEdgeKind.PropertyChanged, edge.Kind);
+        Assert.Equal(BluetoothTransports.LowEnergy, edge.Device.BluetoothTransports);
+    }
+
+    [Fact]
+    public void BearerInterfaceAdded_IsAPropertyChange()
+    {
+        var state = Seed(Managed(Adapter0, Bonded("dev_11", connected: false))).State;
+
+        var step = Step(state, new MessageReceived(InterfacesAdded(Object("/org/bluez/hci0/dev_11", Interface(BlueZInventory.BrEdrBearerInterface)))));
+
+        Assert.Equal(BluetoothTransports.BrEdr, Assert.Single(step.Edges).Device.BluetoothTransports);
+    }
+
+    [Fact]
     public void SignalFromAnyoneButTheOwner_IsIgnored()
     {
         var state = Seed(Managed(Adapter0, Bonded("dev_11", connected: false))).State;

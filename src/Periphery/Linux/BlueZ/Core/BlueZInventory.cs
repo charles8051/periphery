@@ -35,6 +35,15 @@ internal static class BlueZInventory
     internal const string AdapterInterface = "org.bluez.Adapter1";
     internal const string ObjectManagerInterface = "org.freedesktop.DBus.ObjectManager";
     internal const string ManagedObjectsSignature = "a{oa{sa{sv}}}";
+    internal const string LowEnergyBearerInterface = "org.bluez.Bearer.LE1";
+    internal const string BrEdrBearerInterface = "org.bluez.Bearer.BREDR1";
+
+    // A cached Generic Access or Generic Attribute service: BlueZ ran GATT discovery with the device.
+    private static readonly ImmutableHashSet<string> GattCoreServices =
+    [
+        "00001800-0000-1000-8000-00805f9b34fb",
+        "00001801-0000-1000-8000-00805f9b34fb",
+    ];
 
     /// <summary>The prefix of every BlueZ device's <see cref="DeviceInfo.Id"/>.</summary>
     internal const string IdPrefix = "bluez:";
@@ -76,7 +85,7 @@ internal static class BlueZInventory
         {
             if (objects[path].TryGetValue(DeviceInterface, out var device)
                 && IsBonded(device)
-                && ToDeviceInfo(path, device, objects) is { } info)
+                && ToDeviceInfo(path, objects[path], device, objects) is { } info)
                 candidates.Add((path, info));
         }
 
@@ -95,6 +104,7 @@ internal static class BlueZInventory
 
     private static DeviceInfo? ToDeviceInfo(
         string path,
+        ImmutableDictionary<string, ImmutableDictionary<string, DBusValue>> interfaces,
         IReadOnlyDictionary<string, DBusValue> device,
         BlueZObjects objects)
     {
@@ -116,6 +126,7 @@ internal static class BlueZInventory
             Status = DeviceStatus.OK,
             IsActive = Flag(device, "Connected"),
             MacAddress = ToPhysicalAddress(address),
+            BluetoothTransports = TransportsOf(interfaces, device),
             LocationPath = path,
         };
     }
@@ -132,6 +143,45 @@ internal static class BlueZInventory
             return null;
         return alias;
     }
+
+    /// <summary>
+    /// The transports a bond is known to support (issue #302). BlueZ 5.84 and later register
+    /// <c>Bearer.LE1</c> and <c>Bearer.BREDR1</c> on a device only for a transport it supports, so
+    /// their presence is exact, even while their experimental properties are hidden. Before 5.84,
+    /// <c>Device1</c> merges both bearers, and the answer is the union of what its properties
+    /// show: a random address, a cached Generic Access or Generic Attribute service, or an
+    /// <c>Appearance</c> means LE, and a <c>Class</c> means BR/EDR. None of them means unknown.
+    /// </summary>
+    /// <remarks>
+    /// The GATT service clue is a heuristic: GATT over BR/EDR exists, but BlueZ discovers GATT over
+    /// LE in practice.
+    /// </remarks>
+    internal static BluetoothTransports TransportsOf(
+        IReadOnlyDictionary<string, ImmutableDictionary<string, DBusValue>> interfaces,
+        IReadOnlyDictionary<string, DBusValue> device)
+    {
+        var bearers = BluetoothTransports.None;
+        if (interfaces.ContainsKey(LowEnergyBearerInterface))
+            bearers |= BluetoothTransports.LowEnergy;
+        if (interfaces.ContainsKey(BrEdrBearerInterface))
+            bearers |= BluetoothTransports.BrEdr;
+        if (bearers != BluetoothTransports.None)
+            return bearers;
+
+        var clues = BluetoothTransports.None;
+        if (Text(device, "AddressType", 's') == "random"
+            || device.ContainsKey("Appearance")
+            || Uuids(device).Any(GattCoreServices.Contains))
+            clues |= BluetoothTransports.LowEnergy;
+        if (device.ContainsKey("Class"))
+            clues |= BluetoothTransports.BrEdr;
+        return clues;
+    }
+
+    private static IEnumerable<string> Uuids(IReadOnlyDictionary<string, DBusValue> device) =>
+        device.TryGetValue("UUIDs", out var value) && value is DBusVariant { Value: DBusArray { Items: var items } }
+            ? items.OfType<DBusString>().Select(s => s.Value.ToLowerInvariant())
+            : [];
 
     private static PhysicalAddress ToPhysicalAddress(BluetoothAddress address)
     {

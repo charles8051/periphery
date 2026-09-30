@@ -29,6 +29,25 @@ depends_on: ["0004-two-level-device-state-model.md", "0010-udev-linux-provider.m
 > them would raise `Disappeared` and then `Appeared` for every bond on one slow reply. Only the owner
 > going (D6), the connection going, or `AccessDenied` clears the inventory. A failed first snapshot
 > leaves it empty.
+>
+> **Amendment (2026-09-30), D4's transport.** A bond's `DeviceInfo.BluetoothTransports` (ADR-0085's
+> D5 amendment, issue #302) comes from the best evidence BlueZ exposes without root.
+>
+> - **BlueZ 5.84 and later:** `org.bluez.Bearer.LE1` and `org.bluez.Bearer.BREDR1` are registered on
+>   the device path only for a transport the device supports (`src/device.c`). Their properties
+>   are experimental and hidden without `-E`, but the interfaces are not, so their presence is
+>   exact.
+> - **Before 5.84:** `Device1` merges both bearers. The transport is the union of its clues. A
+>   `random` `AddressType`, an `Appearance`, or a cached Generic Access (1800) or Generic Attribute
+>   (1801) service in `UUIDs` means LE. A `Class` means BR/EDR. With none of them, it is `None`.
+> - **The GATT clue is a heuristic.** GATT over BR/EDR exists, but BlueZ discovers GATT over LE in
+>   practice. The btvirt bonds on BlueZ 5.72 have a public address and no `Appearance` or `Class`,
+>   and this clue alone classifies them as LE.
+> - **Not read:** `/var/lib/bluetooth/<adapter>/<device>/info` records `SupportedTechnologies`
+>   exactly, but it is `0700 root`.
+>
+> The watch needs no change. A `UUIDs`, `Appearance` or `Class` change, or a bearer interface
+> added, changes the mapped `DeviceInfo`, which raises `DevicePropertyChanged`.
 
 **Tracks:** `LinuxDeviceProvider`, `LinuxDeviceMonitorProvider`, and `DeviceCategory.Bluetooth` on
 Linux. Issue #258.
