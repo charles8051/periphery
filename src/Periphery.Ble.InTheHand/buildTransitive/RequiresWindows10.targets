@@ -1,7 +1,9 @@
 <Project>
   <!-- ADR-0085 D3. Packed for an unversioned Windows target, where NuGet would otherwise hand the
-       consumer 32feet's BlueZ asset: it compiles, then throws a Unix-socket exception at first call. -->
-  <Target Name="PeripheryBleRequiresWindows10" BeforeTargets="Build">
+       consumer 32feet's BlueZ asset: it compiles, then throws at first call. Runs before
+       PrepareForBuild, so the consumer sees this rather than a compile error for the namespace the
+       sentinel does not carry. -->
+  <Target Name="PeripheryBleRequiresWindows10" BeforeTargets="PrepareForBuild">
     <Error Text="Periphery.Ble.InTheHand needs net10.0-windows10.0.19041.0 or later on Windows. 32feet's only Windows GATT asset targets 10.0.19041, so an unversioned Windows target resolves its Linux BlueZ provider and throws at first call. Raise your TargetFramework." />
   </Target>
 </Project>

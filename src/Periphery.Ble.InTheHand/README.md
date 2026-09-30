@@ -1,15 +1,19 @@
 # Periphery.Ble.InTheHand
 
 Open a GATT session on a Bluetooth LE device you found with Periphery, through
-[32feet](https://github.com/inthehand/32feet)'s `InTheHand.BluetoothLE`.
+[32feet](https://github.com/inthehand/32feet)'s `InTheHand.BluetoothLE`, on Windows and Linux.
 
 ```sh
 dotnet add package Periphery.Ble.InTheHand --prerelease
 ```
 
-Windows only: target `net10.0-windows10.0.19041.0` or later. Restore refuses any other target
-(NU1202). 32feet's only Windows GATT asset needs 10.0.19041, and the join below needs a Windows
-instance id. Linux has no address to join on yet (issue #258).
+| Platform | Target | Device to join |
+|---|---|---|
+| Windows | `net10.0-windows10.0.19041.0` or later | the LE link node, `BTHLE\DEV_<address>` |
+| Linux | `net10.0` | the bond Periphery reads from BlueZ, `bluez:<adapter>/<device>` |
+
+On Windows, an unversioned `net10.0-windows` target fails the build with a message: 32feet's only
+Windows GATT asset needs 10.0.19041.
 
 ```csharp
 using InTheHand.Bluetooth;
@@ -19,8 +23,9 @@ using Periphery.Ble.InTheHand;
 var node = await Devices.Enumerate()
     .OfCategory(DeviceCategory.Bluetooth)
     .WithName("Heart Rate Sensor")
-    .Where(d => BluetoothAddress.TryParseInstanceId(d.Id.Value, out _, out var t)
-                && t == BluetoothTransport.LowEnergy)
+    .Where(d => d.Id.Value.StartsWith("bluez:")                                  // Linux
+                || (BluetoothAddress.TryParseInstanceId(d.Id.Value, out _, out var t)
+                    && t == BluetoothTransport.LowEnergy))                        // Windows
     .FirstOrDefaultAsync()
     ?? throw new InvalidOperationException("That peripheral is not paired.");
 
@@ -31,7 +36,11 @@ await device.Gatt.ConnectAsync();
 var service = await device.Gatt.GetPrimaryServiceAsync(BluetoothUuid.FromShortId(0x180D));
 ```
 
-`ToBluetoothDeviceAsync` takes an LE link node, `BTHLE\DEV_<address>`, and throws for any other
-node. It resolves the device by the address in the node's instance id. The address is a join key,
-not an identity: a peripheral that uses private addresses comes back under a new node and address
-after it is re-paired.
+`ToBluetoothDeviceAsync` resolves the device by its address and throws for any other node. The
+address is a join key, not an identity: a peripheral that uses private addresses comes back under
+a new node and address after it is re-paired.
+
+On Linux:
+- 32feet uses the first adapter BlueZ reports, so a bond on a second adapter resolves to `null`.
+- BlueZ does not say whether a bond is LE or BR/EDR, so the join does not check.
+- The package reaches BlueZ through 32feet, over `Linux.Bluetooth` and `Tmds.DBus`.

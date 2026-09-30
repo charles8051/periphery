@@ -8,6 +8,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## Unreleased
 
 ### Added
+- **`Periphery.Ble.InTheHand` on Linux** (ADR-0085, 2026-09-30 amendment). The package ships `net10.0` again. `ToBluetoothDeviceAsync` there joins a BlueZ bond (`bluez:<adapter>/<device>`, ADR-0091) to 32feet's BlueZ `BluetoothDevice`. It moves to `InTheHand.BluetoothLE` 4.0.45, whose Linux asset pins `Tmds.DBus` 0.95.1 instead of 0.20.0 (CVE-2026-39959). An unversioned `net10.0-windows` target again fails the build with a message naming `net10.0-windows10.0.19041.0`, instead of NU1202 at restore.
 - **Bonded Bluetooth devices enumerate and are watched on Linux** (ADR-0091, issue #258). `OfCategory(DeviceCategory.Bluetooth)`, `All`, or an unfiltered query or watcher now reports one device per bond BlueZ holds.
   - **The device:** `Id` is `bluez:<adapter address>/<device address>`, `MacAddress` is the peer's address, `Name` is its alias, and `IsActive` is set while it is connected.
   - **Events:** a watcher raises `Appeared` when a bond is made, `Activated` and `Deactivated` as it connects and disconnects, `DevicePropertyChanged` when it is renamed, and `Disappeared` when it is removed.

@@ -1,7 +1,7 @@
 ---
 title: "ADR-0085: The 32feet binding is two integration packages, and neither of them is Periphery.Bluetooth"
 status: "Accepted"
-status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
+status_note: "Package shapes and TFM matrix measured against the shipped 32feet assemblies (InTheHand.Net.Bluetooth 4.2.1, InTheHand.BluetoothLE 4.0.44) on 2026-09-02. No library code written. scratch/BluetoothAssetProbe covers the classic package on hardware; scratch/BleAssetProbe covers BLE asset selection with no hardware. D7 added 2026-09-09: settles what goes inside each package, and defers BleDeviceProxy on an LE address-type measurement that no hardware here can currently make. Accepted 2026-09-29: Periphery.Ble.InTheHand ships the D7 join, Windows only (2026-09-29 amendment replaces D3/D4's TFM set for it), verified on the BLE bench and against a packed build. 2026-09-30 amendment: net10.0 ships again for Linux, joining ADR-0091's BlueZ bonds, on InTheHand.BluetoothLE 4.0.45. BleDeviceProxy and Periphery.Bluetooth.InTheHand are not built yet."
 date: "2026-09-02"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "extension", "integration-package", "32feet", "packaging", "tfm", "api-design", "device-proxy"]
@@ -45,6 +45,29 @@ depends_on: ["0024-extension-package-pattern.md", "0026-enricher-io-boundary.md"
 > Measured against a packed build: `net10.0-windows` and `net10.0` consumers get NU1202;
 > `net10.0-windows10.0.19041.0` and `10.0.22621.0` consumers build with only
 > `InTheHand.BluetoothLE`. A `net10.0` target comes back when Linux has a join key.
+>
+> **Amendment (2026-09-30).** Linux has a join key, and the `net10.0` target is back.
+>
+> - **The key.** ADR-0091 gives each bond BlueZ holds an `Id` of `bluez:<adapter>/<device>` and
+>   puts the peer's address in `MacAddress`. 32feet's BlueZ `BluetoothDevice.Id` is that address in
+>   colon form.
+> - **The package.** It ships `net10.0` (Linux, 32feet's BlueZ provider), `net10.0-windows10.0.19041.0`
+>   (WinRT), and D3's `net10.0-windows` sentinel again. The sentinel is needed once more, because
+>   an unversioned Windows consumer would otherwise fall back to the `net10.0` asset. Its error
+>   target now runs before `PrepareForBuild`, so the consumer sees the D3 message rather than a
+>   compile error.
+> - **D4's exposure is gone.** `InTheHand.BluetoothLE` 4.0.45 pins `Tmds.DBus` 0.95.1 for its
+>   Linux asset. 4.0.44 took 0.20.0 (CVE-2026-39959) through `Linux.Bluetooth`.
+> - **The join.** It accepts a `BTHLE\DEV_` node on Windows and a `bluez:` bond on Linux, and
+>   throws for the other platform's shape. On Linux it calls `Bluetooth.GetAvailabilityAsync()`
+>   first, because 32feet's Linux `FromIdAsync` reads an adapter that only its `Bluetooth` calls
+>   initialise. That adapter is the first BlueZ reports, so a bond on another adapter resolves to
+>   null. BlueZ does not report a bond's transport (#302), so the Linux join does not check it.
+> - **Measured.** Against a packed build, `net10.0` builds with `Tmds.DBus` 0.95.1 and no audit
+>   warning, `net10.0-windows` fails with the D3 message, and `10.0.19041.0` and `10.0.22621.0`
+>   build with only `InTheHand.BluetoothLE`. On the Linux device rig, the join resolved the btvirt
+>   bond through 32feet, connected, and read the peer's PnP ID over GATT. The bytes matched the
+>   modalias BlueZ reports.
 
 ## Status
 
