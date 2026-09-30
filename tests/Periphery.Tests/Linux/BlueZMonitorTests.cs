@@ -122,6 +122,23 @@ public class BlueZMonitorTests
     }
 
     [Fact]
+    public async Task RefusedOwnerQuery_IsNotTakenForAnAbsentBlueZ()
+    {
+        await using var harness = new Harness();
+        var start = harness.Monitor.StartAsync(CancellationToken.None);
+        var bus = await harness.AcceptAsync();
+        await AnswerMatchesAsync(bus);
+        await bus.ErrorAsync(await bus.ReadMessageAsync(), "org.freedesktop.DBus.Error.AccessDenied", DBusConnection.BusName);
+
+        await start;
+
+        var entry = Assert.Single(harness.Logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains("AccessDenied", entry.Message);
+        Assert.Same(BlueZWatchState.Initial, harness.Monitor.State);
+    }
+
+    [Fact]
     public async Task BusClosing_EveryBondDisappears()
     {
         await using var harness = new Harness();

@@ -213,6 +213,27 @@ public class BlueZWatchTests
         Assert.Equal(new[] { 1, 2, 4, 8, 16, 32, 60, 60, 60 }, delays.Select(d => (int)d.TotalSeconds));
     }
 
+    [Theory]
+    [InlineData(true)]   // an error reply
+    [InlineData(false)]  // no reply by the deadline
+    public void FailedRefresh_KeepsTheInventory_AndSignalsStillUpdateIt(bool errorReply)
+    {
+        var state = Seed(Managed(Adapter0, Bonded("dev_11", connected: false))).State;
+        var refresh = Step(state, new MessageReceived(PropertiesChanged("dev_11", [], ["Connected"])));
+        state = Step(refresh.State, new SnapshotSent(9)).State;
+
+        var failed = errorReply
+            ? Step(state, new MessageReceived(Error(9, "org.freedesktop.DBus.Error.NoReply", "org.freedesktop.DBus")))
+            : Step(state, new WakeTime(), T0 + BlueZWatch.SnapshotDeadline);
+
+        Assert.Empty(failed.Edges);
+        Assert.Contains(Bond, failed.State.Devices.Keys);
+        Assert.NotNull(failed.State.RetryAt);
+
+        var connected = Step(failed.State, new MessageReceived(PropertiesChanged("dev_11", [("Connected", B(true))])));
+        Assert.Equal(BlueZEdgeKind.Activated, connected.Edges[0].Kind);
+    }
+
     [Fact]
     public void AccessDenied_StopsTheWatch()
     {

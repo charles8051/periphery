@@ -22,6 +22,13 @@ depends_on: ["0004-two-level-device-state-model.md", "0010-udev-linux-provider.m
 > udev's therefore reach the watcher on different threads. `DeviceWatcher` locks around every
 > provider event, and the Windows provider already raises Bluetooth link edges from a thread of
 > their own.
+>
+> **Amendment (2026-09-30), D8's failure rule.** An error reply or a passed deadline on a snapshot
+> keeps the last inventory, and signals go on updating it until a retried snapshot replaces it. It
+> does not mark BlueZ absent. Nothing in a failed call says BlueZ's objects changed, and clearing
+> them would raise `Disappeared` and then `Appeared` for every bond on one slow reply. Only the owner
+> going (D6), the connection going, or `AccessDenied` clears the inventory. A failed first snapshot
+> leaves it empty.
 
 **Tracks:** `LinuxDeviceProvider`, `LinuxDeviceMonitorProvider`, and `DeviceCategory.Bluetooth` on
 Linux. Issue #258.

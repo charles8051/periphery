@@ -89,7 +89,25 @@ internal sealed class BlueZMonitor : IAsyncDisposable
             var owner = await WithDeadlineAsync(t => _connection.CallAsync(
                 DBusMessage.Call(DBusConnection.BusName, DBusConnection.BusPath, DBusConnection.BusName, "GetNameOwner", BlueZInventory.Service), t), ct)
                 .ConfigureAwait(false);
-            string? ownerName = owner.Body is [DBusString { Value: var name }] && owner.Type == DBusMessageType.MethodReturn ? name : null;
+            // Only NameHasNoOwner means BlueZ is not running. Any other error is a failure to watch.
+            string? ownerName;
+            if (owner.Type == DBusMessageType.Error)
+            {
+                if (owner.ErrorName != "org.freedesktop.DBus.Error.NameHasNoOwner")
+                {
+                    Log(owner.ErrorName!, LogLevel.Warning,
+                        $"The system bus would not say who owns org.bluez ({owner.ErrorName}). Bluetooth devices are not watched.");
+                    await CloseAsync().ConfigureAwait(false);
+                    return;
+                }
+                ownerName = null;
+            }
+            else
+            {
+                ownerName = owner.Body is [DBusString { Value: var name }]
+                    ? name
+                    : throw new DBusProtocolException("GetNameOwner did not return a name.");
+            }
 
             await ApplyAsync(new WatchStarted(ownerName), ct).ConfigureAwait(false);
             while (!_state.Seeded)

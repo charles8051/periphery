@@ -246,22 +246,31 @@ internal static class BlueZWatch
         }
 
         var level = kind == BlueZFailureKind.Absent ? LogLevel.Information : LogLevel.Warning;
-        return Retry(Lose(state, effects, errorName, level,
-            $"BlueZ answered with {errorName}. Bluetooth devices are watched again when it answers."), now);
+        return Retry(Fail(state, effects, errorName, level,
+            $"BlueZ answered with {errorName}. Periphery asks again."), now);
     }
 
     private static BlueZWatchState Wake(BlueZWatchState state, DateTimeOffset now, ImmutableArray<BlueZEffect>.Builder effects)
     {
         if (state.Pending is { } pending && pending.Deadline <= now)
         {
-            state = Retry(Lose(state with { Pending = null }, effects, "Timeout", LogLevel.Warning,
-                $"BlueZ did not answer within {SnapshotDeadline.TotalSeconds:0} s. Bluetooth devices are watched again when it answers."), now);
+            state = Retry(Fail(state, effects, "Timeout", LogLevel.Warning,
+                $"BlueZ did not answer within {SnapshotDeadline.TotalSeconds:0} s. Periphery asks again."), now);
         }
 
         if (state.RetryAt is { } retryAt && retryAt <= now && state.Pending is null && !state.Stopped && state.Owner is { } owner)
             state = Request(state, owner, now, effects);
 
         return state;
+    }
+
+    // A snapshot failed, but nothing says BlueZ's objects changed, so the last inventory stands and
+    // signals keep updating it. Only the owner going, the connection going, or AccessDenied clears
+    // it (Lose). A failed seed leaves the inventory empty, and the seed counts as done.
+    private static BlueZWatchState Fail(BlueZWatchState state, ImmutableArray<BlueZEffect>.Builder effects, string key, LogLevel level, string message)
+    {
+        effects.Add(new ReportProblem(key, level, message));
+        return state with { Pending = null, RetryAt = null, Seeded = true };
     }
 
     // Everything BlueZ described is gone: its devices raise Disappeared. The seed counts as done.
