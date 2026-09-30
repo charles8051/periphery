@@ -89,7 +89,7 @@ public class IOBluetoothInventoryTests
     {
         int asked = 0;
         var logger = new RecordingLogger();
-        var source = new IOBluetoothDeviceSource(() => BluetoothAuthorization.NotDetermined, () => { asked++; return [Mouse]; }, logger);
+        var source = new IOBluetoothDeviceSource(() => BluetoothAuthorization.NotDetermined, () => { asked++; return [Mouse]; }, () => [], logger);
 
         Assert.Null(source.Snapshot());
         Assert.Empty(source.Enumerate(CancellationToken.None));
@@ -102,7 +102,7 @@ public class IOBluetoothInventoryTests
     public void Source_WhenIOBluetoothDoesNotLoad_IsUnavailable()
     {
         var logger = new RecordingLogger();
-        var source = new IOBluetoothDeviceSource(() => null, () => [Mouse], logger);
+        var source = new IOBluetoothDeviceSource(() => null, () => [Mouse], () => [], logger);
 
         Assert.Null(source.Snapshot());
         Assert.Equal(LogLevel.Warning, Assert.Single(logger.Entries).Level);
@@ -111,9 +111,52 @@ public class IOBluetoothInventoryTests
     [Fact]
     public void Source_WithPermission_MapsTheBonds()
     {
-        var source = new IOBluetoothDeviceSource(() => BluetoothAuthorization.AllowedAlways, () => [Mouse], new RecordingLogger());
+        var source = new IOBluetoothDeviceSource(() => BluetoothAuthorization.AllowedAlways, () => [Mouse], () => [], new RecordingLogger());
 
         Assert.Equal(MouseId, Assert.Single(source.Snapshot()!.Value).Id.Value);
+    }
+
+    // ── D3 amendment: transports from the HID node ─────────────────────
+
+    [Theory]
+    [InlineData("Bluetooth Low Energy", BluetoothTransports.LowEnergy)]
+    [InlineData("Bluetooth", BluetoothTransports.BrEdr)]
+    [InlineData("USB", BluetoothTransports.None)]
+    [InlineData("SPI", BluetoothTransports.None)]
+    public void TransportOf_ReadsTheHidTransport(string transport, BluetoothTransports expected) =>
+        Assert.Equal(expected, IOBluetoothInventory.TransportOf(transport));
+
+    [Fact]
+    public void Learn_KeysByAddress_InEitherForm_AndUnitesTransports()
+    {
+        var known = IOBluetoothInventory.Learn(
+            ImmutableDictionary<BluetoothAddress, BluetoothTransports>.Empty,
+            [new HidLink("C1:D2:E3:F4:A5:B6", "Bluetooth Low Energy"), new HidLink(MouseAddress, "Bluetooth"),
+             new HidLink("not-an-address", "Bluetooth"), new HidLink("A0:B1:C2:D3:E4:F5", "USB")]);
+
+        Assert.Equal(BluetoothTransports.LowEnergy | BluetoothTransports.BrEdr, Assert.Single(known).Value);
+    }
+
+    [Fact]
+    public void Bond_TakesTheTransportsItsHidNodeShowed()
+    {
+        var known = IOBluetoothInventory.Learn(
+            ImmutableDictionary<BluetoothAddress, BluetoothTransports>.Empty, [new HidLink("C1:D2:E3:F4:A5:B6", "Bluetooth Low Energy")]);
+
+        Assert.Equal(BluetoothTransports.LowEnergy, IOBluetoothInventory.ToDeviceInfo(Mouse, known)!.BluetoothTransports);
+        Assert.Equal(BluetoothTransports.BrEdr | BluetoothTransports.LowEnergy,
+            IOBluetoothInventory.ToDeviceInfo(Mouse with { ClassOfDevice = 0x002580 }, known)!.BluetoothTransports);
+    }
+
+    [Fact]
+    public void Source_KeepsATransport_AfterTheHidNodeGoes()
+    {
+        var links = new Queue<ImmutableArray<HidLink>>([[new HidLink(MouseAddress, "Bluetooth Low Energy")], []]);
+        var source = new IOBluetoothDeviceSource(
+            () => BluetoothAuthorization.AllowedAlways, () => [Mouse], () => links.Dequeue(), new RecordingLogger());
+
+        Assert.Equal(BluetoothTransports.LowEnergy, Assert.Single(source.Snapshot()!.Value).BluetoothTransports);
+        Assert.Equal(BluetoothTransports.LowEnergy, Assert.Single(source.Snapshot()!.Value).BluetoothTransports);
     }
 
     // ── D4: the watch step ─────────────────────────────────────────────

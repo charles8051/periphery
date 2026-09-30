@@ -34,21 +34,25 @@ public class IOBluetoothRigTests
 
         var devices = await Devices.Enumerate().OfCategory(DeviceCategory.Bluetooth).ToListAsync();
 
-        foreach (var (address, connected) in expected)
+        foreach (var (address, connected, le) in expected)
         {
             var bond = devices.SingleOrDefault(d => d.Id.Value == IOBluetoothInventory.IdPrefix + address);
             Assert.True(bond is not null,
                 $"{address} is not among {devices.Count} Bluetooth devices: {string.Join(", ", devices.Select(d => d.Id.Value))}");
             Assert.Equal(connected, bond!.IsActive);
             Assert.Equal(PhysicalAddress.Parse(address.Replace(':', '-')), bond.MacAddress);
+            // A connected LE device's HID node shows its transport (ADR-0093 D3 amendment).
+            if (le)
+                Assert.True(bond.BluetoothTransports?.HasFlag(BluetoothTransports.LowEnergy),
+                    $"{address} is connected over BLE, but reports {bond.BluetoothTransports}.");
         }
 
         // The registry's IOBluetoothDevice, the Mac's own incoming serial service, is not a bond.
         Assert.All(devices, d => Assert.StartsWith(IOBluetoothInventory.IdPrefix, d.Id.Value));
     }
 
-    // (address in upper-case colon form, connected), from system_profiler's JSON.
-    private static async Task<List<(string Address, bool Connected)>> SystemProfilerBondsAsync()
+    // (address in upper-case colon form, connected, connected over BLE), from system_profiler's JSON.
+    private static async Task<List<(string Address, bool Connected, bool LowEnergy)>> SystemProfilerBondsAsync()
     {
         var start = new ProcessStartInfo("system_profiler") { RedirectStandardOutput = true };
         start.ArgumentList.Add("-json");
@@ -59,7 +63,7 @@ public class IOBluetoothRigTests
         string json = await process.StandardOutput.ReadToEndAsync(cts.Token);
         await process.WaitForExitAsync(cts.Token);
 
-        var bonds = new List<(string, bool)>();
+        var bonds = new List<(string, bool, bool)>();
         var controller = JsonDocument.Parse(json).RootElement.GetProperty("SPBluetoothDataType")[0];
         foreach (var (key, connected) in new[] { ("device_connected", true), ("device_not_connected", false) })
         {
@@ -67,7 +71,11 @@ public class IOBluetoothRigTests
                 continue;
             foreach (var entry in list.EnumerateArray())
             foreach (var device in entry.EnumerateObject())
-                bonds.Add((device.Value.GetProperty("device_address").GetString()!.ToUpperInvariant(), connected));
+            {
+                bool le = device.Value.TryGetProperty("device_services", out var services)
+                    && services.GetString()!.Contains("BLE", StringComparison.Ordinal);
+                bonds.Add((device.Value.GetProperty("device_address").GetString()!.ToUpperInvariant(), connected, connected && le));
+            }
         }
         return bonds;
     }

@@ -1,7 +1,7 @@
 ---
 title: "ADR-0093: macOS reads bonded Bluetooth devices from IOBluetooth, and only with the process's Bluetooth permission"
 status: "Accepted"
-status_note: "Written for issue #259 and shipped with its implementation. Measured on 2026-09-30 on a MacBook Air (Apple silicon) running macOS 26.4.1, with one paired LE mouse, over SSH and inside Terminal.app. The source was chosen by the maintainer from three measured options."
+status_note: "Written for issue #259 and shipped with its implementation. 2026-09-30 amendment: a connected HID node's Transport marks its bond LowEnergy or BrEdr, kept for the process. Measured on 2026-09-30 on a MacBook Air (Apple silicon) running macOS 26.4.1, with one paired LE mouse, over SSH and inside Terminal.app. The source was chosen by the maintainer from three measured options."
 date: "2026-09-30"
 authors: "@charles8051"
 tags: ["architecture", "decision", "bluetooth", "ble", "macos", "iobluetooth", "tcc", "device-enumeration", "device-monitor", "pure-core"]
@@ -15,6 +15,14 @@ depends_on: ["0004-two-level-device-state-model.md", "0011-iokit-macos-provider.
 ## Status
 
 Accepted 2026-09-30, and implemented with it.
+
+> **Amendment (2026-09-30), D3's LE evidence.** A connected Bluetooth HID device has an IOKit
+> node carrying `DeviceAddress` and `Transport`, and reading it needs no Bluetooth permission.
+> `Transport = "Bluetooth Low Energy"` marks the bond at that address `LowEnergy`, and
+> `"Bluetooth"` marks it `BrEdr`. The node exists only while the link is up, so the provider keeps
+> each address's transports for the life of the process: a peripheral does not stop supporting a
+> transport when its link drops. An LE bond that has not connected since the process started still
+> reads `None`, and so does an LE device that is not a HID device.
 
 ---
 
@@ -134,9 +142,7 @@ Objective-C class defined at run time. It is left for later.
 ## Open questions
 
 - **A BR/EDR bond.** None was paired on the measurement Mac, so D3's `BrEdr` flag is untested there.
-- **LE evidence.** A connected LE HID device's IOKit node carries `DeviceAddress` and
-  `Transport = "Bluetooth Low Energy"` and needs no permission. Joining it to the bond would mark
-  that bond `LowEnergy` while it is connected.
+- **LE evidence for a non-HID device.** The D3 amendment covers HID devices only.
 - **Several radios.** Not measured.
 
 ---
