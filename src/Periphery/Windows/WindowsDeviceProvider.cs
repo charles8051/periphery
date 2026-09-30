@@ -213,9 +213,19 @@ public async IAsyncEnumerable<DeviceInfo> EnumerateAsync(
             DriveType = driveType,
             PortName = portName,
             UsbClassCode = usbClassCode,
+            BluetoothTransports = BluetoothTransportsOf(instanceId),
             Properties = propertiesBuilder.ToImmutable(),
         };
     }
+
+    /// <summary>
+    /// A paired peripheral's link node names its transport: <c>BTHENUM\DEV_…</c> is BR/EDR and
+    /// <c>BTHLE\DEV_…</c> is LE. Every other node, service and function nodes included, has none.
+    /// </summary>
+    internal static BluetoothTransports? BluetoothTransportsOf(string instanceId) =>
+        BluetoothAddress.TryParseInstanceId(instanceId, out _, out var transport)
+            ? (BluetoothTransports)(int)transport
+            : null;
 
     /// <summary>
     /// Resolves the physical-port <see cref="DeviceInfo.LocationPath"/> for a device node, walking up

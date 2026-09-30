@@ -255,6 +255,26 @@ public sealed class DeviceFilter
     public DeviceFilter WithBusType(BusType busType)
         => Where(d => d.BusType == busType);
 
+    /// <summary>
+    /// Keep only paired Bluetooth peripherals known to support <paramref name="transport"/>, by
+    /// <see cref="DeviceInfo.BluetoothTransports"/>. A peripheral whose transport is not known does
+    /// not match.
+    /// </summary>
+    /// <remarks>
+    /// On Windows this selects a peripheral's link node for that transport, not its service or
+    /// function nodes.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="transport"/> is <see cref="BluetoothTransport.Unknown"/> or not defined.
+    /// </exception>
+    public DeviceFilter WithBluetoothTransport(BluetoothTransport transport)
+    {
+        if (transport is not (BluetoothTransport.BrEdr or BluetoothTransport.LowEnergy))
+            throw new ArgumentOutOfRangeException(nameof(transport), transport, "Name a transport: BrEdr or LowEnergy.");
+        var wanted = (BluetoothTransports)(int)transport;
+        return Where(d => d.BluetoothTransports is { } supported && (supported & wanted) == wanted);
+    }
+
     /// <summary>Keep only devices with the specified status.</summary>
     public DeviceFilter WithStatus(DeviceStatus status)
         => Where(d => d.Status == status);
@@ -590,6 +610,12 @@ public sealed class DeviceFilter
 
         if (spec.BusType.HasValue)
             WithBusType(spec.BusType.Value);
+        if (spec.BluetoothTransport.HasValue)
+        {
+            if (spec.BluetoothTransport.Value is not (BluetoothTransport.BrEdr or BluetoothTransport.LowEnergy))
+                throw Invalid(spec, nameof(DeviceFilterSpec.BluetoothTransport), spec.BluetoothTransport.Value.ToString(), "expected \"BrEdr\" or \"LowEnergy\"");
+            WithBluetoothTransport(spec.BluetoothTransport.Value);
+        }
         if (spec.Status.HasValue)
             WithStatus(spec.Status.Value);
         if (spec.DriveType.HasValue)

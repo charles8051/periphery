@@ -152,6 +152,13 @@ public sealed record DeviceFilterSpec
     /// <summary>Replays as <see cref="DeviceFilter.WithBusType"/>.</summary>
     public BusType? BusType { get; init; }
 
+    /// <summary>
+    /// <c>"BrEdr"</c> or <c>"LowEnergy"</c>. Replays as <see cref="DeviceFilter.WithBluetoothTransport"/>.
+    /// <c>"Unknown"</c> throws from <see cref="DeviceFilter.Apply"/>.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<BluetoothTransport>))]
+    public BluetoothTransport? BluetoothTransport { get; init; }
+
     /// <summary>Replays as <see cref="DeviceFilter.WithStatus"/>.</summary>
     public DeviceStatus? Status { get; init; }
 
@@ -220,6 +227,7 @@ public sealed record DeviceFilterSpec
         || MacAddress is not null
         || PortName is not null
         || BusType.HasValue
+        || BluetoothTransport.HasValue
         || Status.HasValue
         || DriveType.HasValue
         || UsbSpeed.HasValue
@@ -258,6 +266,7 @@ public sealed record DeviceFilterSpec
         && MacAddress == other.MacAddress
         && PortName == other.PortName
         && BusType == other.BusType
+        && BluetoothTransport == other.BluetoothTransport
         && Status == other.Status
         && DriveType == other.DriveType
         && UsbSpeed == other.UsbSpeed
@@ -287,6 +296,7 @@ public sealed record DeviceFilterSpec
         hash.Add(MacAddress);
         hash.Add(PortName);
         hash.Add(BusType);
+        hash.Add(BluetoothTransport);
         hash.Add(Status);
         hash.Add(DriveType);
         hash.Add(UsbSpeed);
@@ -364,6 +374,7 @@ public sealed record DeviceFilterSpec
         Add(nameof(MacAddress), MacAddress);
         Add(nameof(PortName), PortName);
         Add(nameof(BusType), BusType);
+        Add(nameof(BluetoothTransport), BluetoothTransport);
         Add(nameof(Status), Status);
         Add(nameof(DriveType), DriveType);
         Add(nameof(UsbSpeed), UsbSpeed);

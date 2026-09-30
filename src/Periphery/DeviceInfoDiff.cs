@@ -87,6 +87,7 @@ internal static class DeviceInfoDiff
         // PhysicalAddress does not override Equals — compare by address bytes.
         if (!MacAddressEquals(previous.MacAddress, current.MacAddress))
             changed.Add(nameof(DeviceInfo.MacAddress));
+        CheckVal(changed, nameof(DeviceInfo.BluetoothTransports), previous.BluetoothTransports, current.BluetoothTransports);
 
         // ImmutableArray<T> struct equality is reference-based — compare element-wise.
         if (!IpAddressArrayEquals(previous.IPAddresses, current.IPAddresses))

@@ -6,6 +6,19 @@ namespace Periphery.Tests;
 [SupportedOSPlatform("windows")]
 public class WindowsDeviceProviderTests
 {
+    // ── Bluetooth transports (#302) ────────────────────────────────────
+    // Only a paired peripheral's link node names a transport. Service and function nodes of the
+    // same peripheral carry none, so a transport filter selects the link node.
+    [Theory]
+    [InlineData(@"BTHENUM\DEV_AABBCCDDEEFF\A&16071615&0&BLUETOOTHDEVICE_AABBCCDDEEFF", BluetoothTransports.BrEdr)]
+    [InlineData(@"BTHLE\DEV_112233445566\A&EDE6A8A&0&112233445566", BluetoothTransports.LowEnergy)]
+    [InlineData(@"BTHLE\Dev_112233445566\A&EDE6A8A&0&112233445566", BluetoothTransports.LowEnergy)]
+    [InlineData(@"BTHENUM\{0000110B-0000-1000-8000-00805F9B34FB}_VID&00010000_PID&0000\A&16071615&0&AABBCCDDEEFF_C00000000", null)]
+    [InlineData(@"BTHLEDEVICE\{00001801-0000-1000-8000-00805F9B34FB}_112233445566\B&22CEDFE8&0&0001", null)]
+    [InlineData(@"USB\VID_046D&PID_C52B\5&3A1B2C&0&2", null)]
+    public void BluetoothTransportsOf_OnlyALinkNodeNamesATransport(string instanceId, BluetoothTransports? expected) =>
+        Assert.Equal(expected, WindowsDeviceProvider.BluetoothTransportsOf(instanceId));
+
     [Fact]
     public void ResolveCategory_MediaGuid_MapsToAudio()
     {
