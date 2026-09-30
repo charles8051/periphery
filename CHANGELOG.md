@@ -21,6 +21,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **Linux no longer reports a Bluetooth connection as its own device** (ADR-0091 D7). The `hciN:<handle>` objects udev creates per connection are left out. They had no name or address, and the bond's `IsActive` now reports the connection. See [BREAKING-CHANGES.md](docs/BREAKING-CHANGES.md).
 - **`periphery camera capture`** saves frames from one camera through `CameraFrameSinks.SaveToDirectoryAsync`. MJPEG frames are written as `.jpg`. Other formats are written as `.raw`, with the dimensions and pixel format in the filename. The camera is chosen with `--name` or `--id`, or implicitly when only one is connected. `--format` sets the preferred pixel format (default `mjpeg`), `--max-resolution` caps the size, `--frames` sets the count, and `--skip` discards frames while auto-exposure settles. Stdout carries only the saved paths. Progress and errors go to stderr.
 
+### Fixed
+- **The Linux monitor ignored udev `move` events** (issue #304). A device whose parent changes gets a new sysfs path, and so a new `Id`, and the monitor raised nothing. A watcher held the old `Id`, and the device's next event arrived under one it had never announced. An RFCOMM tty does this on every connection. A `move` now raises `Disappeared` for the old `Id`, from `DEVPATH_OLD`, then `Appeared` for the new one, and `Activated` if it is active. The monitor's udev handling is now a pure step, `UdevDispatch`, which the other actions go through unchanged. On the Linux rig, renaming a network interface raises those edges; `PERIPHERY_LINUX_SUDO_TESTS=1` enables that test, since it needs `sudo`.
+
 ## 4.3.0 - 2026-09-23
 
 ### Added
