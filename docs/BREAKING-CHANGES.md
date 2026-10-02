@@ -9,7 +9,7 @@ change does not, so behaviour changes are listed too. [CHANGELOG.md](../CHANGELO
 is the full record of each release. Releases before `v4.2.0-alpha.1` are described only
 there.
 
-## Unreleased — since `v4.3.0`
+## `v5.0.0` — since `v4.3.0`
 
 ### 1. On Linux, Bluetooth results are bonds, not connection objects
 

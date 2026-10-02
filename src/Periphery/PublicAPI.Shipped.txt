@@ -11,6 +11,25 @@ Periphery.BiometricEnricher.CanEnrich(Periphery.DeviceInfo! device) -> bool
 Periphery.BiometricEnricher.EmitsTags.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Periphery.BiometricEnricher.EnrichAsync(Periphery.DeviceInfo! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Periphery.DeviceInfo!>!
 Periphery.BiometricEnricher.Scope.get -> Periphery.EnricherScope!
+Periphery.BluetoothAddress
+Periphery.BluetoothAddress.BluetoothAddress() -> void
+Periphery.BluetoothAddress.BluetoothAddress(ulong value) -> void
+Periphery.BluetoothAddress.ClassifyAsRandom() -> Periphery.BluetoothRandomAddressKind
+Periphery.BluetoothAddress.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+Periphery.BluetoothAddress.Value.get -> ulong
+Periphery.BluetoothRandomAddressKind
+Periphery.BluetoothRandomAddressKind.NonResolvablePrivate = 0 -> Periphery.BluetoothRandomAddressKind
+Periphery.BluetoothRandomAddressKind.Reserved = 2 -> Periphery.BluetoothRandomAddressKind
+Periphery.BluetoothRandomAddressKind.ResolvablePrivate = 1 -> Periphery.BluetoothRandomAddressKind
+Periphery.BluetoothRandomAddressKind.Static = 3 -> Periphery.BluetoothRandomAddressKind
+Periphery.BluetoothTransport
+Periphery.BluetoothTransport.BrEdr = 1 -> Periphery.BluetoothTransport
+Periphery.BluetoothTransport.LowEnergy = 2 -> Periphery.BluetoothTransport
+Periphery.BluetoothTransport.Unknown = 0 -> Periphery.BluetoothTransport
+Periphery.BluetoothTransports
+Periphery.BluetoothTransports.BrEdr = 1 -> Periphery.BluetoothTransports
+Periphery.BluetoothTransports.LowEnergy = 2 -> Periphery.BluetoothTransports
+Periphery.BluetoothTransports.None = 0 -> Periphery.BluetoothTransports
 Periphery.BusType
 Periphery.BusType.ACPI = 10 -> Periphery.BusType
 Periphery.BusType.Bluetooth = 3 -> Periphery.BusType
@@ -73,6 +92,7 @@ Periphery.DeviceFilter.Where(System.Func<Periphery.DeviceInfo!, bool>! predicate
 Periphery.DeviceFilter.WithAllTags(params string![]! tags) -> Periphery.DeviceFilter!
 Periphery.DeviceFilter.WithAnyTag(params string![]! tags) -> Periphery.DeviceFilter!
 Periphery.DeviceFilter.WithBatteryStatus(Periphery.BatteryStatus status) -> Periphery.DeviceFilter!
+Periphery.DeviceFilter.WithBluetoothTransport(Periphery.BluetoothTransport transport) -> Periphery.DeviceFilter!
 Periphery.DeviceFilter.WithBusType(Periphery.BusType busType) -> Periphery.DeviceFilter!
 Periphery.DeviceFilter.WithContainerId(System.Guid containerId) -> Periphery.DeviceFilter!
 Periphery.DeviceFilter.WithDriveType(System.IO.DriveType driveType) -> Periphery.DeviceFilter!
@@ -100,6 +120,8 @@ Periphery.DeviceFilterSpec.AnyTags.get -> string![]?
 Periphery.DeviceFilterSpec.AnyTags.init -> void
 Periphery.DeviceFilterSpec.BatteryStatus.get -> Periphery.BatteryStatus?
 Periphery.DeviceFilterSpec.BatteryStatus.init -> void
+Periphery.DeviceFilterSpec.BluetoothTransport.get -> Periphery.BluetoothTransport?
+Periphery.DeviceFilterSpec.BluetoothTransport.init -> void
 Periphery.DeviceFilterSpec.BusType.get -> Periphery.BusType?
 Periphery.DeviceFilterSpec.BusType.init -> void
 Periphery.DeviceFilterSpec.Category.get -> Periphery.DeviceCategory?
@@ -157,6 +179,8 @@ Periphery.DeviceInfo.BatteryChargePercent.get -> int?
 Periphery.DeviceInfo.BatteryChargePercent.init -> void
 Periphery.DeviceInfo.BatteryStatus.get -> Periphery.BatteryStatus?
 Periphery.DeviceInfo.BatteryStatus.init -> void
+Periphery.DeviceInfo.BluetoothTransports.get -> Periphery.BluetoothTransports?
+Periphery.DeviceInfo.BluetoothTransports.init -> void
 Periphery.DeviceInfo.BusType.get -> Periphery.BusType
 Periphery.DeviceInfo.BusType.init -> void
 Periphery.DeviceInfo.Category.get -> Periphery.DeviceCategory
@@ -314,6 +338,7 @@ Periphery.DeviceQuery.Where(System.Func<Periphery.DeviceInfo!, bool>! predicate)
 Periphery.DeviceQuery.WithAllTags(params string![]! tags) -> Periphery.DeviceQuery!
 Periphery.DeviceQuery.WithAnyTag(params string![]! tags) -> Periphery.DeviceQuery!
 Periphery.DeviceQuery.WithBatteryStatus(Periphery.BatteryStatus status) -> Periphery.DeviceQuery!
+Periphery.DeviceQuery.WithBluetoothTransport(Periphery.BluetoothTransport transport) -> Periphery.DeviceQuery!
 Periphery.DeviceQuery.WithBusType(Periphery.BusType busType) -> Periphery.DeviceQuery!
 Periphery.DeviceQuery.WithContainerId(System.Guid containerId) -> Periphery.DeviceQuery!
 Periphery.DeviceQuery.WithDriveType(System.IO.DriveType driveType) -> Periphery.DeviceQuery!
@@ -414,6 +439,7 @@ Periphery.DeviceWatcher.StartAsync(System.Threading.CancellationToken ct = defau
 Periphery.DeviceWatcher.VirtualOnly() -> Periphery.DeviceWatcher!
 Periphery.DeviceWatcher.Where(System.Func<Periphery.DeviceInfo!, bool>! predicate) -> Periphery.DeviceWatcher!
 Periphery.DeviceWatcher.WithBatteryStatus(Periphery.BatteryStatus status) -> Periphery.DeviceWatcher!
+Periphery.DeviceWatcher.WithBluetoothTransport(Periphery.BluetoothTransport transport) -> Periphery.DeviceWatcher!
 Periphery.DeviceWatcher.WithBusType(Periphery.BusType busType) -> Periphery.DeviceWatcher!
 Periphery.DeviceWatcher.WithContainerId(System.Guid containerId) -> Periphery.DeviceWatcher!
 Periphery.DeviceWatcher.WithDriveType(System.IO.DriveType driveType) -> Periphery.DeviceWatcher!
@@ -826,6 +852,7 @@ const Periphery.Windows.DeviceClassGuids.Volume = "{71a27cdd-812a-11d0-bec7-0800
 const Periphery.Windows.DeviceClassGuids.VolumeSnapshot = "{533c5b84-ec70-11d2-9505-00c04f79deaf}" -> string!
 const Periphery.Windows.DeviceClassGuids.WceUsbs = "{25dbce51-6c8f-4a72-8a6d-b54c2b4fc835}" -> string!
 const Periphery.Windows.DeviceClassGuids.Wpd = "{eec5ad98-8080-425f-922a-dabf3de3f69a}" -> string!
+override Periphery.BluetoothAddress.ToString() -> string!
 override Periphery.DeviceFilterSpec.GetHashCode() -> int
 override Periphery.DeviceFilterSpec.ToString() -> string!
 override Periphery.DeviceFilterSpecJsonContext.GeneratedSerializerOptions.get -> System.Text.Json.JsonSerializerOptions?
@@ -869,6 +896,9 @@ override Periphery.UsbClassCodeJsonConverter.Write(System.Text.Json.Utf8JsonWrit
 override Periphery.VersionJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Version?
 override Periphery.VersionJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, System.Version! value, System.Text.Json.JsonSerializerOptions! options) -> void
 static Periphery.BiometricEnricher.Instance.get -> Periphery.BiometricEnricher!
+static Periphery.BluetoothAddress.Parse(string! s) -> Periphery.BluetoothAddress
+static Periphery.BluetoothAddress.TryParse(string? s, out Periphery.BluetoothAddress result) -> bool
+static Periphery.BluetoothAddress.TryParseInstanceId(string? instanceId, out Periphery.BluetoothAddress address, out Periphery.BluetoothTransport transport) -> bool
 static Periphery.DeviceEnrichers.Register(Periphery.IDeviceEnricher! enricher) -> void
 static Periphery.DeviceEnrichers.ScopeForTags(System.Collections.Generic.IReadOnlySet<string!>! tags) -> Periphery.EnricherScope!
 static Periphery.DeviceEnrichers.Snapshot() -> System.Collections.Immutable.ImmutableArray<Periphery.IDeviceEnricher!>
@@ -1034,6 +1064,7 @@ virtual Periphery.DeviceProxyBase<TDevice, TException>.FaultedNodeSettleWindow.g
 virtual Periphery.DeviceProxyBase<TDevice, TException>.HasWorker.get -> bool
 virtual Periphery.DeviceProxyBase<TDevice, TException>.OnActivatedAsync(TDevice! device, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
 virtual Periphery.DeviceProxyBase<TDevice, TException>.OnDeactivatedAsync(TDevice! device) -> System.Threading.Tasks.Task!
+virtual Periphery.DeviceProxyBase<TDevice, TException>.OpensWhilePresent.get -> bool
 virtual Periphery.DeviceProxyBase<TDevice, TException>.ResetReopenPollInterval.get -> System.TimeSpan
 virtual Periphery.DeviceProxyBase<TDevice, TException>.ResetReopenTimeout.get -> System.TimeSpan
 virtual Periphery.DeviceProxyBase<TDevice, TException>.StableOpenDwell.get -> System.TimeSpan
