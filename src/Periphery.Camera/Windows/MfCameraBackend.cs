@@ -562,6 +562,8 @@ internal sealed class MfCameraBackend : ICameraBackend
         Rational minFps = new(1);
         Rational maxFps = new(30);
         Rational? ownFps = null;
+        var hasMin = false;
+        var hasMax = false;
 
         if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_RATE, out ulong frameRate) >= 0)
         {
@@ -576,16 +578,24 @@ internal sealed class MfCameraBackend : ICameraBackend
         if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_RATE_RANGE_MIN, out ulong minRate) >= 0)
         {
             MfInterop.Unpack2xUInt32(minRate, out uint num, out uint denom);
-            if (denom > 0) minFps = new Rational((int)num, (int)denom);
+            if (denom > 0)
+            {
+                minFps = new Rational((int)num, (int)denom);
+                hasMin = true;
+            }
         }
 
         if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_RATE_RANGE_MAX, out ulong maxRate) >= 0)
         {
             MfInterop.Unpack2xUInt32(maxRate, out uint num, out uint denom);
-            if (denom > 0) maxFps = new Rational((int)num, (int)denom);
+            if (denom > 0)
+            {
+                maxFps = new Rational((int)num, (int)denom);
+                hasMax = true;
+            }
         }
 
-        type = new MfNativeType(subtype, (int)width, (int)height, minFps, maxFps, ownFps);
+        type = new MfNativeType(subtype, (int)width, (int)height, minFps, maxFps, ownFps, hasMin && hasMax);
         return true;
     }
 

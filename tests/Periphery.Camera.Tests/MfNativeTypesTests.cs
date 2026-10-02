@@ -11,11 +11,16 @@ public sealed class MfNativeTypesTests
     private static readonly Guid Nv12 = new("3231564E-0000-0010-8000-00AA00389B71");
     private static readonly Guid Uyvy = new("59565955-0000-0010-8000-00AA00389B71");
 
+    // A type whose advertised range is its one rate.
     private static MfNativeType Fixed(Guid subtype, int width, int height, int fps) =>
-        new(subtype, width, height, new Rational(fps), new Rational(fps), new Rational(fps));
+        new(subtype, width, height, new Rational(fps), new Rational(fps), new Rational(fps), AdvertisesRange: true);
 
     private static MfNativeType Range(Guid subtype, int width, int height, int min, int max, int own) =>
-        new(subtype, width, height, new Rational(min), new Rational(max), new Rational(own));
+        new(subtype, width, height, new Rational(min), new Rational(max), new Rational(own), AdvertisesRange: true);
+
+    // A type with MF_MT_FRAME_RATE and no range attributes: the format reports the default minimum of 1.
+    private static MfNativeType Bare(Guid subtype, int width, int height, int fps) =>
+        new(subtype, width, height, new Rational(1), new Rational(fps), new Rational(fps), AdvertisesRange: false);
 
     private static CameraFormat Format(MfNativeType type) =>
         new(type.Width, type.Height, CameraPixelFormat.Nv12, type.MinFrameRate, type.MaxFrameRate, CameraTransport.Uncompressed);
@@ -57,6 +62,20 @@ public sealed class MfNativeTypesTests
     {
         MfNativeType[] types = [Range(Nv12, 1280, 720, min: 5, max: 60, own: 30)];
         Assert.Equal((0, (Rational?)new Rational(60)), MfNativeTypes.Choose(types, Nv12, Format(types[0]), new Rational(60)));
+    }
+
+    [Fact]
+    public void Choose_TypesWithoutRanges_RunOnlyAtTheirOwnRate()
+    {
+        MfNativeType[] types = [Bare(Nv12, 1920, 1080, 60), Bare(Nv12, 1920, 1080, 15)];
+        Assert.Equal((1, (Rational?)null), MfNativeTypes.Choose(types, Nv12, Format(types[0]), new Rational(15)));
+    }
+
+    [Fact]
+    public void Choose_TargetBelowATypeWithoutARange_IsNotWritten()
+    {
+        MfNativeType[] types = [Bare(Nv12, 1920, 1080, 60)];
+        Assert.Equal((0, (Rational?)null), MfNativeTypes.Choose(types, Nv12, Format(types[0]), new Rational(15)));
     }
 
     [Fact]
