@@ -53,10 +53,10 @@ BlueZ `Device1.Disconnect()`, which drops the link for every session.
 | Notify, indicate | Write the CCCD, then `ValueChanged` (Documented). | `StartNotify` and `StopNotify`, then `PropertiesChanged` on `Value`; or `AcquireNotify`, which returns a socket (Measured). | `setNotifyValue`, then `didUpdateValueForCharacteristic` (Documented). |
 | MTU | `GattSession.MaxPduSize`, `MaxPduSizeChanged` (Documented). | `MTU` on each characteristic: 517 between the rig's controllers (Measured). | `maximumWriteValueLength(for:)` only (Documented). |
 | Errors | `GattCommunicationStatus` (`Success`, `Unreachable`, `ProtocolError`, `AccessDenied`) plus the ATT byte (Documented). | `org.bluez.Error.*` names, with ATT detail in the message text (Documented). | `NSError` in `CBATTErrorDomain` or `CBErrorDomain` (Documented). |
-| Security | An encrypted characteristic triggers the OS pairing flow or fails (Documented). | Pairing needs an `Agent1` registered on the bus (Documented). | A system prompt; no API (Documented). |
+| Security | An encrypted characteristic triggers the OS pairing flow or fails (Documented). | Pairing needs an `Agent1` on the bus. A desktop's default agent serves it; a headless host needs one registered (Documented). | A system prompt; no API (Documented). |
 | OS-claimed services | `0x1812` listed, refused (Measured). | `0x1812` absent before 5.80, read-only after (Source). | `0x1812` not listed (Measured). |
 | Delivery | Async operations completing on the thread pool. | Signals read from one socket. | Delegate callbacks on a dispatch queue the client names. |
-| From .NET | The WinRT projection, so a `net10.0-windows10.0.19041.0` target, as `Periphery.Ble.InTheHand` already has. | Periphery's managed D-Bus client (ADR-0091 D2). It makes calls and reads signals. It does not negotiate `UNIX_FDS` (Source: its codec ignores the field), so `AcquireNotify` and `AcquireWrite` are unreachable. It cannot serve calls, so it cannot register an `Agent1`. | No binding without the macOS workload. Objective-C runtime P/Invoke, as ADR-0093 uses for IOBluetooth, plus delegate classes defined at run time: `objc_allocateClassPair`, `class_addMethod`, and `[UnmanagedCallersOnly]` trampolines, with manual retain and release. |
+| From .NET | The WinRT projection, so a `net10.0-windows10.0.19041.0` target, as `Periphery.Ble.InTheHand` already has. | Periphery's managed D-Bus client (ADR-0091 D2). It makes calls and reads signals. It does not negotiate `UNIX_FDS` (Source: its codec ignores the field), so `AcquireNotify` and `AcquireWrite` are unreachable. It cannot serve calls, so it cannot be the `Agent1` on a host that has none. | No binding without the macOS workload. Objective-C runtime P/Invoke, as ADR-0093 uses for IOBluetooth, plus delegate classes defined at run time: `objc_allocateClassPair`, `class_addMethod`, and `[UnmanagedCallersOnly]` trampolines, with manual retain and release. |
 
 The parts that map one to one: UUIDs, characteristic property flags, bytes in and bytes out, and
 discovery by UUID.
@@ -80,8 +80,9 @@ discovery by UUID.
    and notifications the same callback. BlueZ's signal path carries every value as a D-Bus signal.
    Its low-overhead path, `AcquireNotify`, needs file-descriptor passing that Periphery's D-Bus
    client lacks. Throughput on either path is unmeasured.
-4. **Pairing.** On BlueZ a characteristic that needs encryption needs an agent, which is an object
-   Periphery would have to export over D-Bus. Windows and macOS show system UI that a library
+4. **Pairing.** On BlueZ a characteristic that needs encryption needs an agent. A desktop's default
+   agent serves it. Periphery would have to export one over D-Bus only to own pairing itself, for
+   example on a headless host with no other agent. Windows and macOS show system UI that a library
    cannot drive.
 5. **Cache invalidation.** A services change leaves stale handles on all three platforms, and each
    reports it differently: `GattServicesChanged`, `InterfacesRemoved` and `InterfacesAdded`, or
@@ -102,9 +103,11 @@ discovery by UUID.
 |---|---|---|---|
 | ADR-0085 D7 | stands | superseded | superseded |
 | macOS | Mac Catalyst apps only, if a target is added (#319) | plain .NET | plain .NET |
-| Cancellation, cache control, typed errors, reliable writes | no | not on Windows or Linux, which stay bounded by 32feet | yes |
+| Cancellation and typed errors | no | not on Windows or Linux, which stay bounded by 32feet | yes |
+| Cache control | no | no | Windows only: BlueZ has no per-call cache mode, and CoreBluetooth none |
+| Reliable writes | no | no | Windows and BlueZ; CoreBluetooth has no API |
 | Third-party GATT dependency | 32feet | 32feet on Windows and Linux | none |
-| New code | the Catalyst join of #319 | a small abstraction matching 32feet's surface, a thin 32feet adapter, a CoreBluetooth backend | the abstraction, a WinRT backend, a BlueZ GATT backend, `UNIX_FDS` and object export in the D-Bus client, and a CoreBluetooth backend |
+| New code | the Catalyst join of #319 | a small abstraction matching 32feet's surface, a thin 32feet adapter, a CoreBluetooth backend | the abstraction, a WinRT backend, a BlueZ GATT backend, `UNIX_FDS` in the D-Bus client for `AcquireNotify`, object export only if Periphery owns pairing, and a CoreBluetooth backend |
 | Reuses | `Periphery.Ble.InTheHand` | that, plus ADR-0093's Objective-C interop | ADR-0091's D-Bus client, ADR-0093's interop, `BleDeviceProxy`'s lifecycle |
 
 For scale: Linux bond enumeration and watching took about 2,200 lines (the D-Bus client 1,202, the
@@ -114,8 +117,8 @@ kinds of write, notification plumbing, and error mapping.
 
 **Lean, if macOS GATT for plain .NET is the goal: B.** Keep the abstraction to what 32feet already
 offers, so the 32feet adapter stays thin and the CoreBluetooth backend is the only new native code.
-C pays off only if 32feet's gaps become requirements: cancellation, cache control, typed errors, or
-an end to its Linux dependency chain (`Linux.Bluetooth` over `Tmds.DBus`, which carried a CVE until
+C pays off only if 32feet's gaps become requirements: cancellation, typed errors, Windows cache
+control, reliable writes, or an end to its Linux dependency chain (`Linux.Bluetooth` over `Tmds.DBus`, which carried a CVE until
 4.0.45). A remains right if macOS can wait for 32feet to ship a macOS build.
 
 ---
