@@ -251,13 +251,23 @@ internal sealed class MfCameraBackend : ICameraBackend
             throw new CameraConfigurationException(
                 $"Pixel format {format.PixelFormat} has no Media Foundation equivalent.", _deviceInfo.Id);
 
-        var mediaType = FindMatchingNativeType(format, subtype)
+        var (found, frameRate) = FindMatchingNativeType(configuration, subtype);
+        var mediaType = found
             ?? throw new CameraConfigurationException(
                 $"Format {format.Width}x{format.Height} {format.PixelFormat} is not supported by this camera.",
                 _deviceInfo.Id);
 
         try
         {
+            if (frameRate is { } rate)
+            {
+                ThrowForHr(
+                    mediaType.SetUINT64(
+                        MfInterop.MF_MT_FRAME_RATE,
+                        MfInterop.Pack2xUInt32((uint)rate.Numerator, (uint)rate.Denominator)),
+                    "Failed to set the frame rate");
+            }
+
             ThrowForHr(
                 _reader!.SetCurrentMediaType(MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, nint.Zero, mediaType),
                 "Failed to set media type");
@@ -528,10 +538,21 @@ internal sealed class MfCameraBackend : ICameraBackend
     {
         format = default!;
 
-        if (mediaType.GetGUID(MfInterop.MF_MT_SUBTYPE, out Guid subtype) < 0)
+        if (!TryReadNativeType(mediaType, out var type)
+            || !MfFormatMap.TryMapSubtype(type.Subtype, out var pixelFormat, out var transport))
+        {
             return false;
+        }
 
-        if (!MfFormatMap.TryMapSubtype(subtype, out var pixelFormat, out var transport))
+        format = new CameraFormat(type.Width, type.Height, pixelFormat, type.MinFrameRate, type.MaxFrameRate, transport);
+        return true;
+    }
+
+    private static bool TryReadNativeType(IMFMediaType mediaType, out MfNativeType type)
+    {
+        type = default;
+
+        if (mediaType.GetGUID(MfInterop.MF_MT_SUBTYPE, out Guid subtype) < 0)
             return false;
 
         if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_SIZE, out ulong frameSize) < 0)
@@ -540,11 +561,16 @@ internal sealed class MfCameraBackend : ICameraBackend
 
         Rational minFps = new(1);
         Rational maxFps = new(30);
+        Rational? ownFps = null;
 
         if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_RATE, out ulong frameRate) >= 0)
         {
             MfInterop.Unpack2xUInt32(frameRate, out uint num, out uint denom);
-            if (denom > 0) maxFps = new Rational((int)num, (int)denom);
+            if (denom > 0)
+            {
+                ownFps = new Rational((int)num, (int)denom);
+                maxFps = ownFps.Value;
+            }
         }
 
         if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_RATE_RANGE_MIN, out ulong minRate) >= 0)
@@ -559,48 +585,48 @@ internal sealed class MfCameraBackend : ICameraBackend
             if (denom > 0) maxFps = new Rational((int)num, (int)denom);
         }
 
-        format = new CameraFormat((int)width, (int)height, pixelFormat, minFps, maxFps, transport);
+        type = new MfNativeType(subtype, (int)width, (int)height, minFps, maxFps, ownFps);
         return true;
     }
 
-    private IMFMediaType? FindMatchingNativeType(CameraFormat target, Guid subtype)
+    /// <summary>
+    /// The native type <see cref="MfNativeTypes.Choose"/> picks for the configuration, which the
+    /// caller releases, and the frame rate to write into it first.
+    /// </summary>
+    private (IMFMediaType? MediaType, Rational? FrameRate) FindMatchingNativeType(CameraConfiguration configuration, Guid subtype)
     {
+        var types = new List<MfNativeType>();
+        var indices = new List<uint>();
         for (uint i = 0; ; i++)
         {
             int hr = _reader!.GetNativeMediaType(
                 MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, i, out IMFMediaType mediaType);
 
-            if (hr == MfInterop.MF_E_NO_MORE_TYPES) return null;
+            if (hr == MfInterop.MF_E_NO_MORE_TYPES) break;
             ThrowForHr(hr, "GetNativeMediaType failed during format search");
 
-            bool matched = false;
             try
             {
-                if (mediaType.GetGUID(MfInterop.MF_MT_SUBTYPE, out Guid nativeSubtype) < 0
-                    || nativeSubtype != subtype)
+                if (TryReadNativeType(mediaType, out var type))
                 {
-                    continue;
-                }
-
-                if (mediaType.GetUINT64(MfInterop.MF_MT_FRAME_SIZE, out ulong size) < 0)
-                    continue;
-
-                MfInterop.Unpack2xUInt32(size, out uint w, out uint h);
-                if ((int)w == target.Width && (int)h == target.Height)
-                {
-                    matched = true;
-                    return mediaType;
+                    types.Add(type);
+                    indices.Add(i);
                 }
             }
             finally
             {
-                if (!matched)
-                {
-                    var toRelease = mediaType;
-                    MfInterop.Release(ref toRelease!);
-                }
+                MfInterop.Release(ref mediaType!);
             }
         }
+
+        var (index, frameRate) = MfNativeTypes.Choose(types, subtype, configuration.Format, configuration.TargetFrameRate);
+        if (index < 0)
+            return (null, null);
+
+        ThrowForHr(
+            _reader!.GetNativeMediaType(MfInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, indices[index], out IMFMediaType chosen),
+            "GetNativeMediaType failed for the chosen format");
+        return (chosen, frameRate);
     }
 
     // ═══════════════════════════════════════════════════════════════════
