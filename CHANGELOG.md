@@ -5,7 +5,7 @@ All notable changes to Periphery are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 5.0.0 - 2026-10-02
 
 ### Added
 - **`BleDeviceProxy` in `Periphery.Ble.InTheHand`** (ADR-0085 D7 §3, issue #314). It keeps a GATT session, `BleSession`, connected to a bonded Bluetooth LE peripheral while the peripheral is present, and connects again after the link drops. It opens on presence, because a peripheral that is not a HID device has no link until a central connects. While the peripheral is out of range each attempt raises `OpenFailed` with a `BleException`. On Windows, an attempt at a silent peripheral returns unconnected after about 23 s, which counts as a failure. It never resets the device. Verified on the BLE bench (Windows) and the Linux device rig: connect, lose the link, fail while silent, reconnect. `DeviceProxyBase` gains `OpensWhilePresent` for a leaf whose device goes active only once opened (ADR-0088 amendment).

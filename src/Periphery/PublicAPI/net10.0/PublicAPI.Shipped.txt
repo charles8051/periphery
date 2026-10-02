@@ -1,5 +1,6 @@
 #nullable enable
 ~Periphery.DeviceFilterSpecJsonContext.BatteryStatus.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BatteryStatus>
+~Periphery.DeviceFilterSpecJsonContext.BluetoothTransport.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransport>
 ~Periphery.DeviceFilterSpecJsonContext.Boolean.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<bool>
 ~Periphery.DeviceFilterSpecJsonContext.BusType.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BusType>
 ~Periphery.DeviceFilterSpecJsonContext.DeviceCategory.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.DeviceCategory>
@@ -11,6 +12,7 @@
 ~Periphery.DeviceFilterSpecJsonContext.Guid.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Guid>
 ~Periphery.DeviceFilterSpecJsonContext.Int32.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<int>
 ~Periphery.DeviceFilterSpecJsonContext.NullableBatteryStatus.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BatteryStatus?>
+~Periphery.DeviceFilterSpecJsonContext.NullableBluetoothTransport.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransport?>
 ~Periphery.DeviceFilterSpecJsonContext.NullableBoolean.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<bool?>
 ~Periphery.DeviceFilterSpecJsonContext.NullableBusType.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BusType?>
 ~Periphery.DeviceFilterSpecJsonContext.NullableDeviceCategory.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.DeviceCategory?>
@@ -25,6 +27,7 @@
 ~Periphery.DeviceFilterSpecJsonContext.UsbSpeed.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.UsbSpeed>
 ~Periphery.DeviceInfoJsonContext.AddressFamily.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Net.Sockets.AddressFamily>
 ~Periphery.DeviceInfoJsonContext.BatteryStatus.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BatteryStatus>
+~Periphery.DeviceInfoJsonContext.BluetoothTransports.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransports>
 ~Periphery.DeviceInfoJsonContext.Boolean.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<bool>
 ~Periphery.DeviceInfoJsonContext.BusType.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BusType>
 ~Periphery.DeviceInfoJsonContext.ByteArray.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<byte[]>
@@ -48,6 +51,7 @@
 ~Periphery.DeviceInfoJsonContext.Int64.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<long>
 ~Periphery.DeviceInfoJsonContext.ListDeviceInfo.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<System.Collections.Generic.List<Periphery.DeviceInfo>>
 ~Periphery.DeviceInfoJsonContext.NullableBatteryStatus.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BatteryStatus?>
+~Periphery.DeviceInfoJsonContext.NullableBluetoothTransports.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.BluetoothTransports?>
 ~Periphery.DeviceInfoJsonContext.NullableBoolean.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<bool?>
 ~Periphery.DeviceInfoJsonContext.NullableDeviceId.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.DeviceId?>
 ~Periphery.DeviceInfoJsonContext.NullableDisplayConnectionKind.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo<Periphery.DisplayConnectionKind?>
