@@ -10,7 +10,9 @@ LE peripherals, through cfgmgr32 device properties and [`scratch/BleOsProbe`](..
 Windows link-change pushes were measured on 2026-09-27 with
 [`scratch/BluetoothHciEventProbe`](../../scratch/BluetoothHciEventProbe), for BR/EDR, and on
 2026-09-28 for LE against the [BLE bench](../patterns/ble-bench-testing.md) peripheral.
-No Linux or macOS Bluetooth hardware was available.
+No physical Linux Bluetooth hardware was available; Linux was measured against two virtual
+`btvirt` controllers on the device rig (ADR-0091). macOS was measured on one MacBook Air on macOS
+26.4.1, with one paired LE HID mouse, on 2026-09-30 and 2026-10-02.
 **Scope:** device inventory, identity, liveness, GATT access, pairing, scanning, permissions and
 caching. Classic profiles other than RFCOMM, LE Audio, mesh, and acting as a peripheral are out of
 scope.
@@ -36,8 +38,8 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | 1 | `OfCategory(Bluetooth)` returns adapters and address-less link objects. It never returns a bonded device. | Linux | Source | Nothing in core. Bonds exist only in BlueZ, over D-Bus. |
 | 2 | `OfCategory(Bluetooth)` matched `IOBluetoothDevice` registry objects. On macOS 26.4 the only one is the Mac's own incoming serial service, never a bond. | macOS | Measured | Settled by ADR-0093: bonds come from IOBluetooth's `pairedDevices`. |
 | 3 | 32feet's `BluetoothDevice.Id` has a different format on each platform. On Windows it drops leading zeros. | All | Source, Measured | Parse to a number before comparing. |
-| 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented, Measured | A connected HID device's IOKit node carries both its address and its CoreBluetooth identifier; see [GATT access](#gatt-access). No key was found for a peripheral that is not a HID device. |
-| 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, and read-only on BlueZ 5.80+. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS is unverified. |
+| 4 | CoreBluetooth exposes no address for an LE peripheral, so D5's `BluetoothAddress` cannot come from CoreBluetooth on macOS. | macOS | Documented, Measured | One connected LE HID mouse's IOKit node carried both its address and its CoreBluetooth identifier; see [GATT access](#gatt-access). Other HID devices are unverified, and no key was found for a peripheral that is not a HID device. |
+| 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, read-only on BlueZ 5.80+, and not listed on macOS. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS was measured against one LE HID mouse; see [GATT access](#gatt-access). |
 | 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. The Bluetooth driver pushes `GUID_BLUETOOTH_HCI_EVENT` on every link change, BR/EDR and LE, through a cfgmgr32 registration core can make without WinRT. | Windows | Documented, Measured | Settled for BR/EDR and LE; see [Liveness → Windows](#windows-1). |
 | 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. Later RPAs resolve to that devnode; a re-pair creates a new one. | Windows | Measured | Settled on Windows; see [Durability, measured](#durability-measured). |
 | 8 | A BlueZ `Device1` object is not a bond. Discovery creates temporary objects that BlueZ removes after 30 s. `Bonded` exists only from BlueZ 5.65, and Ubuntu 22.04 ships 5.64. | Linux | Documented, Source | Select on `Paired`. Treat `Bonded` as optional. |
@@ -440,10 +442,11 @@ the vendor, product and version on the mouse's IOKit HID node.
 
 The same HID node carries `DeviceAddress`, the bond's address, and `PhysicalDeviceUniqueID`, which
 equalled `CBPeripheral.identifier`. `retrievePeripheralsWithIdentifiers:` with that UUID returned
-the mouse, and `retrieveConnectedPeripheralsWithServices:` returned the same identifier. That joins
-a bond Periphery reads from IOBluetooth to a CoreBluetooth peripheral, with public API and no root,
-while the device is connected. A peripheral that is not a HID device has no such node, and no other
-public key was found. The pairing database under `/Library/Bluetooth` refuses an admin over SSH
+the mouse, and `retrieveConnectedPeripheralsWithServices:` returned the same identifier. For this
+mouse, that joins a bond Periphery reads from IOBluetooth to a CoreBluetooth peripheral, with public
+API and no root, while it is connected. Whether other HID devices, such as a keyboard or a BR/EDR
+HID device, carry both properties is unverified. A peripheral that is not a HID device has no such
+node, and no other public key was found. The pairing database under `/Library/Bluetooth` refuses an admin over SSH
 ("Operation not permitted").
 
 **Web Bluetooth.** The Web Bluetooth GATT blocklist also excludes `0x1812`, along with several
