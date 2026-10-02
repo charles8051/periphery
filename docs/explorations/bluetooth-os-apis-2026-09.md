@@ -36,7 +36,7 @@ Ranked by how directly each one breaks something Periphery ships or has decided 
 | 1 | `OfCategory(Bluetooth)` returns adapters and address-less link objects. It never returns a bonded device. | Linux | Source | Nothing in core. Bonds exist only in BlueZ, over D-Bus. |
 | 2 | `OfCategory(Bluetooth)` matched `IOBluetoothDevice` registry objects. On macOS 26.4 the only one is the Mac's own incoming serial service, never a bond. | macOS | Measured | Settled by ADR-0093: bonds come from IOBluetooth's `pairedDevices`. |
 | 3 | 32feet's `BluetoothDevice.Id` has a different format on each platform. On Windows it drops leading zeros. | All | Source, Measured | Parse to a number before comparing. |
-| 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented | Nothing. It is a platform privacy decision. |
+| 4 | CoreBluetooth exposes no address for an LE peripheral. D5's `BluetoothAddress` cannot exist for LE on macOS. | macOS | Documented, Measured | A connected HID device's IOKit node carries both its address and its CoreBluetooth identifier; see [GATT access](#gatt-access). No key was found for a peripheral that is not a HID device. |
 | 5 | A GATT service the OS has claimed is refused on Windows, absent on BlueZ before 5.80, and read-only on BlueZ 5.80+. A service filter can match a device whose service no client can use. | All | Measured, Source | Document per platform. macOS is unverified. |
 | 6 | ADR-0085 Context §1 says a 32feet poll is the only live Bluetooth signal on Windows. The Bluetooth driver pushes `GUID_BLUETOOTH_HCI_EVENT` on every link change, BR/EDR and LE, through a cfgmgr32 registration core can make without WinRT. | Windows | Documented, Measured | Settled for BR/EDR and LE; see [Liveness → Windows](#windows-1). |
 | 7 | Windows keys a privacy-enabled LE peripheral by the resolvable-private-form address it saw at pairing. Later RPAs resolve to that devnode; a re-pair creates a new one. | Windows | Measured | Settled on Windows; see [Durability, measured](#durability-measured). |
@@ -113,8 +113,10 @@ never returned a bond, and never an LE device.
 macOS 12 moved much of the stack into the userspace `bluetoothd`. The C function
 `IOBluetoothRegisterForDeviceConnectNotifications` became a missing symbol on Monterey (Reported:
 Apple Developer Forums thread 685545). Whether any registry object of class `IOBluetoothDevice`
-exists on current macOS is unverified. If none does, `OfCategory(Bluetooth)` has returned nothing on
-macOS since macOS 12. CI cannot settle this, because hosted macOS runners have no Bluetooth radio.
+exists on current macOS was unverified until 2026-09-30. On macOS 26.4.1 the only entry is the Mac's
+own `Bluetooth-Incoming-Port` serial service, never a bond (Measured). ADR-0093 reads bonds from
+`pairedDevices()` instead, which returns nothing, and no error, to a process without Bluetooth
+permission (Measured).
 
 CoreBluetooth keeps no inventory of bonds. `retrievePeripherals(withIdentifiers:)` returns
 peripherals the app already knows by identifier. `retrieveConnectedPeripherals(withServices:)`
@@ -269,6 +271,11 @@ Both measured Ids round-tripped through `FromIdAsync` (Measured).
 **macOS.** `GetId()` returns `CBPeripheral.Identifier.ToString()` (Source). CoreBluetooth assigns it
 per host. Stability across scanning sessions is not guaranteed (Reported: Silicon Labs).
 
+32feet 4.0.45 ships no plain macOS asset. Its `lib/` holds `net462`, `net9.0`, `net9.0-android35.0`,
+`net9.0-ios18.0`, `net9.0-maccatalyst18.0`, `net9.0-windows10.0.19041` and `netstandard2.0`
+(Measured: package contents). A `net10.0` program on a Mac binds `net9.0`, the BlueZ build, so
+only a Mac Catalyst app gets 32feet's CoreBluetooth provider.
+
 ### WinRT Ids embed the radio
 
 WinRT AEP Ids have the shape `BluetoothLE#BluetoothLE<radio address>-<device address>` for LE and
@@ -403,9 +410,9 @@ connections it made itself, and can list current system connections with
 
 | OS-claimed service | Windows | BlueZ before 5.80 | BlueZ 5.80+ | macOS |
 |---|---|---|---|---|
-| HID over GATT `0x1812` | Listed. Characteristics refused with `AccessDenied` (Measured) | No `GattService1` object while a built-in profile claims it | Exported read-only by default | Unverified |
-| Battery `0x180F` | Accessible (Measured) | Same | Same | Unverified |
-| Device Information `0x180A` | Accessible (Measured) | Same | Same | Unverified |
+| HID over GATT `0x1812` | Listed. Characteristics refused with `AccessDenied` (Measured) | No `GattService1` object while a built-in profile claims it | Exported read-only by default | Not listed (Measured) |
+| Battery `0x180F` | Accessible (Measured) | Same | Same | Listed (Measured) |
+| Device Information `0x180A` | Accessible (Measured) | Same | Same | Readable (Measured) |
 
 **BlueZ.** `add_gatt_service` in `src/device.c` marks a service claimed when a built-in profile
 probes it, and leaves it unclaimed when the profile was registered externally over D-Bus (Source).
@@ -425,6 +432,19 @@ filter can read `Device1.UUIDs` without any GATT access.
 service returned its characteristics: Generic Access, Device Information, Battery and a vendor
 16-bit service on the mouse; Generic Attribute, Generic Access, the Nordic UART Service and a vendor
 128-bit service on the other peripheral.
+
+**macOS.** Measured on 2026-10-02 on macOS 26.4.1, against a connected LE HID mouse, from a process
+with Bluetooth permission. `discoverServices(nil)` returned Device Information, Battery and a vendor
+`0xFFF0` service, but not `0x1812`. Manufacturer Name and PnP ID read back, and the PnP ID matched
+the vendor, product and version on the mouse's IOKit HID node.
+
+The same HID node carries `DeviceAddress`, the bond's address, and `PhysicalDeviceUniqueID`, which
+equalled `CBPeripheral.identifier`. `retrievePeripheralsWithIdentifiers:` with that UUID returned
+the mouse, and `retrieveConnectedPeripheralsWithServices:` returned the same identifier. That joins
+a bond Periphery reads from IOBluetooth to a CoreBluetooth peripheral, with public API and no root,
+while the device is connected. A peripheral that is not a HID device has no such node, and no other
+public key was found. The pairing database under `/Library/Bluetooth` refuses an admin over SSH
+("Operation not permitted").
 
 **Web Bluetooth.** The Web Bluetooth GATT blocklist also excludes `0x1812`, along with several
 vendor DFU services and FIDO services (Documented: WebBluetoothCG registries). 32feet's BLE package
@@ -507,7 +527,7 @@ each queued request can take that long (Documented: Microsoft Learn, Bluetooth G
 |---|---|
 | Windows | Radio nodes, every bonded device node, and service nodes of class Bluetooth. Service nodes the OS gives a function class, such as HID, land in that category instead (Measured: ARCHITECTURE.md §10.6.2, #233). |
 | Linux | Adapters and `hciN:<handle>` link objects. No bonds and no addresses (Source). |
-| macOS | Registry objects of class `IOBluetoothDevice`: at most connected BR/EDR devices, and possibly nothing on macOS 12+ (Reported). |
+| macOS | Until #316, the Mac's own incoming serial service, never a bond (Measured on 26.4.1). Since ADR-0093, one device per bond IOBluetooth reports, to a process with Bluetooth permission. |
 
 ---
 
@@ -515,10 +535,9 @@ each queued request can take that long (Documented: Microsoft Learn, Bluetooth G
 
 | Question | What resolves it |
 |---|---|
-| Does macOS 13+ register any `IOBluetoothDevice` objects? | `ioreg -r -l -c IOBluetoothDevice` with a connected BR/EDR device, then a connected LE device. |
 | What is the 250 ms LE link the host sometimes reports before a connect, which the peripheral never logs? | Repeat the toggle runs with a sniffer on the link. |
 | Does `DEVPKEY_Bluetooth_DeviceFlags` on an LE devnode track `BDIF_LE_CONNECTED`? The in-range event carries the stack's flags, not the devnode property. | An LE link toggle, reading the devnode property before and after. |
-| Does CoreBluetooth on macOS hide `0x1812`? | `discoverServices(nil)` against an LE HID peripheral on a Mac. |
+| Can a peripheral that is not a HID device be joined to its bond on macOS? | Pair a GATT-only peripheral, such as the bench DK, with a Mac, and look for any public API or IOKit node carrying both its address and its CoreBluetooth identifier. |
 | Does BlueZ restore the desktop's default agent after 32feet's `PairAsync(code)`? | Pair from 32feet in a GNOME session, then pair from Settings. |
 | What does `0x04000000` mean in `DEVPKEY_Bluetooth_DeviceFlags`? | Not defined in SDK 10.0.26100's `bthdef.h`. |
 | What are custom events `ab27d6ed-0e6d-4b67-9773-f1426bcea595` (18 bytes), `477335e6-24cf-4a65-a817-642e1092c34f` (52 bytes) and `1bbd4010-498c-4e85-851b-eaa05715c37a` (270 bytes)? | None is defined in SDK 10.0.26100. Decode the bytes across several transitions. |
