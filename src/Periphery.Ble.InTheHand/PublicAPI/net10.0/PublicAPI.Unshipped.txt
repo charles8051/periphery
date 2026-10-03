@@ -1,13 +1,1 @@
 #nullable enable
-Periphery.Ble.InTheHand.BleDeviceProxy
-Periphery.Ble.InTheHand.BleException
-Periphery.Ble.InTheHand.BleException.BleException(string! message) -> void
-Periphery.Ble.InTheHand.BleException.BleException(string! message, System.Exception! innerException) -> void
-Periphery.Ble.InTheHand.BleSession
-Periphery.Ble.InTheHand.BleSession.Device.get -> InTheHand.Bluetooth.BluetoothDevice!
-Periphery.Ble.InTheHand.BleSession.DisposeAsync() -> System.Threading.Tasks.ValueTask
-Periphery.Ble.InTheHand.BleSession.Gatt.get -> InTheHand.Bluetooth.RemoteGattServer!
-Periphery.Ble.InTheHand.DeviceInfoBleExtensions
-static Periphery.Ble.InTheHand.BleDeviceProxy.Create(Periphery.DeviceTracker! tracker, Periphery.IRecoveryPolicy? recoveryPolicy = null) -> Periphery.Ble.InTheHand.BleDeviceProxy!
-static Periphery.Ble.InTheHand.BleDeviceProxy.OpenAsync(Periphery.DeviceProfile! profile, Periphery.IRecoveryPolicy? recoveryPolicy = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Ble.InTheHand.BleDeviceProxy!>!
-static Periphery.Ble.InTheHand.DeviceInfoBleExtensions.ToBluetoothDeviceAsync(this Periphery.DeviceInfo! device, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<InTheHand.Bluetooth.BluetoothDevice?>!
