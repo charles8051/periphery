@@ -22,8 +22,9 @@ concurrency:
 
 jobs:
   review:
-    # pull_request: same-repo branches only, so a fork's tree never lands on the self-hosted runner.
-    # A fork PR runs the fork's copy of this file, so this half is hygiene, not a boundary.
+    # pull_request: same-repo branches only. A fork PR runs the fork's copy of this file, so this
+    # half is hygiene, not a boundary. The boundary is Settings -> Actions, which requires approval
+    # before a fork PR from any outside collaborator runs a workflow.
     # issue_comment: PR comments only, from a non-bot owner, member or collaborator. This event runs
     # the base repo's copy of this file, so the author check here is a real boundary.
     if: >-
