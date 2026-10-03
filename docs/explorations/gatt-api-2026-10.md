@@ -33,7 +33,7 @@ Linux. macOS has no path (#319).
 | Read, write | `ReadValueAsync`; `WriteValueWithResponseAsync`; `WriteValueWithoutResponseAsync`; descriptor read and write |
 | Notify, indicate | `StartNotificationsAsync`, `StopNotificationsAsync`, `CharacteristicValueChanged` |
 | Link | `Mtu`, `RequestMtuAsync`, `PreferredPhy`, `ReadRssi` |
-| Absent | a `CancellationToken` on any GATT call; cache control; reliable writes; typed ATT errors; a services-changed event; a build for plain .NET on macOS |
+| Absent | a `CancellationToken` on any GATT call; cache control; reliable writes; typed ATT errors; a services-changed event; a macOS build. The CoreBluetooth code exists in `Platforms/Apple`, and the project compiles it for `net9.0-macos`, but `TargetFrameworks` leaves that target out (inthehand/32feet#409) |
 
 A caller already works around three of its behaviours (Measured, #318). On Windows, `ConnectAsync`
 to a silent peripheral returns after about 23 s without throwing, unconnected.
@@ -97,26 +97,34 @@ discovery by UUID.
 
 ---
 
-## Three shapes
+## Four shapes
 
-| | A: keep 32feet | B: Periphery's API over 32feet, own CoreBluetooth | C: Periphery's API, three native backends |
-|---|---|---|---|
-| ADR-0085 D7 | stands | superseded | superseded |
-| macOS | Mac Catalyst apps only, if a target is added (#319) | plain .NET | plain .NET |
-| Cancellation and typed errors | no | not on Windows or Linux, which stay bounded by 32feet | yes |
-| Cache control | no | no | Windows only: BlueZ has no per-call cache mode, and CoreBluetooth none |
-| Reliable writes | no | no | Windows and BlueZ; CoreBluetooth has no API |
-| Third-party GATT dependency | 32feet | 32feet on Windows and Linux | none |
-| New code | the Catalyst join of #319 | a small abstraction matching 32feet's surface, a thin 32feet adapter, a CoreBluetooth backend | the abstraction, a WinRT backend, a BlueZ GATT backend, `UNIX_FDS` in the D-Bus client for `AcquireNotify`, object export only if Periphery owns pairing, and a CoreBluetooth backend |
-| Reuses | `Periphery.Ble.InTheHand` | that, plus ADR-0093's Objective-C interop | ADR-0091's D-Bus client, ADR-0093's interop, `BleDeviceProxy`'s lifecycle |
+| | A: keep 32feet | B: Periphery's API over 32feet, own CoreBluetooth | C: Periphery's API, three native backends | D: upstream a macOS target to 32feet |
+|---|---|---|---|---|
+| ADR-0085 D7 | stands | superseded | superseded | stands |
+| macOS | Mac Catalyst apps only, if a target is added (#319) | plain .NET | plain .NET | apps that target `net*-macos` |
+| Cancellation and typed errors | no | not on Windows or Linux, which stay bounded by 32feet | yes | no |
+| Cache control | no | no | Windows only: BlueZ has no per-call cache mode, and CoreBluetooth none | no |
+| Reliable writes | no | no | Windows and BlueZ; CoreBluetooth has no API | no |
+| Third-party GATT dependency | 32feet | 32feet on Windows and Linux | none | 32feet |
+| New code | the Catalyst join of #319 | a small abstraction matching 32feet's surface, a thin 32feet adapter, a CoreBluetooth backend | the abstraction, a WinRT backend, a BlueZ GATT backend, `UNIX_FDS` in the D-Bus client for `AcquireNotify`, object export only if Periphery owns pairing, and a CoreBluetooth backend | a PR to 32feet adding `net9.0-macos`; a `net10.0-macos` target and the HID-node join in `Periphery.Ble.InTheHand` |
+| Reuses | `Periphery.Ble.InTheHand` | that, plus ADR-0093's Objective-C interop | ADR-0091's D-Bus client, ADR-0093's interop, `BleDeviceProxy`'s lifecycle | `Periphery.Ble.InTheHand`, `BleDeviceProxy`, and 32feet's existing CoreBluetooth code |
+
+D rests on 32feet's own record. Its maintainer removed the Mac targets "because of build issues",
+and said the macOS implementation is "essentially the same code as iOS uses" (inthehand/32feet#409,
+2024). A user reported in 2025 that a local `net8.0-macos` build worked. The build issue was never
+described, and D depends on 32feet accepting and releasing the change. In every shape that reaches
+macOS, the join covers only a connected HID device (#319).
 
 For scale: Linux bond enumeration and watching took about 2,200 lines (the D-Bus client 1,202, the
 BlueZ leg 1,015). The IOBluetooth bond leg is 518, and `Periphery.Ble.InTheHand` is 394. Each GATT
 backend covers more ground than either existing leg: connection, stepwise discovery, read, three
 kinds of write, notification plumbing, and error mapping.
 
-**Lean, if macOS GATT for plain .NET is the goal: B.** Keep the abstraction to what 32feet already
-offers, so the 32feet adapter stays thin and the CoreBluetooth backend is the only new native code.
+**Lean, if macOS GATT is the goal: D for apps that target `net*-macos`, B for plain `net10.0`
+programs.** D is one target upstream and a join here. B serves the programs no 32feet build reaches;
+keep its abstraction to what 32feet already offers, so the 32feet adapter stays thin and the
+CoreBluetooth backend is the only new native code.
 C pays off only if 32feet's gaps become requirements: cancellation, typed errors, Windows cache
 control, reliable writes, or an end to its Linux dependency chain (`Linux.Bluetooth` over `Tmds.DBus`, which carried a CVE until
 4.0.45). A remains right if macOS can wait for 32feet to ship a macOS build.
