@@ -12,6 +12,8 @@ public class SerialPortNameMappingTests
     [InlineData("tty", "ttyUSB0", "/dev/ttyUSB0")]   // a kernel uevent's DEVNAME is relative to /dev
     [InlineData("tty", "/dev/rfcomm0", "/dev/rfcomm0")]
     [InlineData("tty", "/dev/ttyAMA0", "/dev/ttyAMA0")]
+    [InlineData("tty", "/dev/tty64", "/dev/tty64")]   // past the last virtual console
+    [InlineData("tty", "/dev/tty00", "/dev/tty00")]   // not a name the kernel gives a console
     public void ATtyIsNamedByItsDeviceNode(string subsystem, string devname, string expected) =>
         Assert.Equal(new SerialPortName(expected), LinuxCategoryMap.GetPortName(subsystem, devname));
 
@@ -27,6 +29,7 @@ public class SerialPortNameMappingTests
     [InlineData("tty", "tty1")]
     [InlineData("tty", "/dev/console")]
     [InlineData("tty", "/dev/ptmx")]
+    [InlineData("tty", "/dev/ttyprintk")]
     public void AnythingElseHasNoPortName(string? subsystem, string? devname) =>
         Assert.Null(LinuxCategoryMap.GetPortName(subsystem, devname));
 }

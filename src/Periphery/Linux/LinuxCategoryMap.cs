@@ -54,8 +54,8 @@ internal static class LinuxCategoryMap
     /// </summary>
     /// <remarks>
     /// The <c>tty</c> subsystem also holds the kernel's console nodes: <c>tty</c> (the
-    /// caller's controlling terminal), <c>console</c>, <c>ptmx</c>, and the virtual
-    /// consoles <c>tty0</c> to <c>tty63</c>. They are not serial ports and get none. The
+    /// caller's controlling terminal), <c>console</c>, <c>ptmx</c>, <c>ttyprintk</c>, and the
+    /// virtual consoles <c>tty0</c> to <c>tty63</c>. They are not serial ports and get none. The
     /// test is by name, not by a <c>/devices/virtual</c> syspath, because an RFCOMM tty is
     /// a serial port that lives there until it connects.
     /// </remarks>
@@ -69,8 +69,17 @@ internal static class LinuxCategoryMap
     private static bool IsConsoleNode(string path)
     {
         string name = path[(path.LastIndexOf('/') + 1)..];
-        return name is "tty" or "console" or "ptmx"
-            || (name.Length > 3 && name.StartsWith("tty", StringComparison.Ordinal) && name[3..].All(char.IsAsciiDigit));
+        return name is "tty" or "console" or "ptmx" or "ttyprintk" || IsVirtualConsole(name);
+    }
+
+    /// <summary><c>tty0</c> to <c>tty63</c>: the kernel numbers no more (<c>MAX_NR_CONSOLES</c>).</summary>
+    private static bool IsVirtualConsole(string name)
+    {
+        string digits = name.StartsWith("tty", StringComparison.Ordinal) ? name[3..] : "";
+        return digits.Length is 1 or 2
+            && digits.All(char.IsAsciiDigit)
+            && (digits.Length == 1 || digits[0] != '0')
+            && int.Parse(digits, System.Globalization.CultureInfo.InvariantCulture) <= 63;
     }
 
     /// <summary>
