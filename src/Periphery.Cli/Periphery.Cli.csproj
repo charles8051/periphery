@@ -13,7 +13,7 @@
 
     <!-- Package Metadata -->
     <PackageId>Periphery.Cli</PackageId>
-    <Description>Command-line tool for inspecting connected hardware via Periphery. Provides `devices list` (snapshot), `devices watch` (live event stream), and `devices dashboard` (Spectre.Console TUI). Install with `dotnet tool install -g Periphery.Cli`.</Description>
+    <Description>Command-line tool for inspecting connected hardware via Periphery. Provides `devices list` (snapshot), `devices watch` (live event stream), `devices dashboard` (Spectre.Console TUI), and `serial` (a terminal that follows a serial adapter across replugs). Install with `dotnet tool install -g Periphery.Cli`.</Description>
     <PackageTags>hardware;device-enumeration;cli;dotnet-tool;periphery</PackageTags>
 
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -25,6 +25,7 @@
     <ProjectReference Include="..\Periphery.Camera\Periphery.Camera.csproj" />
     <ProjectReference Include="..\Periphery.Hid\Periphery.Hid.csproj" />
     <ProjectReference Include="..\Periphery.Monitor\Periphery.Monitor.csproj" />
+    <ProjectReference Include="..\Periphery.Serial\Periphery.Serial.csproj" />
   </ItemGroup>
 
   <ItemGroup>

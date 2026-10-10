@@ -5,6 +5,11 @@ All notable changes to Periphery are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- **`periphery serial`** (ADR-0043 Phase 3, issue #325). An interactive terminal on one serial port. The port is chosen by OS name (`COM4`, `/dev/ttyUSB0`), by `--name` or `--id`, or implicitly when only one is connected. `--baud`, `--data-bits`, `--parity`, `--stop-bits` and `--handshake` set the line, and `--dtr` and `--rts` assert those lines. Keystrokes are sent as typed: Ctrl+C as `0x03`, arrow and editing keys as VT100 sequences, and Enter as `--eol` (`cr`, `lf` or `crlf`). Ctrl+] quits. `--echo` prints typed characters on the console, and `--hex` shows received bytes as hex. An enumerated port runs under `DeviceSessionHost`, so unplugging the adapter prints a status line and replugging resumes. A port that is busy is retried, and reported once. A port name that matches no enumerated device is opened directly and is not followed across a replug; on Linux that is every port, since Linux does not yet report `PortName`. Received data goes to stdout and status lines to stderr. With stdout redirected the port's bytes are written unchanged, and with stdin redirected its bytes are sent unchanged and the command exits `--linger` milliseconds after end of input. Redirected input waits for the port to be open, but a write that fails part-way is reported and not sent again, since part of it may have gone out. Reads go through `Periphery.Serial`'s `BclSerialDuplexPipe`.
+
 ## 5.0.0 - 2026-10-02
 
 ### Added
