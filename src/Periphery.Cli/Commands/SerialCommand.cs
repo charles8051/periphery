@@ -24,13 +24,21 @@ namespace Periphery.Cli.Commands;
 /// </remarks>
 internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 {
-    /// <summary>Which port to open. The line options come from <see cref="LineSettings"/>.</summary>
-    public sealed class Settings : LineSettings
+    /// <summary>
+    /// The <c>serial</c> branch's settings. The port argument lives here, not on
+    /// <see cref="Settings"/>, because a Spectre branch's default command does not receive
+    /// positional arguments: <c>periphery serial COM4</c> parses only if the branch takes it.
+    /// </summary>
+    public class PortSettings : LineSettings
     {
         [Description("OS port name: COM4, /dev/ttyUSB0. Default: the only connected serial port.")]
         [CommandArgument(0, "[port]")]
         public string? Port { get; init; }
+    }
 
+    /// <summary>Which port <c>periphery serial</c> opens.</summary>
+    public sealed class Settings : PortSettings
+    {
         [Description("Select by exact device Id.")]
         [CommandOption("--id")]
         public string? Id { get; init; }

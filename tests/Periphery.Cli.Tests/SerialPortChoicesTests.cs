@@ -100,3 +100,41 @@ public sealed class SerialPortChoicesTests
         Assert.Contains("COM7  Gadget [rev B]", console.Output);
     }
 }
+
+public sealed class TerminalTextTests
+{
+    private sealed class Session;
+
+    [Fact]
+    public void ControlCharacters_AreReplaced_PrintableTextIsKept()
+    {
+        Assert.Equal("a�]2;owned�b é", TerminalText.Printable("a\u001B]2;owned\u0007b é"));
+        Assert.Equal("��", TerminalText.Printable("\u007F\u009B"));
+        Assert.Equal("plain", TerminalText.Printable("plain"));
+    }
+
+    [Fact]
+    public void PickerLabel_CarriesNoEscapeSequenceFromTheDeviceName()
+    {
+        var device = new DeviceInfo
+        {
+            Id = "x", Name = "Evil\u001B[2J\u001B]8;;http://x\u0007", PortName = new SerialPortName("COM5"),
+        };
+
+        var label = Assert.Single(SerialPortChoices.From([device])).Label;
+
+        Assert.DoesNotContain(label, char.IsControl);
+        Assert.StartsWith("COM5  Evil�[2J", label);
+    }
+
+    [Fact]
+    public void StatusLine_CarriesNoEscapeSequenceFromTheDeviceName()
+    {
+        var device = new DeviceInfo { Id = "x", Name = "Evil\u001B[2J", PortName = new SerialPortName("COM5") };
+
+        var (_, line) = new StatusNarrator("COM5", SerialLineSettings.Default)
+            .Next<Session>(new SessionActive<Session>(new Session(), device));
+
+        Assert.Equal("Connected to COM5 (Evil�[2J) at 115200 8N1. Ctrl+] to quit.", line);
+    }
+}

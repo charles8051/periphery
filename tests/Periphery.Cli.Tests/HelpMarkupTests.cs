@@ -31,6 +31,16 @@ public sealed class HelpMarkupTests
     }
 
     [Fact]
+    public void SerialSelect_DoesNotOfferId()
+    {
+        var (exitCode, output) = Run("serial", "select", "--help");
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("--id", output);
+        Assert.Contains("--name", output);
+    }
+
+    [Fact]
     public void EveryDescriptionParsesAsMarkup()
     {
         var (exitCode, xml) = Run("cli", "xmldoc");

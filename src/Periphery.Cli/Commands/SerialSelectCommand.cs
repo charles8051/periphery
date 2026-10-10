@@ -1,6 +1,7 @@
 // Copyright 2026 Charles Lee
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
+using System.ComponentModel;
 using Periphery.Cli.Serial.Core;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -11,24 +12,32 @@ namespace Periphery.Cli.Commands;
 /// <c>periphery serial select</c>: list the serial ports, pick one with the arrow keys and
 /// Enter, then run the same terminal as <c>periphery serial</c>.
 /// </summary>
-internal sealed class SerialSelectCommand : AsyncCommand<SerialCommand.Settings>
+internal sealed class SerialSelectCommand : AsyncCommand<SerialSelectCommand.Settings>
 {
+    public sealed class Settings : SerialCommand.PortSettings
+    {
+        [Description("Show only ports whose name contains this.")]
+        [CommandOption("--name")]
+        public string? Name { get; init; }
+    }
+
     protected override async Task<int> ExecuteAsync(
-        CommandContext context, SerialCommand.Settings settings, CancellationToken cancellationToken)
+        CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var err = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(Console.Error) });
+
+        // The branch takes the port, so `periphery serial COM4 select` parses.
+        if (settings.Port is not null)
+        {
+            err.MarkupLine("[red]serial select picks the port itself. Drop the port name, "
+                           + "or use periphery serial <port>.[/]");
+            return 1;
+        }
 
         if (Console.IsInputRedirected || Console.IsOutputRedirected)
         {
             err.MarkupLine("[red]serial select needs an interactive terminal. Name the port instead: "
                            + "periphery serial <port>.[/]");
-            return 1;
-        }
-
-        if (settings.Port is not null || settings.Id is not null)
-        {
-            err.MarkupLine("[red]serial select picks the port itself. Drop the port name and --id, "
-                           + "or use periphery serial <port>.[/]");
             return 1;
         }
 

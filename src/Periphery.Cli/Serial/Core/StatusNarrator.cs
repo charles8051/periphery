@@ -37,6 +37,9 @@ internal sealed record StatusNarrator(
             _ => null,
         };
 
+        // Device names and error text are device- and driver-reported.
+        if (line is not null) line = TerminalText.Printable(line);
+
         if (line is null || line == LastLine)
             return (this with { EverConnected = everConnected }, null);
         return (this with { EverConnected = everConnected, LastLine = line }, line);

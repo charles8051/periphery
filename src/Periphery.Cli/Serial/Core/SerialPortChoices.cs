@@ -27,7 +27,7 @@ internal static class SerialPortChoices
 
         int width = ports.Count == 0 ? 0 : ports.Max(d => d.PortName!.Value.Value.Length);
         return ports
-            .Select(d => new SerialPortChoice(d, Label(d, width)))
+            .Select(d => new SerialPortChoice(d, TerminalText.Printable(Label(d, width))))
             .ToList();
     }
 

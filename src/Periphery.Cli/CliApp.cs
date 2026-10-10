@@ -146,7 +146,7 @@ internal static class CliApp
                 .WithExample("monitor", "set-orientation", "portrait");
         });
 
-        config.AddBranch<SerialCommand.Settings>("serial", serial =>
+        config.AddBranch<SerialCommand.PortSettings>("serial", serial =>
         {
             serial.SetDescription("Interactive terminal on a serial port. Follows the adapter across unplug and replug. Ctrl+]] quits.");
             serial.SetDefaultCommand<SerialCommand>();
