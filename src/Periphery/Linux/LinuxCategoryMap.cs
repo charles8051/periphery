@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.Versioning;
 
 namespace Periphery.Linux;
@@ -51,10 +52,25 @@ internal static class LinuxCategoryMap
     /// <c>/dev</c> (<c>ttyUSB0</c>), so a relative name is rooted there. Anything that is
     /// not a <c>tty</c>, or has no node, has no port name.
     /// </summary>
+    /// <remarks>
+    /// The <c>tty</c> subsystem also holds the kernel's console nodes: <c>tty</c> (the
+    /// caller's controlling terminal), <c>console</c>, <c>ptmx</c>, and the virtual
+    /// consoles <c>tty0</c> to <c>tty63</c>. They are not serial ports and get none. The
+    /// test is by name, not by a <c>/devices/virtual</c> syspath, because an RFCOMM tty is
+    /// a serial port that lives there until it connects.
+    /// </remarks>
     internal static SerialPortName? GetPortName(string? subsystem, string? devname)
     {
         if (subsystem != "tty" || string.IsNullOrWhiteSpace(devname)) return null;
-        return new SerialPortName(devname.StartsWith('/') ? devname : "/dev/" + devname);
+        string path = devname.StartsWith('/') ? devname : "/dev/" + devname;
+        return IsConsoleNode(path) ? null : new SerialPortName(path);
+    }
+
+    private static bool IsConsoleNode(string path)
+    {
+        string name = path[(path.LastIndexOf('/') + 1)..];
+        return name is "tty" or "console" or "ptmx"
+            || (name.Length > 3 && name.StartsWith("tty", StringComparison.Ordinal) && name[3..].All(char.IsAsciiDigit));
     }
 
     /// <summary>
