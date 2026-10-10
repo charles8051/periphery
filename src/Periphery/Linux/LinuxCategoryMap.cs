@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.Versioning;
 
 namespace Periphery.Linux;
@@ -44,6 +45,42 @@ internal static class LinuxCategoryMap
     /// </summary>
     internal static bool IsBluetoothLink(string? subsystem, string? devtype) =>
         subsystem == "bluetooth" && devtype == "link";
+
+    /// <summary>
+    /// The OS port name of a <c>tty</c> device: its device node, which udev reports as
+    /// <c>DEVNAME</c> (<c>/dev/ttyUSB0</c>). A kernel uevent carries the name relative to
+    /// <c>/dev</c> (<c>ttyUSB0</c>), so a relative name is rooted there. Anything that is
+    /// not a <c>tty</c>, or has no node, has no port name.
+    /// </summary>
+    /// <remarks>
+    /// The <c>tty</c> subsystem also holds the kernel's console nodes: <c>tty</c> (the
+    /// caller's controlling terminal), <c>console</c>, <c>ptmx</c>, <c>ttyprintk</c>, and the
+    /// virtual consoles <c>tty0</c> to <c>tty63</c>. They are not serial ports and get none. The
+    /// test is by name, not by a <c>/devices/virtual</c> syspath, because an RFCOMM tty is
+    /// a serial port that lives there until it connects.
+    /// </remarks>
+    internal static SerialPortName? GetPortName(string? subsystem, string? devname)
+    {
+        if (subsystem != "tty" || string.IsNullOrWhiteSpace(devname)) return null;
+        string path = devname.StartsWith('/') ? devname : "/dev/" + devname;
+        return IsConsoleNode(path) ? null : new SerialPortName(path);
+    }
+
+    private static bool IsConsoleNode(string path)
+    {
+        string name = path[(path.LastIndexOf('/') + 1)..];
+        return name is "tty" or "console" or "ptmx" or "ttyprintk" || IsVirtualConsole(name);
+    }
+
+    /// <summary><c>tty0</c> to <c>tty63</c>: the kernel numbers no more (<c>MAX_NR_CONSOLES</c>).</summary>
+    private static bool IsVirtualConsole(string name)
+    {
+        string digits = name.StartsWith("tty", StringComparison.Ordinal) ? name[3..] : "";
+        return digits.Length is 1 or 2
+            && digits.All(char.IsAsciiDigit)
+            && (digits.Length == 1 || digits[0] != '0')
+            && int.Parse(digits, System.Globalization.CultureInfo.InvariantCulture) <= 63;
+    }
 
     /// <summary>
     /// Resolves a udev subsystem and device properties to a <see cref="DeviceCategory"/>.
