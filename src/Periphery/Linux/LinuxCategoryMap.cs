@@ -46,6 +46,18 @@ internal static class LinuxCategoryMap
         subsystem == "bluetooth" && devtype == "link";
 
     /// <summary>
+    /// The OS port name of a <c>tty</c> device: its device node, which udev reports as
+    /// <c>DEVNAME</c> (<c>/dev/ttyUSB0</c>). A kernel uevent carries the name relative to
+    /// <c>/dev</c> (<c>ttyUSB0</c>), so a relative name is rooted there. Anything that is
+    /// not a <c>tty</c>, or has no node, has no port name.
+    /// </summary>
+    internal static SerialPortName? GetPortName(string? subsystem, string? devname)
+    {
+        if (subsystem != "tty" || string.IsNullOrWhiteSpace(devname)) return null;
+        return new SerialPortName(devname.StartsWith('/') ? devname : "/dev/" + devname);
+    }
+
+    /// <summary>
     /// Resolves a udev subsystem and device properties to a <see cref="DeviceCategory"/>.
     /// Uses property hints (<c>ID_INPUT_KEYBOARD</c>, <c>ID_INPUT_MOUSE</c>, etc.) to
     /// disambiguate shared subsystems (e.g. <c>input</c> → Keyboard vs. Mouse vs. Hid).

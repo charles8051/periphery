@@ -30,10 +30,9 @@ internal static class SerialPortSelection
             if (byPort is not null)
                 return new(byPort, null, null);
 
-            // Linux does not report port names for enumerated devices yet, and a pty
-            // or a port behind an unrecognised driver never enumerates at all. The
-            // user named the port, so open it; it just cannot be followed across a
-            // replug.
+            // A pty, a symlink such as /dev/serial/by-id/..., or a port behind an
+            // unrecognised driver matches no enumerated device. The user named the
+            // port, so open it; it just cannot be followed across a replug.
             return SerialPortName.TryParse(port, out var unsupervised)
                 ? new(null, unsupervised, null)
                 : new(null, null, "The port name is empty.");
