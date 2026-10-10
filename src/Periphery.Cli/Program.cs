@@ -136,6 +136,13 @@ app.Configure(config =>
             .WithExample("monitor", "set-orientation", "portrait");
     });
 
+    config.AddCommand<SerialCommand>("serial")
+        .WithDescription("Interactive terminal on a serial port. Follows the adapter across unplug and replug. Ctrl+] quits.")
+        .WithExample("serial")
+        .WithExample("serial", "COM4", "--baud", "9600")
+        .WithExample("serial", "--name", "FTDI", "--eol", "crlf", "--echo")
+        .WithExample("serial", "/dev/ttyUSB0", "--hex");
+
     config.AddBranch("camera", camera =>
     {
         camera.SetDescription("Camera capture (Periphery.Camera). Windows (Media Foundation) and Linux (V4L2).");

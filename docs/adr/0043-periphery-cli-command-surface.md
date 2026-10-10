@@ -1,7 +1,7 @@
 ---
 title: "ADR-0043: Periphery.Cli command surface roadmap"
 status: "Accepted"
-status_note: "Partly shipped, partly diverged. Phase 1 (`devices watch` with filters) landed. Phase 3 landed for `hid`, not for camera or serial. Phases 2 (`wait` / `stream` / `on`) and 4 (`diff` / `fleet`) were not built. `battery`, `monitor`, `reset`, and `dashboard` commands shipped without appearing in this roadmap."
+status_note: "Partly shipped, partly diverged. Phase 1 (`devices watch` with filters) landed. Phase 3 landed for `hid` and `serial` (issue #325), and for camera only as `camera capture`. Phases 2 (`wait` / `stream` / `on`) and 4 (`diff` / `fleet`) were not built. `battery`, `monitor`, `reset`, and `dashboard` commands shipped without appearing in this roadmap."
 date: "2026-05-18"
 authors: "@charles8051 (decision)"
 tags: ["architecture", "decision", "cli", "tooling", "ux"]
