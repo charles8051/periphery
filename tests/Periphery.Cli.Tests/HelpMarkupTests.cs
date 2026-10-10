@@ -52,6 +52,7 @@ public sealed class HelpMarkupTests
     [Theory]
     [InlineData("--help")]
     [InlineData("serial", "--help")]
+    [InlineData("serial", "select", "--help")]
     [InlineData("devices", "--help")]
     public void HelpRenders(params string[] args)
     {

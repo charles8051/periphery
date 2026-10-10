@@ -146,12 +146,20 @@ internal static class CliApp
                 .WithExample("monitor", "set-orientation", "portrait");
         });
 
-        config.AddCommand<SerialCommand>("serial")
-            .WithDescription("Interactive terminal on a serial port. Follows the adapter across unplug and replug. Ctrl+]] quits.")
-            .WithExample("serial")
-            .WithExample("serial", "COM4", "--baud", "9600")
-            .WithExample("serial", "--name", "FTDI", "--eol", "crlf", "--echo")
-            .WithExample("serial", "/dev/ttyUSB0", "--hex");
+        config.AddBranch<SerialCommand.Settings>("serial", serial =>
+        {
+            serial.SetDescription("Interactive terminal on a serial port. Follows the adapter across unplug and replug. Ctrl+]] quits.");
+            serial.SetDefaultCommand<SerialCommand>();
+            serial.AddCommand<SerialSelectCommand>("select")
+                .WithDescription("Pick a serial port from a list with the arrow keys and Enter, then open a terminal on it.")
+                .WithExample("serial", "select")
+                .WithExample("serial", "select", "--baud", "9600", "--eol", "crlf")
+                .WithExample("serial", "select", "--name", "USB");
+            serial.AddExample("serial");
+            serial.AddExample("serial", "COM4", "--baud", "9600");
+            serial.AddExample("serial", "--name", "\"USB Serial\"", "--eol", "crlf", "--echo");
+            serial.AddExample("serial", "/dev/ttyUSB0", "--hex");
+        });
 
         config.AddBranch("camera", camera =>
         {

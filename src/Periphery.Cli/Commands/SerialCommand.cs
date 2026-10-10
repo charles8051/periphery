@@ -24,7 +24,8 @@ namespace Periphery.Cli.Commands;
 /// </remarks>
 internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 {
-    public sealed class Settings : CommandSettings
+    /// <summary>Which port to open. The line options come from <see cref="LineSettings"/>.</summary>
+    public sealed class Settings : LineSettings
     {
         [Description("OS port name: COM4, /dev/ttyUSB0. Default: the only connected serial port.")]
         [CommandArgument(0, "[port]")]
@@ -37,7 +38,13 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
         [Description("Select by name substring.")]
         [CommandOption("--name")]
         public string? Name { get; init; }
+    }
 
+    /// <summary>
+    /// How to open the port and run the terminal, shared by <c>serial</c> and <c>serial select</c>.
+    /// </summary>
+    public class LineSettings : CommandSettings
+    {
         [Description("Baud rate. Default: 115200.")]
         [CommandOption("-b|--baud <RATE>")]
         public int Baud { get; init; } = SerialLineSettings.Default.BaudRate;
@@ -137,6 +144,14 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
             return 1;
         }
 
+        return await RunSessionAsync(selection, settings, err, cancellationToken);
+    }
+
+    /// <summary>Runs the terminal on a chosen port until the user quits or the port is lost.</summary>
+    internal static async Task<int> RunSessionAsync(
+        SerialPortSelection.Result selection, LineSettings settings, IAnsiConsole err,
+        CancellationToken cancellationToken)
+    {
         var line = settings.Line();
         TryParseEol(settings.Eol, out var eol);
         string portName = selection.Device?.PortName?.Value ?? selection.Unsupervised!.Value.Value;
@@ -339,7 +354,7 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
         public bool Failed => false;
 
         internal static async Task<IConnection?> StartAsync(
-            DeviceInfo device, string portName, SerialLineSettings line, Settings settings,
+            DeviceInfo device, string portName, SerialLineSettings line, LineSettings settings,
             TerminalOutput output, CancellationToken ct)
         {
             var host = await DeviceSessionHost<SerialSession>.ForDeviceAsync(
@@ -386,7 +401,7 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
         public bool Failed => _pump.IsFaulted;
 
         internal static IConnection? Open(
-            string portName, SerialLineSettings line, Settings settings, TerminalOutput output,
+            string portName, SerialLineSettings line, LineSettings settings, TerminalOutput output,
             CancellationTokenSource stop)
         {
             SerialSession session;
