@@ -19,6 +19,8 @@ namespace Periphery.Cli.Commands;
 /// Port data is written to stdout and status lines to stderr. Keystrokes are sent as they
 /// are typed, Ctrl+C included; Ctrl+] quits. With stdin redirected, its bytes are sent
 /// unchanged once a session is up, and the command exits <c>--linger</c> after end of input.
+/// A chunk of redirected input waits for a session, but a write that fails part-way is
+/// reported and not sent again.
 /// </remarks>
 internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 {
@@ -68,7 +70,7 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
         [CommandOption("--rts")]
         public bool Rts { get; init; }
 
-        [Description("Print typed characters locally.")]
+        [Description("Print typed characters locally. Ignored when stdout is redirected.")]
         [CommandOption("--echo")]
         public bool Echo { get; init; }
 
@@ -156,7 +158,9 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 
         var input = Console.IsInputRedirected
             ? ForwardRedirectedInputAsync(connection, output, TimeSpan.FromMilliseconds(settings.LingerMs), stop.Token)
-            : ForwardKeystrokesAsync(connection, output, new KeyEncoder(eol), settings.Echo, stop.Token);
+            // Echo is for a screen. Redirected stdout carries only what the port sent.
+            : ForwardKeystrokesAsync(
+                connection, output, new KeyEncoder(eol), settings.Echo && !Console.IsOutputRedirected, stop.Token);
 
         try
         {
@@ -198,13 +202,14 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
                             ? "\r\n"u8
                             : send.Bytes);
 
-                    if (connection.TryWrite(send.Bytes, out string? problem))
+                    var written = connection.Write(send.Bytes);
+                    if (written.Outcome == WriteOutcome.Sent)
                     {
                         notified = false;
                     }
                     else if (!notified)
                     {
-                        output.Status(problem);
+                        output.Status(written.Problem!);
                         notified = true;
                     }
                 }
@@ -238,12 +243,19 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
         while ((read = await stdin.ReadAsync(buffer, ct)) > 0)
         {
             byte[] chunk = buffer[..read];
-            while (true)
+            WriteResult written;
+            do
             {
                 await connection.WaitForSessionAsync(ct);
-                if (connection.TryWrite(chunk, out string? problem)) break;
-                output.Status(problem);
+                written = connection.Write(chunk);
             }
+            // Only a chunk that never reached a port is retried. A write that failed may
+            // have sent part of the chunk before it did, so sending it again could
+            // duplicate bytes.
+            while (written.Outcome == WriteOutcome.NoSession);
+
+            if (written.Outcome == WriteOutcome.Failed)
+                output.Status($"{written.Problem} {chunk.Length} input bytes were not all sent.");
         }
 
         await Task.Delay(linger, ct);
@@ -257,34 +269,41 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 
         Task WaitForSessionAsync(CancellationToken ct);
 
-        bool TryWrite(byte[] bytes, [System.Diagnostics.CodeAnalysis.NotNullWhen(false)] out string? problem);
+        WriteResult Write(byte[] bytes);
     }
 
-    private static bool TryWrite(SerialSession? session, byte[] bytes, out string? problem)
+    private enum WriteOutcome
+    {
+        Sent,
+
+        /// <summary>No port was open. Nothing was sent.</summary>
+        NoSession,
+
+        /// <summary>The write started and failed. Some of the bytes may have been sent.</summary>
+        Failed,
+    }
+
+    private readonly record struct WriteResult(WriteOutcome Outcome, string? Problem = null);
+
+    private static WriteResult Write(SerialSession? session, byte[] bytes)
     {
         if (session is null)
-        {
-            problem = "Not connected. Input dropped.";
-            return false;
-        }
+            return new(WriteOutcome.NoSession, "Not connected. Input dropped.");
 
         try
         {
             session.Write(bytes);
-            problem = null;
-            return true;
+            return new(WriteOutcome.Sent);
         }
         catch (TimeoutException)
         {
-            problem = $"Write to {session.PortName} timed out. Is flow control holding it back?";
+            return new(WriteOutcome.Failed, $"Write to {session.PortName} timed out. Is flow control holding it back?");
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException
                                        or UnauthorizedAccessException)
         {
-            problem = $"Write to {session.PortName} failed: {ex.Message}";
+            return new(WriteOutcome.Failed, $"Write to {session.PortName} failed: {ex.Message}");
         }
-
-        return false;
     }
 
     /// <summary>
@@ -342,8 +361,7 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 
         public Task WaitForSessionAsync(CancellationToken ct) => _host.WaitForSessionAsync(ct);
 
-        public bool TryWrite(byte[] bytes, out string? problem) =>
-            SerialCommand.TryWrite(_host.CurrentSession, bytes, out problem);
+        public WriteResult Write(byte[] bytes) => SerialCommand.Write(_host.CurrentSession, bytes);
 
         public ValueTask DisposeAsync() => _host.DisposeAsync();
     }
@@ -402,8 +420,7 @@ internal sealed class SerialCommand : AsyncCommand<SerialCommand.Settings>
 
         public Task WaitForSessionAsync(CancellationToken ct) => Task.CompletedTask;
 
-        public bool TryWrite(byte[] bytes, out string? problem) =>
-            SerialCommand.TryWrite(_session, bytes, out problem);
+        public WriteResult Write(byte[] bytes) => SerialCommand.Write(_session, bytes);
 
         public async ValueTask DisposeAsync()
         {
