@@ -1,7 +1,7 @@
 ---
 title: "ADR-0092: In a browser, Periphery opens the device the user picked, over WebUSB and Web Serial, and does not enumerate"
 status: "Proposed"
-status_note: "No code. Drafted 2026-09-30 and revised the same day after five reviews and a source check of the WebUSB claims. The review narrowed it: the first draft also put an IDeviceProvider and monitor over browser grants, which is now deferred (see Deferred). Chromium and Web Serial facts are Source (Chromium and spec text) unless labelled. Nothing WebUSB-specific is Measured yet; the gates under Verification say what would make it so."
+status_note: "Drafted 2026-09-30 and revised the same day after five reviews and a source check of the WebUSB claims. The review narrowed it: the first draft also put an IDeviceProvider and monitor over browser grants, which is now deferred (see Deferred). Implemented on the browser branch from 2026-10-11 (issue #334); Implementation notes records what the code settled that this text left open. The package-restore gate has passed; the gates that need a device and a full Chrome have not run. Chromium and Web Serial facts are Source (Chromium and spec text) unless labelled."
 date: "2026-09-30"
 authors: "@charles8051"
 tags: ["architecture", "decision", "browser", "wasm", "webusb", "web-serial", "usb", "transport", "identity", "pure-core"]
@@ -23,7 +23,8 @@ the scope question in nordic-dfu OQ-10 for WebUSB and Web Serial only.
 
 ## Status
 
-Proposed 2026-09-30. No code.
+Proposed 2026-09-30. Implemented on the `browser` branch from 2026-10-11 (#334), which merges into
+`main` when the packages are whole. Stays Proposed until the gates under Verification pass.
 
 ---
 
@@ -455,6 +456,106 @@ reopens the decision it names.
 | STM32 DFU | `Stm32DfuProgrammer` reads the bootloader version from a granted STM32 in DFU mode, on Windows and on Linux. Record whether Windows needed a driver step. | D1, D6 |
 | DFU after a cancel | Cancel a flash mid-download, then flash again with a new `Stm32DfuProgrammer`. The second flash verifies. | D7 rule 9 |
 | Web Serial pipe | `Stm32SerialProgrammer` syncs over `BrowserSerialPort` with bootloader entry through `SetSignalsAsync`. The exploration's spike already passed this; the gate re-runs it on the package. | D4 |
+
+### Results
+
+Recorded as the gates run. `examples/Periphery.Examples.Browser` has a button for most of them.
+
+| Gate | Result |
+|---|---|
+| Package restore | Passed 2026-10-11 for both packages (#340, #341). Each packed package restores and builds in a stock `dotnet new blazorwasm` app on SDK 10.0.401, and the app's static-asset manifest maps its module under `_content/<PackageId>/`. Both `net10.0` test projects run in the desktop test job. (Measured.) |
+| Request from a click | Not run in a full Chrome. In the Claude desktop app's embedded Chromium, a request outside a gesture rejects with `SecurityError` ("Must be handling a user gesture to show a permission request"), which surfaces as `InvalidOperationException`. From a click it returns `null`, because that Chromium has no chooser, as the exploration's finding 11 recorded for Web Serial. Both packages behave the same. (Measured.) |
+| Abandon and take over | Not run on a board. It passes against a fake device and a fake clock in `WebUsbBackendTests`, through `UsbDevice`'s own deadline. |
+| Web Serial pipe | Not run on a part. `Stm32SerialProgrammer` syncs and identifies through `BrowserSerialPort.Pipe` against the STM32 suite's `FakeStm32Bootloader` in `Stm32OverBrowserSerialPortTests`. |
+| All others | Not run. |
+
+---
+
+## Implementation notes
+
+What the implementation settled where the decisions above were silent, in the order of the decisions.
+Each was reviewed on its pull request into the `browser` branch.
+
+**D2, D3.** `Periphery.Serial.Browser` has no package references: `System.IO.Pipelines` ships in the
+`net10.0` shared framework, and the SDK flags a reference to it with NU1510. `Periphery.Usb.Browser`
+packs an exact `[x.y.z]` dependency on `Periphery.Usb` by the same target `Periphery.Camera.Testing`
+uses.
+
+**D4.**
+
+- `RequestDeviceAsync` and `RequestPortAsync` require `InitializeAsync` to have completed, and do not
+  start it, so the module import never spends the gesture's activation window.
+- `BrowserSerialPort` is returned unopened. `OpenAsync` takes `SerialPortOpenOptions`, because Web
+  Serial's `open()` needs a baud rate. Its USB ids are `ushort?`: D2 leaves the package no Periphery
+  dependency, so `HardwareId` is not available. `SetSignalsAsync` also takes the break signal.
+- There is no `GetGrantedPortsAsync`. A Web Serial port has no id that survives a replug, so a
+  reloaded page could not tell its ports apart.
+- A failed write surfaces as `IOException` on the next write to `Pipe.Output`, which is how
+  `System.IO.Pipelines` reports a reader completed with an exception.
+- Disposing a port closes it before waiting on the send loop. Web Serial's own `close()` aborts the
+  writable stream and waits for that abort, which waits for a write in flight, so a write held back
+  by hardware flow control holds `close()` until the device drains it or is unplugged. (Source:
+  `whatwg/serial` `index.bs`, the `close()` method steps.)
+
+**D5.**
+
+- When a device arrives that shares vendor ID, product ID and serial with an attached device holding
+  the durable form, that device is re-minted with a session id too. The final state is the same
+  whichever twin is admitted first.
+- An attached device is never promoted back. When its twin leaves it keeps its session id until it is
+  unplugged.
+- Session numbers only grow within a document, so a stale session id never names another device.
+- A serial of `null` or the empty string counts as none.
+- The registry is reconciled with `getDevices()` before every request, listing and open, one call at
+  a time. Departed grants are released first, then attached ones admitted in handle order. Two
+  overlapping reconciliations would apply in completion order, not snapshot order.
+- A grant's handle rests on Chromium returning one `USBDevice` object per attached device from both
+  `requestDevice()` and `getDevices()`. Both go through `GetOrCreateDevice`, a cache keyed by device
+  GUID and erased only on removal (`usb.cc`). The module holds every attached device strongly, so the
+  weak per-world cache cannot drop one. (Source.)
+
+**D6.**
+
+- The outcome table, as built from Chromium's `usb_device.cc`:
+  - `AbortError` is `ObjectDisposedException` in every phase.
+  - While opening, `NotFoundError` is `UsbDeviceNotFoundException`, not a removal, as
+    `LibUsbBackend.MapError` splits it.
+  - At `claimInterface`, `SecurityError` means a protected interface class and `NetworkError` an
+    interface held elsewhere. Both are `UsbAccessDeniedException`.
+  - In a transfer, `TimeoutError` is `UsbTransferException`, like `NetworkError`.
+- A stall on endpoint 0 is not cleared with `clearHalt`. It is a protocol stall the next setup packet
+  clears, and DFU stalls on errors by design.
+- Chromium also rejects with `NotFoundError` for an endpoint outside the claimed interface. The
+  backend therefore refuses, before issuing, any transfer on an endpoint that is not a bulk or
+  interrupt endpoint of interface 0 in the right direction. A transfer's `NotFoundError` can then
+  only mean a disconnect or a revoked grant.
+- `UsbDescriptors` gained `ParseConfiguration`, a walk over the whole configuration descriptor. Its
+  parsers had stopped at the header, because WinUSB and libusb supply interfaces from their own query
+  surfaces. It matches `LibUsbBackend`: alternate setting 0 of each interface, raw `wMaxPacketSize`,
+  bounded by `wTotalLength`.
+- The configuration descriptor is read at the active configuration's index in `configurations`. An
+  active value missing from that list, or a descriptor naming another configuration, fails the open.
+- The JS calls sit behind an internal `IWebUsbDevice` seam, so everything but the JS module runs in
+  the desktop test job. This narrows the Consequences line that the transfer shell cannot run in CI.
+
+**D7.**
+
+- A second caller on an endpoint while another holds it is rejected. `UsbDevice` gates each endpoint,
+  so only a caller that bypasses it gets there.
+- A transfer is capped at the last packet boundary within Chromium's 32 MiB transfer limit. A read
+  that would round past the cap is issued short of its length, as a short read, rather than off a
+  packet boundary where it could babble.
+- A zero-length read asks for one packet. Any bytes it brings are held.
+- An abandoned OUT transfer's fault is discarded; rule 4 holds faults for IN only.
+
+**D8.** The banned-API analyzer reads only files named `BannedSymbols.txt` or `BannedSymbols.*.txt`.
+The list is `src/BannedSymbols.Browser.txt`. It also bans `Task.WaitAll`, `Task.WaitAny` and the
+configured awaiters' `GetResult`.
+
+**D10.** Neither JS module's async functions reject. A failed call returns a negative code, and its
+`DOMException`'s name and message wait under the call's operation id until .NET takes them, so .NET
+never parses a `JSException`. A write stages its bytes in a synchronous call first, because a
+`MemoryView` over .NET memory is valid only during the call that passes it.
 
 ---
 
