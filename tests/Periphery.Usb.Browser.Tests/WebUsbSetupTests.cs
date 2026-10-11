@@ -25,4 +25,24 @@ public class WebUsbSetupTests
     {
         Assert.Null(WebUsbSetup.Names(bmRequestType));
     }
+
+    [Fact]
+    public void A_setup_goes_through_the_method_its_direction_bit_names()
+    {
+        var getStatus = new UsbControlSetup { RequestType = 0xA1, Request = 0x03 };
+        var download = new UsbControlSetup { RequestType = 0x21, Request = 0x01 };
+
+        Assert.Equal(("class", "interface"), WebUsbSetup.NamesFor(getStatus, UsbTransferDirection.DeviceToHost));
+        Assert.Equal(("class", "interface"), WebUsbSetup.NamesFor(download, UsbTransferDirection.HostToDevice));
+    }
+
+    [Fact]
+    public void A_setup_sent_through_the_other_method_has_no_names()
+    {
+        var getStatus = new UsbControlSetup { RequestType = 0xA1, Request = 0x03 };
+        var download = new UsbControlSetup { RequestType = 0x21, Request = 0x01 };
+
+        Assert.Null(WebUsbSetup.NamesFor(getStatus, UsbTransferDirection.HostToDevice));
+        Assert.Null(WebUsbSetup.NamesFor(download, UsbTransferDirection.DeviceToHost));
+    }
 }

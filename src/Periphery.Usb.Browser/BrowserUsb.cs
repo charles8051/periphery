@@ -23,7 +23,7 @@ namespace Periphery.Usb.Browser;
 public static class BrowserUsb
 {
     private static Task? s_initialized;
-    private static UsbGrantRegistry s_grants = UsbGrantRegistry.Empty;
+    private static readonly WebUsbGrantSync s_grants = new(GetDevicesAsync);
 
     /// <summary>
     /// Loads the package's JS module and lets <see cref="UsbDevice.OpenAsync(DeviceInfo, CancellationToken)"/>
@@ -136,9 +136,11 @@ public static class BrowserUsb
 
     /// <summary>
     /// Reconciles the document's registry with <c>getDevices()</c>, so ids are minted against the
-    /// devices attached now.
+    /// devices attached now. One reconciliation runs at a time (<see cref="WebUsbGrantSync"/>).
     /// </summary>
-    private static async Task<UsbGrantRegistry> SyncAsync()
+    private static Task<UsbGrantRegistry> SyncAsync() => s_grants.SyncAsync();
+
+    private static async Task<IReadOnlyList<(GrantHandle Handle, UsbGrantFacts Facts)>> GetDevicesAsync()
     {
         int op = WebUsbInterop.NextOperation();
         string? json = await WebUsbInterop.GetDevicesAsync(op).ConfigureAwait(false);
@@ -150,9 +152,7 @@ public static class BrowserUsb
                 new WebUsbRejectionException(rejection));
         }
 
-        // Read after the await: another call may have reconciled while this one waited.
-        s_grants = UsbGrantIds.Reconcile(s_grants, WebUsbJson.ReadDevices(json));
-        return s_grants;
+        return WebUsbJson.ReadDevices(json);
     }
 
     private static async Task<IUsbBackend> OpenGrantedAsync(DeviceInfo device, CancellationToken ct)

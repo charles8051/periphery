@@ -51,7 +51,7 @@ internal sealed class JsWebUsbDevice(int handle) : IWebUsbDevice
 
     public async Task<WebUsbInResult> ControlTransferInAsync(UsbControlSetup setup, int length)
     {
-        var (requestType, recipient) = SetupNames(setup);
+        var (requestType, recipient) = SetupNames(setup, UsbTransferDirection.DeviceToHost);
         int op = WebUsbInterop.NextOperation();
         int code = await WebUsbInterop.ControlTransferInAsync(
             op, handle, requestType, recipient, setup.Request, setup.Value, setup.Index, length).ConfigureAwait(false);
@@ -60,7 +60,7 @@ internal sealed class JsWebUsbDevice(int handle) : IWebUsbDevice
 
     public async Task<WebUsbOutResult> ControlTransferOutAsync(UsbControlSetup setup, ReadOnlyMemory<byte> data)
     {
-        var (requestType, recipient) = SetupNames(setup);
+        var (requestType, recipient) = SetupNames(setup, UsbTransferDirection.HostToDevice);
         int op = WebUsbInterop.NextOperation();
         Stage(op, data);
         int code = await WebUsbInterop.ControlTransferOutAsync(
@@ -98,11 +98,13 @@ internal sealed class JsWebUsbDevice(int handle) : IWebUsbDevice
         WebUsbInterop.Stage(op, copy);
     }
 
-    private static (string RequestType, string Recipient) SetupNames(UsbControlSetup setup)
-        => WebUsbSetup.Names(setup.RequestType)
+    private static (string RequestType, string Recipient) SetupNames(UsbControlSetup setup, UsbTransferDirection method)
+        => WebUsbSetup.NamesFor(setup, method)
            ?? throw new WebUsbRejectionException(new WebUsbRejection(
                "TypeError",
-               $"bmRequestType 0x{setup.RequestType:X2} uses a reserved type or recipient, which WebUSB cannot send."));
+               $"bmRequestType 0x{setup.RequestType:X2} cannot be sent through controlTransfer" +
+               $"{(method == UsbTransferDirection.DeviceToHost ? "In" : "Out")}: its direction bit names the other " +
+               "method, or it uses a reserved type or recipient."));
 
     private static WebUsbInResult InResult(int op, int code)
     {

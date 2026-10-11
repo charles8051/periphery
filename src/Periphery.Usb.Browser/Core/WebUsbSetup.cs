@@ -35,4 +35,17 @@ internal static class WebUsbSetup
 
         return requestType is null || recipient is null ? null : (requestType, recipient);
     }
+
+    /// <summary>
+    /// The names for <paramref name="setup"/> sent through the WebUSB method for
+    /// <paramref name="method"/>: <c>controlTransferIn</c> for device-to-host,
+    /// <c>controlTransferOut</c> for host-to-device. <see langword="null"/> when the setup's
+    /// direction bit names the other method, or when <see cref="Names(byte)"/> has none.
+    /// </summary>
+    /// <remarks>
+    /// WebUSB takes the direction from the method, so a setup sent through the wrong one would go
+    /// to the device with its direction bit flipped.
+    /// </remarks>
+    public static (string RequestType, string Recipient)? NamesFor(UsbControlSetup setup, UsbTransferDirection method)
+        => setup.Direction == method ? Names(setup.RequestType) : null;
 }
