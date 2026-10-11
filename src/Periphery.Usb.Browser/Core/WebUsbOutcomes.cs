@@ -65,8 +65,10 @@ internal static class WebUsbOutcomes
         var inner = new IOException($"WebUSB {rejection.Name}: {rejection.Message}");
 
         // Only the backend's own close() aborts a pending call, so the device is being disposed.
+        // The (message, inner) overload leaves ObjectName empty; keeping the browser's error is
+        // worth more than the name.
         if (rejection.Name == AbortError)
-            return new ObjectDisposedException(nameof(UsbDevice), $"USB device '{deviceId}' was closed. ({inner.Message})");
+            return new ObjectDisposedException($"USB device '{deviceId}' was closed.", inner);
 
         return phase switch
         {

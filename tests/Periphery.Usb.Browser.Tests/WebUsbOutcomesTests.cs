@@ -46,7 +46,7 @@ public class WebUsbOutcomesTests
     {
         var ex = Assert.IsType<ObjectDisposedException>(Reject("AbortError", Enum.Parse<WebUsbPhase>(phase)));
 
-        Assert.Equal(nameof(UsbDevice), ex.ObjectName);
+        Assert.Equal("WebUSB AbortError: browser message", ex.InnerException?.Message);
     }
 
     // ── Rejections while opening ───────────────────────────────────────
