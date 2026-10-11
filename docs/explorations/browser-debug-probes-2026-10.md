@@ -36,6 +36,10 @@ separate process without taking on any of its code.
 A page cannot start a process. A page that programs a chip over SWD needs code in the page that
 speaks the probe's protocol.
 
+The transport underneath already works. On 2026-10-11, in Chrome 155 on Windows, the ADR-0092
+packages opened a granted Treehopper and a granted STM32 DFU bootloader bound to WinUSB through an ST
+INF (ADR-0092, Verification).
+
 ---
 
 ## Findings, ranked
