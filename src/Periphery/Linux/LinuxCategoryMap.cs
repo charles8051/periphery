@@ -58,10 +58,21 @@ internal static class LinuxCategoryMap
     /// virtual consoles <c>tty0</c> to <c>tty63</c>. They are not serial ports and get none. The
     /// test is by name, not by a <c>/devices/virtual</c> syspath, because an RFCOMM tty is
     /// a serial port that lives there until it connects.
+    /// <para>
+    /// Issue #332: <paramref name="uartType"/> is the tty's <c>type</c> attribute, which only a
+    /// <c>serial_core</c> port has. The 8250 driver registers
+    /// <c>CONFIG_SERIAL_8250_RUNTIME_UARTS</c> ports whether or not a UART sits behind them, and a
+    /// placeholder reports <c>0</c>, <c>PORT_UNKNOWN</c>. It gets no port name. No
+    /// <c>serial_core</c> driver can carry I/O on such a port: <c>uart_port_startup</c> returns
+    /// early for <c>PORT_UNKNOWN</c>, and <c>uart_startup</c> sets <c>TTY_IO_ERROR</c>. A tty outside
+    /// <c>serial_core</c>, such as <c>ttyUSB</c>, <c>ttyACM</c> or <c>rfcomm</c>, has no
+    /// <c>type</c> and passes <see langword="null"/>.
+    /// </para>
     /// </remarks>
-    internal static SerialPortName? GetPortName(string? subsystem, string? devname)
+    internal static SerialPortName? GetPortName(string? subsystem, string? devname, string? uartType)
     {
         if (subsystem != "tty" || string.IsNullOrWhiteSpace(devname)) return null;
+        if (uartType?.Trim() == "0") return null;
         string path = devname.StartsWith('/') ? devname : "/dev/" + devname;
         return IsConsoleNode(path) ? null : new SerialPortName(path);
     }
@@ -104,10 +115,39 @@ internal static class LinuxCategoryMap
             "block"        => DeviceCategory.Storage,
             "tty"          => DeviceCategory.Ports,
             "power_supply" => DeviceCategory.Battery,
-            "video4linux"  => DeviceCategory.Camera,
+            "video4linux"  => ResolveVideoCategory(
+                PropertyOf(device, "DEVNAME"), PropertyOf(device, "ID_V4L_CAPABILITIES")),
             _              => DeviceCategory.All,
         };
     }
+
+    /// <summary>
+    /// Issue #331: a <c>video4linux</c> node is a <see cref="DeviceCategory.Camera"/> only if it
+    /// can capture video. Anything else is <see cref="DeviceCategory.All"/>.
+    /// </summary>
+    /// <remarks>
+    /// Only a <c>video</c> node can be a camera. The subsystem also holds <c>v4l-subdev</c>,
+    /// <c>v4l-touch</c>, <c>vbi</c>, <c>radio</c> and <c>swradio</c> nodes (ADR-0003 names
+    /// <c>video4linux/video*</c>). A <c>video</c> node can still be a memory-to-memory codec, a
+    /// video output, or a UVC camera's metadata node. udev's <c>v4l_id</c> builtin runs
+    /// <c>VIDIOC_QUERYCAP</c> and records <c>ID_V4L_CAPABILITIES</c>, such as <c>:capture:</c> or
+    /// <c>:capture:video_output:</c>; a codec records <c>:</c>. <c>v4l_id</c> writes <c>capture</c>
+    /// for <c>V4L2_CAP_VIDEO_CAPTURE</c> and <c>V4L2_CAP_VIDEO_CAPTURE_MPLANE</c> alike, so a
+    /// multi-planar camera passes. A node without the property is kept,
+    /// as before: there is no udev database in a container, and <c>v4l_id</c> can fail.
+    /// </remarks>
+    internal static DeviceCategory ResolveVideoCategory(string? devname, string? v4lCapabilities)
+    {
+        string? name = devname is null ? null : devname[(devname.LastIndexOf('/') + 1)..];
+        if (name is not null && !name.StartsWith("video", StringComparison.Ordinal))
+            return DeviceCategory.All;
+        return v4lCapabilities is null || v4lCapabilities.Contains(":capture:", StringComparison.Ordinal)
+            ? DeviceCategory.Camera
+            : DeviceCategory.All;
+    }
+
+    private static string? PropertyOf(IntPtr device, string key) =>
+        device == IntPtr.Zero ? null : UdevInterop.GetPropertyValue(device, key);
 
     /// <summary>
     /// Disambiguates <c>input</c> subsystem devices using udev property hints.

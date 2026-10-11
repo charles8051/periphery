@@ -290,7 +290,10 @@ internal sealed class LinuxDeviceProvider : IDeviceProvider
             Driver = driver,
             DriverVersion = driverVersion,
             MacAddress = macAddress,
-            PortName = LinuxCategoryMap.GetPortName(subsystem, UdevInterop.GetPropertyValue(dev, "DEVNAME")),
+            PortName = LinuxCategoryMap.GetPortName(
+                subsystem,
+                UdevInterop.GetPropertyValue(dev, "DEVNAME"),
+                subsystem == "tty" ? UdevInterop.GetSysattrValue(dev, "type") : null),
             Subsystem = subsystem,
         };
 
