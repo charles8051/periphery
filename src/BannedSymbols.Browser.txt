@@ -1,0 +1,19 @@
+// Blocking waits, banned in the browser packages. ADR-0092 D8 has the reasoning.
+//
+// A browser runs .NET on one thread. A blocking wait on a task that a JS promise completes waits
+// for the event loop it is holding, so the page hangs. `await` is not affected: the analyzer reports
+// explicit calls, and an await expression is not one.
+M:System.Threading.Tasks.Task.Wait;Blocks the only thread, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Threading.Tasks.Task.Wait(System.Int32);Blocks the only thread, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Threading.Tasks.Task.Wait(System.TimeSpan);Blocks the only thread, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Threading.Tasks.Task.Wait(System.Threading.CancellationToken);Blocks the only thread, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Threading.Tasks.Task.Wait(System.Int32,System.Threading.CancellationToken);Blocks the only thread, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Threading.Tasks.Task.Wait(System.TimeSpan,System.Threading.CancellationToken);Blocks the only thread, which hangs the page. Await the task instead. See ADR-0092 D8.
+P:System.Threading.Tasks.Task`1.Result;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+P:System.Threading.Tasks.ValueTask`1.Result;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Runtime.CompilerServices.TaskAwaiter.GetResult;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Runtime.CompilerServices.TaskAwaiter`1.GetResult;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Runtime.CompilerServices.ValueTaskAwaiter.GetResult;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Runtime.CompilerServices.ValueTaskAwaiter`1.GetResult;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Runtime.CompilerServices.ConfiguredTaskAwaitable.ConfiguredTaskAwaiter.GetResult;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
+M:System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult;Blocks the only thread when the task is not complete, which hangs the page. Await the task instead. See ADR-0092 D8.
