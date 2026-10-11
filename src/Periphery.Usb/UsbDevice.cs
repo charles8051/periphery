@@ -228,6 +228,10 @@ public sealed partial class UsbDevice : IAsyncDisposable
         if (OperatingSystem.IsLinux())
             return OpenLinuxAsync(deviceInfo, transferTimeout ?? Timeout.InfiniteTimeSpan, logger, ct);
 
+        if (OperatingSystem.IsBrowser())
+            return OpenThroughHostAsync(
+                UsbBackendHost.Browser, deviceInfo, transferTimeout ?? Timeout.InfiniteTimeSpan, logger, ct);
+
         throw new PlatformNotSupportedException(
             $"UsbDevice.OpenAsync is not yet implemented on {Environment.OSVersion.Platform}. " +
             "The macOS (libusb) backend is planned (ADR-0038).");
@@ -259,6 +263,25 @@ public sealed partial class UsbDevice : IAsyncDisposable
             var backend = Linux.LibUsbBackend.Open(deviceInfo.Id);
             return new UsbDevice(deviceInfo, backend, logger, transferTimeout);
         }, ct);
+    }
+
+    /// <summary>
+    /// Opens through a backend factory another package installed: in a browser,
+    /// <c>Periphery.Usb.Browser</c>'s (ADR-0092 D6). Internal so a test can pass its own factory.
+    /// </summary>
+    /// <exception cref="PlatformNotSupportedException"><paramref name="open"/> is <see langword="null"/>.</exception>
+    internal static async Task<UsbDevice> OpenThroughHostAsync(
+        Func<DeviceInfo, CancellationToken, Task<IUsbBackend>>? open,
+        DeviceInfo deviceInfo, TimeSpan transferTimeout, ILogger<UsbDevice>? logger, CancellationToken ct,
+        TimeProvider? timeProvider = null)
+    {
+        if (open is null)
+            throw new PlatformNotSupportedException(
+                "UsbDevice.OpenAsync in a browser needs the Periphery.Usb.Browser package, " +
+                "and BrowserUsb.InitializeAsync to have run at startup.");
+
+        var backend = await open(deviceInfo, ct).ConfigureAwait(false);
+        return new UsbDevice(deviceInfo, backend, logger, transferTimeout, timeProvider);
     }
 
     // ── Transfer instrumentation funnel ────────────────────────────────

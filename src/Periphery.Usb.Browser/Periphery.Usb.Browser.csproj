@@ -41,6 +41,22 @@
     <InternalsVisibleTo Include="Periphery.Usb.Browser.Tests" />
   </ItemGroup>
 
+  <!--
+    This package binds to Periphery.Usb's internals (IUsbBackend, UsbBackendHost, UsbDescriptors)
+    through InternalsVisibleTo, a contract free to change between versions (ADR-0065, ADR-0092 D2).
+    A default ProjectReference packs as ">= x.y.z", so a consumer that floats Periphery.Usb ahead
+    of this package restores cleanly and fails at run time with TypeLoadException or
+    MissingMethodException. An exact "[x.y.z]" makes the mismatch a restore error instead.
+    Periphery.Camera.Testing does the same.
+  -->
+  <Target Name="PinExactUsbDependency" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'Periphery.Usb'">
+        <ProjectVersion>[$(PackageVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
   </ItemGroup>
