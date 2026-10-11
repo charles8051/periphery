@@ -169,6 +169,10 @@ public sealed class BrowserSerialPort : IAsyncDisposable
     /// pending read ends. Bytes written to <see cref="IDuplexPipe.Output"/> and not yet sent are
     /// dropped.
     /// </summary>
+    /// <remarks>
+    /// A write the device is holding back with hardware flow control holds the browser's own
+    /// <c>close()</c>, and with it this method, until the device drains it or is unplugged.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         if (_disposed)

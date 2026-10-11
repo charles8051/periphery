@@ -35,6 +35,11 @@ internal interface IWebSerialPort
     /// Aborts a pending write, which then fails, cancels a pending read, which then returns 0,
     /// releases the streams, and calls <c>close()</c>. Neither pending call has to finish first.
     /// </summary>
+    /// <remarks>
+    /// Web Serial's <c>close()</c> aborts the writable stream and waits for that abort, which waits
+    /// for a write in flight. A write held back by hardware flow control therefore holds
+    /// <c>close()</c> until the device drains it or is unplugged.
+    /// </remarks>
     Task CloseAsync();
 }
 

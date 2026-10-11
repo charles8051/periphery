@@ -143,16 +143,20 @@ export async function setSignals(op, handle, signalsJson) {
   try { await portOf(handle).setSignals(JSON.parse(signalsJson)); return OK; } catch (e) { return fail(op, e); }
 }
 
-// Aborts a write in progress, which then rejects, cancels a pending read, which then resolves as
-// ended, and closes the port. Under hardware flow control a write may never finish on its own, so
-// close() does not wait for one.
+// Aborts a write in progress, cancels a pending read, which then resolves as ended, and closes the
+// port. The abort is not awaited: a stream's abort settles only after the write in flight does, and
+// under hardware flow control that write may never finish on its own. Releasing the writer unlocks
+// the stream so port.close() can run now.
+//
+// What remains is the platform's: Web Serial's close() aborts the writable stream itself and waits
+// for it, so a write that never settles holds close() too. Unplugging the device ends it.
 export async function close(op, handle) {
   try {
     const writer = writers.get(handle);
     if (writer) {
       writers.delete(handle);
-      try { await writer.abort(); } catch { /* the stream may already have errored */ }
-      try { writer.releaseLock(); } catch { /* released by the write it aborted */ }
+      writer.abort().catch(() => { /* the write it aborts reports the failure */ });
+      try { writer.releaseLock(); } catch { /* already released */ }
     }
     const state = readers.get(handle);
     if (state) {
