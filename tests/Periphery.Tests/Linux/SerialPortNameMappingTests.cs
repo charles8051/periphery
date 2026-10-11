@@ -15,7 +15,7 @@ public class SerialPortNameMappingTests
     [InlineData("tty", "/dev/tty64", "/dev/tty64")]   // past the last virtual console
     [InlineData("tty", "/dev/tty00", "/dev/tty00")]   // not a name the kernel gives a console
     public void ATtyIsNamedByItsDeviceNode(string subsystem, string devname, string expected) =>
-        Assert.Equal(new SerialPortName(expected), LinuxCategoryMap.GetPortName(subsystem, devname));
+        Assert.Equal(new SerialPortName(expected), LinuxCategoryMap.GetPortName(subsystem, devname, uartType: null));
 
     [Theory]
     [InlineData("tty", null)]
@@ -31,5 +31,18 @@ public class SerialPortNameMappingTests
     [InlineData("tty", "/dev/ptmx")]
     [InlineData("tty", "/dev/ttyprintk")]
     public void AnythingElseHasNoPortName(string? subsystem, string? devname) =>
-        Assert.Null(LinuxCategoryMap.GetPortName(subsystem, devname));
+        Assert.Null(LinuxCategoryMap.GetPortName(subsystem, devname, uartType: null));
+
+    /// <summary>Issue #332: an 8250 placeholder reports <c>type</c> 0, <c>PORT_UNKNOWN</c>.</summary>
+    [Theory]
+    [InlineData("/dev/ttyS2", "0")]
+    [InlineData("/dev/ttyS7", "0\n")]
+    public void APlaceholderUartHasNoPortName(string devname, string uartType) =>
+        Assert.Null(LinuxCategoryMap.GetPortName("tty", devname, uartType));
+
+    [Theory]
+    [InlineData("/dev/ttyS0", "4")]     // PORT_16550A, the H6's console UART
+    [InlineData("/dev/ttyAMA0", "32")]  // PORT_AMBA
+    public void AUartOfAKnownTypeIsNamed(string devname, string uartType) =>
+        Assert.Equal(new SerialPortName(devname), LinuxCategoryMap.GetPortName("tty", devname, uartType));
 }
