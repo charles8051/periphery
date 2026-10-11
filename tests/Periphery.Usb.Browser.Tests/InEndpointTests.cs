@@ -56,7 +56,7 @@ public class InEndpointTests
     [InlineData(int.MaxValue, 512, 33_554_432)]
     [InlineData(int.MaxValue, 10, 33_554_430)]
     [InlineData(33_554_431, 10, 33_554_430)]
-    public void A_read_longer_than_WebUSB_allows_asks_for_the_last_packet_boundary_within_the_limit(
+    public void A_read_that_would_round_past_the_limit_asks_for_the_last_packet_boundary_within_it(
         int requested, int maxPacketSize, int issued)
     {
         Assert.Equal(issued, InEndpoint.RoundUpToPacket(requested, maxPacketSize));

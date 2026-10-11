@@ -89,14 +89,19 @@ internal static class InEndpoint
     internal const int MaxTransferLength = 32 * 1024 * 1024;
 
     /// <summary>
-    /// <paramref name="length"/> rounded up to a whole number of <paramref name="maxPacketSize"/>
-    /// packets, and at least one packet, capped at the last packet boundary within
+    /// The transfer length for a read of <paramref name="length"/> bytes: always a whole number of
+    /// <paramref name="maxPacketSize"/> packets, at least one, and at most
     /// <see cref="MaxTransferLength"/>.
     /// </summary>
     /// <remarks>
-    /// Under the cap the result is never less than <paramref name="length"/>. A read longer than
-    /// the cap is issued at the cap and returns at most that much, as a short read. Asking for more
-    /// would only be refused.
+    /// <para>The result is the smallest packet multiple at or above <paramref name="length"/>. When
+    /// that would pass the cap, it is the last packet boundary within the cap instead, which is
+    /// below <paramref name="length"/> by less than a packet when <paramref name="maxPacketSize"/>
+    /// does not divide 32 MiB, and by more when the read is longer than the cap.</para>
+    /// <para>Falling short is a short read: the caller gets fewer bytes, and the rest stay on the
+    /// device for the next read. Asking for exactly <paramref name="length"/> instead would end the
+    /// transfer off a packet boundary, where the device can babble, and a babbled transfer loses
+    /// its data. A short read never does.</para>
     /// </remarks>
     internal static int RoundUpToPacket(int length, int maxPacketSize)
     {
