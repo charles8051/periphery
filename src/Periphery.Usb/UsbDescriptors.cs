@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Collections.Immutable;
 
 namespace Periphery.Usb;
 
@@ -111,6 +112,99 @@ internal static class UsbDescriptors
             ConfigurationValue: raw[5],
             InterfaceCount: raw[4],
             MaxPowerMilliamps: raw[8] * 2);
+    }
+
+    private const byte InterfaceDescriptorType = 0x04;
+    private const byte EndpointDescriptorType = 0x05;
+    private const int InterfaceDescriptorLength = 9;
+    private const int EndpointDescriptorLength = 7;
+
+    /// <summary>
+    /// Decodes a whole configuration descriptor, as returned by
+    /// <c>GET_DESCRIPTOR(CONFIGURATION)</c> with <c>wLength</c> set to the header's
+    /// <c>wTotalLength</c>: the header, then alternate setting 0 of each interface with its
+    /// endpoints, in the order the descriptor lists them.
+    /// </summary>
+    /// <remarks>
+    /// <para>The result matches what <c>Linux.LibUsbBackend</c> builds from libusb's parsed
+    /// structs: alternate setting 0 only, <c>wMaxPacketSize</c> as the raw 16-bit field, and the
+    /// transfer type from the low two bits of <c>bmAttributes</c>. Used by backends with no
+    /// platform query surface for interfaces, such as WebUSB.</para>
+    /// <para>The walk follows each descriptor's <c>bLength</c>. Descriptors of other types (an
+    /// interface association, or a class-specific descriptor) are skipped. It stops at the end of
+    /// <paramref name="raw"/>, at a <c>bLength</c> below 2, or at a descriptor that runs past the
+    /// end, keeping what it decoded before that. An endpoint that precedes every interface
+    /// descriptor is ignored.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="raw"/> is shorter than <see cref="ConfigurationHeaderLength"/>.
+    /// </exception>
+    public static UsbConfigurationDescriptor ParseConfiguration(ReadOnlySpan<byte> raw)
+    {
+        var header = ParseConfigurationHeader(raw);
+
+        var interfaces = ImmutableArray.CreateBuilder<UsbInterfaceDescriptor>();
+        UsbInterfaceDescriptor? current = null;
+        ImmutableArray<UsbEndpointDescriptor>.Builder? endpoints = null;
+
+        void Flush()
+        {
+            if (current is not null)
+                interfaces.Add(current with { Endpoints = endpoints!.ToImmutable() });
+        }
+
+        int offset = raw[0] >= ConfigurationHeaderLength ? raw[0] : ConfigurationHeaderLength;
+        while (offset + 2 <= raw.Length)
+        {
+            int length = raw[offset];
+            if (length < 2 || offset + length > raw.Length)
+                break;
+
+            var descriptor = raw.Slice(offset, length);
+            offset += length;
+
+            switch (descriptor[1])
+            {
+                case InterfaceDescriptorType when length >= InterfaceDescriptorLength:
+                    Flush();
+                    // Alternate settings other than 0 are skipped, endpoints and all.
+                    if (descriptor[3] != 0)
+                    {
+                        current = null;
+                        endpoints = null;
+                        break;
+                    }
+                    current = new UsbInterfaceDescriptor
+                    {
+                        InterfaceNumber = descriptor[2],
+                        AlternateSetting = descriptor[3],
+                        InterfaceClass = descriptor[5],
+                        InterfaceSubClass = descriptor[6],
+                        InterfaceProtocol = descriptor[7],
+                    };
+                    endpoints = ImmutableArray.CreateBuilder<UsbEndpointDescriptor>(descriptor[4]);
+                    break;
+
+                case EndpointDescriptorType when length >= EndpointDescriptorLength && endpoints is not null:
+                    endpoints.Add(new UsbEndpointDescriptor
+                    {
+                        EndpointAddress = descriptor[2],
+                        TransferType = (UsbTransferType)(descriptor[3] & 0x3),
+                        MaxPacketSize = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.Slice(4)),
+                        Interval = descriptor[6],
+                    });
+                    break;
+            }
+        }
+
+        Flush();
+
+        return new UsbConfigurationDescriptor
+        {
+            ConfigurationValue = header.ConfigurationValue,
+            MaxPowerMilliamps = header.MaxPowerMilliamps,
+            Interfaces = interfaces.ToImmutable(),
+        };
     }
 }
 
