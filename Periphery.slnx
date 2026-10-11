@@ -36,6 +36,7 @@
     <Project Path="src/Periphery.Serial.Browser/Periphery.Serial.Browser.csproj" />
   </Folder>
   <Folder Name="/examples/">
+    <Project Path="examples/Periphery.Examples.Browser/Periphery.Examples.Browser.csproj" />
     <Project Path="examples/Periphery.Examples.Camera/Periphery.Examples.Camera.csproj" />
     <Project Path="examples/Periphery.Examples.CameraAvalonia/Periphery.Examples.CameraAvalonia.csproj" />
     <Project Path="examples/Periphery.Examples.Sandbox/Periphery.Examples.Sandbox.csproj" />

@@ -1,0 +1,230 @@
+@page "/"
+@using System.Text
+@using Periphery
+@using Periphery.Bootloader.Stm32.Serial
+@using Periphery.Bootloader.Stm32.Usb
+@using Periphery.Serial.Browser
+@using Periphery.Treehopper
+@using Periphery.Usb
+@using Periphery.Usb.Browser
+
+<PageTitle>Periphery in the browser</PageTitle>
+
+<h1>Periphery in the browser</h1>
+
+@foreach (var problem in Startup.Problems)
+{
+    <p class="problem">@problem</p>
+}
+
+<section>
+    <h2>USB</h2>
+    <p>
+        <button @onclick="() => RequestAsync(Treehopper)">Request a Treehopper</button>
+        <button @onclick="() => RequestAsync(Stm32Dfu)">Request an STM32 in DFU mode</button>
+        <button @onclick="() => RequestAsync([])">Request any device</button>
+        <button @onclick="ListAsync">List granted devices</button>
+    </p>
+
+    <table>
+        @foreach (var device in granted)
+        {
+            <tr>
+                <td><code>@device.Id</code></td>
+                <td>@device.Name</td>
+                <td>
+                    <button @onclick="() => DescriptorsAsync(device)">Descriptors</button>
+                    <button @onclick="() => OpenTreehopperAsync(device)">Open as Treehopper</button>
+                    <button @onclick="() => IdentifyDfuAsync(device)">Identify over DFU</button>
+                </td>
+            </tr>
+        }
+    </table>
+
+    @if (board is not null)
+    {
+        <p>
+            Treehopper <code>@board.DeviceInfo.Id</code> is open.
+            <button @onclick="BlinkAsync">Blink the LED</button>
+            <button @onclick="ReadPinAsync">Read pin 1</button>
+            <button @onclick="CloseTreehopperAsync">Close</button>
+        </p>
+    }
+</section>
+
+<section>
+    <h2>Serial</h2>
+    <p>
+        <button @onclick="IdentifyOverSerialAsync">Request a port, enter the STM32 bootloader, and identify</button>
+        <br />
+        Bootloader entry assumes DTR drives BOOT0 and RTS drives NRST.
+    </p>
+</section>
+
+<h2>Log</h2>
+<pre>@log</pre>
+
+@code {
+    private static readonly UsbDeviceRequestFilter[] Treehopper =
+        [new() { VendorId = new HardwareId(0x10C4), ProductId = new HardwareId(0x8A7E) }];
+
+    private static readonly UsbDeviceRequestFilter[] Stm32Dfu =
+        [new() { VendorId = new HardwareId(0x0483), ProductId = new HardwareId(0xDF11) }];
+
+    private readonly StringBuilder log = new();
+    private IReadOnlyList<DeviceInfo> granted = [];
+    private TreehopperBoard? board;
+
+    private void Log(string line) => log.AppendLine($"{DateTime.Now:HH:mm:ss.fff}  {line}");
+
+    private void Log(Exception e) => Log($"{e.GetType().Name}: {e.Message}" +
+        (e.InnerException is { } inner ? $"  <- {inner.GetType().Name}: {inner.Message}" : ""));
+
+    protected override Task OnInitializedAsync() => ListAsync();
+
+    // ── USB ──────────────────────────────────────────────────────────
+
+    // The chooser call comes first in the handler, inside the click's user activation.
+    private async Task RequestAsync(IReadOnlyList<UsbDeviceRequestFilter> filters)
+    {
+        try
+        {
+            var device = await BrowserUsb.RequestDeviceAsync(filters);
+            Log(device is null ? "No device picked." : $"Granted {device.Id} ({device.Name}).");
+            await ListAsync();
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    private async Task ListAsync()
+    {
+        if (Startup.Problems.Count > 0)
+            return;
+        try
+        {
+            granted = await BrowserUsb.GetGrantedDevicesAsync();
+            Log($"{granted.Count} granted device(s) attached.");
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    // Descriptor fidelity: compare these bytes with the desktop's for the same board.
+    private async Task DescriptorsAsync(DeviceInfo device)
+    {
+        try
+        {
+            await using var usb = await UsbDevice.OpenAsync(device);
+            var deviceBytes = await GetDescriptorAsync(usb, 0x01, 18);
+            var header = await GetDescriptorAsync(usb, 0x02, 9);
+            var configuration = await GetDescriptorAsync(usb, 0x02, header[2] | (header[3] << 8));
+            Log($"Device descriptor:        {Convert.ToHexString(deviceBytes)}");
+            Log($"Configuration descriptor: {Convert.ToHexString(configuration)}");
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    private static async Task<byte[]> GetDescriptorAsync(UsbDevice usb, byte type, int length)
+    {
+        var buffer = new byte[length];
+        var setup = new UsbControlSetup { RequestType = 0x80, Request = 0x06, Value = (ushort)(type << 8) };
+        int read = await usb.ControlTransferAsync(setup, buffer);
+        return buffer[..read];
+    }
+
+    // Treehopper on Windows, Linux and macOS; revocation; exclusive claim.
+    private async Task OpenTreehopperAsync(DeviceInfo device)
+    {
+        try
+        {
+            await CloseTreehopperAsync();
+            board = await TreehopperBoard.OpenAsync(device);
+            Log($"Opened Treehopper {device.Id}.");
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    private async Task BlinkAsync()
+    {
+        try
+        {
+            await board!.SetLedAsync(true);
+            await Task.Delay(300);
+            await board.SetLedAsync(false);
+            Log("Blinked the LED.");
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    private async Task ReadPinAsync()
+    {
+        try
+        {
+            await using var pin = await board!.Pins[1].ConfigureAsync(PinMode.DigitalInput);
+            Log($"Pin 1 reads {(await pin.ReadDigitalAsync() ? "high" : "low")}.");
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    private async Task CloseTreehopperAsync()
+    {
+        if (board is null)
+            return;
+        try
+        {
+            await board.DisposeAsync();
+            Log("Closed the Treehopper.");
+        }
+        catch (Exception e) { Log(e); }
+        finally { board = null; }
+    }
+
+    // STM32 DFU.
+    private async Task IdentifyDfuAsync(DeviceInfo device)
+    {
+        try
+        {
+            await using var programmer = await Stm32DfuProgrammer.OpenAsync(device);
+            var identity = await programmer.IdentifyAsync();
+            Log($"DFU: {identity.Family} chip {identity.Chip}, bootloader {identity.BootloaderVersion}.");
+        }
+        catch (Exception e) { Log(e); }
+    }
+
+    // ── Serial ───────────────────────────────────────────────────────
+
+    // Web Serial pipe: Stm32SerialProgrammer over BrowserSerialPort, with bootloader entry
+    // through the control lines.
+    private async Task IdentifyOverSerialAsync()
+    {
+        BrowserSerialPort? port = null;
+        try
+        {
+            port = await BrowserSerial.RequestPortAsync([]);
+            if (port is null)
+            {
+                Log("No port picked.");
+                return;
+            }
+
+            await port.OpenAsync(new SerialPortOpenOptions { BaudRate = 115200, Parity = SerialPortParity.Even });
+            Log($"Opened port {port.UsbVendorId:X4}:{port.UsbProductId:X4}.");
+
+            // Hold the part in reset with BOOT0 high, then release reset.
+            await port.SetSignalsAsync(dataTerminalReady: true, requestToSend: true);
+            await Task.Delay(100);
+            await port.SetSignalsAsync(requestToSend: false);
+            await Task.Delay(100);
+
+            await using var programmer = await Stm32SerialProgrammer.ConnectAsync(new DeviceInfo { Id = "web-serial" }, port.Pipe);
+            var identity = await programmer.IdentifyAsync();
+            Log($"USART: {identity.Family} chip {identity.Chip}, bootloader {identity.BootloaderVersion}, " +
+                $"commands {string.Join(", ", identity.SupportedCommands)}.");
+        }
+        catch (Exception e) { Log(e); }
+        finally
+        {
+            if (port is not null)
+                await port.DisposeAsync();
+        }
+    }
+}
