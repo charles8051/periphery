@@ -1,1 +1,18 @@
 #nullable enable
+Periphery.Usb.Browser.BrowserUsb
+Periphery.Usb.Browser.UsbDeviceRequestFilter
+Periphery.Usb.Browser.UsbDeviceRequestFilter.ClassCode.get -> byte?
+Periphery.Usb.Browser.UsbDeviceRequestFilter.ClassCode.init -> void
+Periphery.Usb.Browser.UsbDeviceRequestFilter.ProductId.get -> Periphery.HardwareId?
+Periphery.Usb.Browser.UsbDeviceRequestFilter.ProductId.init -> void
+Periphery.Usb.Browser.UsbDeviceRequestFilter.ProtocolCode.get -> byte?
+Periphery.Usb.Browser.UsbDeviceRequestFilter.ProtocolCode.init -> void
+Periphery.Usb.Browser.UsbDeviceRequestFilter.SerialNumber.get -> string?
+Periphery.Usb.Browser.UsbDeviceRequestFilter.SerialNumber.init -> void
+Periphery.Usb.Browser.UsbDeviceRequestFilter.SubclassCode.get -> byte?
+Periphery.Usb.Browser.UsbDeviceRequestFilter.SubclassCode.init -> void
+Periphery.Usb.Browser.UsbDeviceRequestFilter.VendorId.get -> Periphery.HardwareId?
+Periphery.Usb.Browser.UsbDeviceRequestFilter.VendorId.init -> void
+static Periphery.Usb.Browser.BrowserUsb.GetGrantedDevicesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Periphery.DeviceInfo!>!>!
+static Periphery.Usb.Browser.BrowserUsb.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Periphery.Usb.Browser.BrowserUsb.RequestDeviceAsync(System.Collections.Generic.IReadOnlyList<Periphery.Usb.Browser.UsbDeviceRequestFilter!>! filters, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.DeviceInfo?>!
