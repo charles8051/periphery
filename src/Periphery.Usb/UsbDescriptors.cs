@@ -130,11 +130,12 @@ internal static class UsbDescriptors
     /// structs: alternate setting 0 only, <c>wMaxPacketSize</c> as the raw 16-bit field, and the
     /// transfer type from the low two bits of <c>bmAttributes</c>. Used by backends with no
     /// platform query surface for interfaces, such as WebUSB.</para>
-    /// <para>The walk follows each descriptor's <c>bLength</c>. Descriptors of other types (an
-    /// interface association, or a class-specific descriptor) are skipped. It stops at the end of
-    /// <paramref name="raw"/>, at a <c>bLength</c> below 2, or at a descriptor that runs past the
-    /// end, keeping what it decoded before that. An endpoint that precedes every interface
-    /// descriptor is ignored.</para>
+    /// <para>The walk follows each descriptor's <c>bLength</c>, within the header's
+    /// <c>wTotalLength</c> or the end of <paramref name="raw"/>, whichever comes first. Descriptors
+    /// of other types (an interface association, or a class-specific descriptor) are skipped. It
+    /// stops at a <c>bLength</c> below 2, at a descriptor that runs past the end, or at an
+    /// interface or endpoint descriptor shorter than the standard 9 or 7 bytes, keeping what it
+    /// decoded before that. An endpoint that precedes every interface descriptor is ignored.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <paramref name="raw"/> is shorter than <see cref="ConfigurationHeaderLength"/>.
@@ -153,19 +154,29 @@ internal static class UsbDescriptors
                 interfaces.Add(current with { Endpoints = endpoints!.ToImmutable() });
         }
 
-        int offset = raw[0] >= ConfigurationHeaderLength ? raw[0] : ConfigurationHeaderLength;
-        while (offset + 2 <= raw.Length)
+        // Bytes past wTotalLength belong to no configuration, so they are not walked.
+        int totalLength = BinaryPrimitives.ReadUInt16LittleEndian(raw.Slice(2));
+        var blob = raw[..Math.Min(raw.Length, Math.Max(ConfigurationHeaderLength, totalLength))];
+
+        int offset = blob[0] >= ConfigurationHeaderLength ? blob[0] : ConfigurationHeaderLength;
+        while (offset + 2 <= blob.Length)
         {
-            int length = raw[offset];
-            if (length < 2 || offset + length > raw.Length)
+            int length = blob[offset];
+            if (length < 2 || offset + length > blob.Length)
                 break;
 
-            var descriptor = raw.Slice(offset, length);
+            var descriptor = blob.Slice(offset, length);
             offset += length;
+
+            // A short interface or endpoint descriptor is malformed. Skipping it would hand the
+            // endpoints after it to the wrong interface, so the walk ends there.
+            if ((descriptor[1] == InterfaceDescriptorType && length < InterfaceDescriptorLength)
+                || (descriptor[1] == EndpointDescriptorType && length < EndpointDescriptorLength))
+                break;
 
             switch (descriptor[1])
             {
-                case InterfaceDescriptorType when length >= InterfaceDescriptorLength:
+                case InterfaceDescriptorType:
                     Flush();
                     // Alternate settings other than 0 are skipped, endpoints and all.
                     if (descriptor[3] != 0)
@@ -185,7 +196,7 @@ internal static class UsbDescriptors
                     endpoints = ImmutableArray.CreateBuilder<UsbEndpointDescriptor>(descriptor[4]);
                     break;
 
-                case EndpointDescriptorType when length >= EndpointDescriptorLength && endpoints is not null:
+                case EndpointDescriptorType when endpoints is not null:
                     endpoints.Add(new UsbEndpointDescriptor
                     {
                         EndpointAddress = descriptor[2],

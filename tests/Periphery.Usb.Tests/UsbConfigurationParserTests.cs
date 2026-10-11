@@ -34,7 +34,7 @@ public class UsbConfigurationParserTests
     /// </summary>
     private static readonly byte[] Stm32Dfu =
     [
-        0x09, 0x02, 0x36, 0x00, 0x01, 0x01, 0x00, 0x80, 0x32,
+        0x09, 0x02, 0x2D, 0x00, 0x01, 0x01, 0x00, 0x80, 0x32,
         0x09, 0x04, 0x00, 0x00, 0x00, 0xFE, 0x01, 0x02, 0x04, // interface 0, alt 0: internal flash
         0x09, 0x04, 0x00, 0x01, 0x00, 0xFE, 0x01, 0x02, 0x05, // interface 0, alt 1: option bytes
         0x09, 0x04, 0x00, 0x02, 0x00, 0xFE, 0x01, 0x02, 0x06, // interface 0, alt 2: OTP
@@ -60,6 +60,25 @@ public class UsbConfigurationParserTests
         0x07, 0x05, 0x01, 0x02, 0x40, 0x00, 0x00,             // EP1 OUT, bulk, 64
         0x07, 0x05, 0x82, 0x02, 0x40, 0x00, 0x00,             // EP2 IN, bulk, 64
     ];
+
+    /// <summary>Sets a blob's <c>wTotalLength</c> to its own length, after bytes are spliced in.</summary>
+    private static byte[] WithTotalLength(byte[] blob)
+    {
+        blob[2] = (byte)blob.Length;
+        blob[3] = (byte)(blob.Length >> 8);
+        return blob;
+    }
+
+    [Theory]
+    [InlineData(nameof(Treehopper))]
+    [InlineData(nameof(Stm32Dfu))]
+    [InlineData(nameof(CdcAcm))]
+    public void The_golden_vectors_declare_their_own_length(string name)
+    {
+        var blob = name switch { nameof(Treehopper) => Treehopper, nameof(Stm32Dfu) => Stm32Dfu, _ => CdcAcm };
+
+        Assert.Equal(blob.Length, blob[2] | (blob[3] << 8));
+    }
 
     [Fact]
     public void ParseConfiguration_DecodesTheTreehopper()
@@ -123,7 +142,7 @@ public class UsbConfigurationParserTests
         // isochronous endpoint.
         byte[] blob =
         [
-            0x09, 0x02, 0x25, 0x00, 0x01, 0x01, 0x00, 0x80, 0xFA,
+            0x09, 0x02, 0x22, 0x00, 0x01, 0x01, 0x00, 0x80, 0xFA,
             0x09, 0x04, 0x01, 0x00, 0x00, 0x0E, 0x02, 0x00, 0x00, // interface 1, alt 0, no endpoints
             0x09, 0x04, 0x01, 0x01, 0x01, 0x0E, 0x02, 0x00, 0x00, // interface 1, alt 1
             0x07, 0x05, 0x81, 0x05, 0x00, 0x14, 0x01,             // EP1 IN, isochronous
@@ -172,7 +191,7 @@ public class UsbConfigurationParserTests
     [Fact]
     public void ParseConfiguration_StopsAtAZeroLengthDescriptor()
     {
-        byte[] blob = [.. Treehopper.AsSpan(0, 9 + 9 + 7), 0x00, 0x05, .. Treehopper.AsSpan(9 + 9 + 7)];
+        byte[] blob = WithTotalLength([.. Treehopper.AsSpan(0, 9 + 9 + 7), 0x00, 0x05, .. Treehopper.AsSpan(9 + 9 + 7)]);
 
         var config = UsbDescriptors.ParseConfiguration(blob);
 
@@ -182,12 +201,67 @@ public class UsbConfigurationParserTests
     [Fact]
     public void ParseConfiguration_IgnoresAnEndpointBeforeAnyInterface()
     {
-        byte[] blob = [.. Treehopper.AsSpan(0, 9), 0x07, 0x05, 0x83, 0x02, 0x40, 0x00, 0x01, .. Treehopper.AsSpan(9)];
+        byte[] blob = WithTotalLength([.. Treehopper.AsSpan(0, 9), 0x07, 0x05, 0x83, 0x02, 0x40, 0x00, 0x01, .. Treehopper.AsSpan(9)]);
 
         var config = UsbDescriptors.ParseConfiguration(blob);
 
         Assert.Equal(4, Assert.Single(config.Interfaces).Endpoints.Length);
         Assert.DoesNotContain(config.Interfaces[0].Endpoints, e => e.EndpointAddress == 0x83);
+    }
+
+    [Fact]
+    public void ParseConfiguration_DoesNotWalkPastWTotalLength()
+    {
+        // The Treehopper's descriptor followed by a stray interface and endpoint.
+        byte[] blob = [.. Treehopper, 0x09, 0x04, 0x01, 0x00, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x07, 0x05, 0x83, 0x02, 0x40, 0x00, 0x01];
+
+        var config = UsbDescriptors.ParseConfiguration(blob);
+
+        var iface = Assert.Single(config.Interfaces);
+        Assert.DoesNotContain(iface.Endpoints, e => e.EndpointAddress == 0x83);
+    }
+
+    [Fact]
+    public void ParseConfiguration_OfAHeaderDeclaringOnlyItselfHasNoInterfaces()
+    {
+        byte[] blob = [.. Treehopper];
+        blob[2] = 9;
+        blob[3] = 0;
+
+        Assert.Empty(UsbDescriptors.ParseConfiguration(blob).Interfaces);
+    }
+
+    [Fact]
+    public void ParseConfiguration_StopsAtAShortInterfaceDescriptor()
+    {
+        // The CDC communication interface, then an 8-byte interface descriptor, then an endpoint
+        // that must not be handed to the communication interface.
+        byte[] blob = WithTotalLength(
+        [
+            .. CdcAcm.AsSpan(0, 9 + 8 + 9 + 5 + 5 + 4 + 5 + 7),
+            0x08, 0x04, 0x01, 0x00, 0x02, 0x0A, 0x00, 0x00,
+            0x07, 0x05, 0x01, 0x02, 0x40, 0x00, 0x00,
+        ]);
+
+        var config = UsbDescriptors.ParseConfiguration(blob);
+
+        var comm = Assert.Single(config.Interfaces);
+        Assert.Equal((byte)0x83, Assert.Single(comm.Endpoints).EndpointAddress);
+    }
+
+    [Fact]
+    public void ParseConfiguration_StopsAtAShortEndpointDescriptor()
+    {
+        byte[] blob = WithTotalLength(
+        [
+            .. Treehopper.AsSpan(0, 9 + 9 + 7),
+            0x06, 0x05, 0x82, 0x02, 0x40, 0x00,
+            .. Treehopper.AsSpan(9 + 9 + 7 + 7),
+        ]);
+
+        var config = UsbDescriptors.ParseConfiguration(blob);
+
+        Assert.Equal((byte)0x81, Assert.Single(Assert.Single(config.Interfaces).Endpoints).EndpointAddress);
     }
 
     [Theory]
