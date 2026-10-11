@@ -54,7 +54,7 @@ Ranked by how much each one decides whether to start and where.
 | 4 | ST-Link firmware performs target memory access itself. Its command set includes `JTAG_READMEM_32BIT` (`0x07`) and `JTAG_WRITEMEM_32BIT` (`0x08`). DP and AP register commands arrive in firmware V2J24. | Source | The host needs no ADIv5 layer to program an STM32. Writes to the flash controller's registers are enough. |
 | 5 | On Windows, Chromium opens each function of a composite device through that function's own device path. It refuses to claim an interface whose function driver is not WinUSB. | Source (`services/device/usb/usb_device_handle_win.cc`) | A probe is reachable when its debug function binds WinUSB. The drivers on its other functions do not matter. |
 | 6 | The nRF52833 DK's on-board J-Link (`1366:1025`) is composite. Interface 0 is CDC on SEGGER's `JLinkCDC` service. Interface 2 is class `FF/FF/FF` bulk on SEGGER's `jlinkwinusb.inf`, which includes `winusb.inf`. Interface 3 is mass storage. | Measured | Chromium can claim interface 2 (Inferred from 5). `Periphery.Usb.Browser` cannot, because it claims interface 0 only. |
-| 7 | The standalone J-Link (`1366:0101`) binds SEGGER's kernel driver: `jlink.inf` 2.70.08.0, service `jlink`, `jlinkx64.sys`. That INF lists a probe USB-configuration bit for "BULK via WinUSB driver. Needs to be enabled in J-Link config area". | Measured, Source | Chromium cannot open this probe as configured. Its USB mode must be switched first, and only SEGGER's software does that. |
+| 7 | The standalone J-Link (`1366:0101`) binds SEGGER's kernel driver: `jlink.inf` 2.70.08.0, service `jlink`, `jlinkx64.sys`. That INF lists a probe USB-configuration bit for "BULK via WinUSB driver. Needs to be enabled in J-Link config area". | Measured, Source | Chromium cannot open this probe as configured. The INF says WinUSB mode must be enabled in the probe's config area. How that setting is changed was not checked (open question 8). |
 | 8 | Arm publishes CMSIS-DAP under Apache-2.0. Arm says v2 adapters need no driver on Windows 8 and later or on macOS, and need a udev rule on Linux. Arm calls v1 deprecated. | Documented | A v2 probe is reachable over WebUSB with no install. A v1 probe is HID, needs WebHID, and ADR-0092 left WebHID out of scope. |
 | 9 | probe-rs recognises a CMSIS-DAP v2 interface by an interface string containing "CMSIS-DAP" and class `FF` subclass `00`. It scans every interface, so the number varies by probe. | Source | The browser backend needs to claim an interface other than 0 and read interface strings. |
 | 10 | No probe vendor appears on Chromium's static WebUSB blocklist. Checked: `0483` (ST), `1366` (SEGGER), `0D28` (Arm), `2E8A` (Raspberry Pi), `1FC9` (NXP), `03EB` (Microchip), `C251` (Keil). | Source (`chrome/browser/usb/usb_blocklist.cc`) | Nothing is blocked today. Entries can also arrive by server-side config (ADR-0092). |
@@ -104,12 +104,30 @@ A flash driver takes one of two forms.
 
 ## Licensing
 
-US and EU law permit reverse engineering a USB protocol to interoperate with it (US:
-*Sega v. Accolade* and 17 U.S.C. §1201(f). EU: Directive 2009/24/EC, Article 6). Protocol bytes are
-facts. Code that implements them is copyrighted. In the US, a license term the user accepted can
-narrow this, which is why rule 3 exists. This section is the project's reading, not legal advice. It
-follows the rules the ESP32 flasher adopted
-([esp32 adr.md](../feature-specs/firmware-flashing/esp32/adr.md), Decision 5).
+Nothing proposed here relies on a reverse-engineering exception. The planned inputs are a published
+specification, permissively licensed code used under its license, and USB traffic observed between a
+probe and software that drives it.
+
+These points are established, because they follow from license text:
+
+- Copying or adapting code is governed by that code's license. The table below lists what each
+  license allows Periphery to do.
+- Periphery's PolyForm Small Business license is GPL-incompatible. GPL code cannot be copied or
+  adapted into it.
+
+These points are assumptions, and need legal review before any of this ships:
+
+- That observing a probe's USB traffic and implementing the observed protocol is lawful. This
+  document treats protocol messages as unprotected facts. The statutory provisions on studying and
+  decompiling software for interoperability are narrow and conditional (US: *Sega v. Accolade* and
+  17 U.S.C. §1201(f). EU: Directive 2009/24/EC, Articles 5(3) and 6). This document does not claim
+  they cover any particular step.
+- That no license term binds the people doing the work. In the US, a license term the user accepted
+  can restrict acts the law would otherwise permit. Rule 3 exists for this reason, and the ST licenses
+  it names were not read.
+
+This section is the project's reading, not legal advice. It follows the rules the ESP32 flasher
+adopted ([esp32 adr.md](../feature-specs/firmware-flashing/esp32/adr.md), Decision 5).
 
 | Source | License | Use in Periphery |
 |---|---|---|
@@ -124,7 +142,7 @@ follows the rules the ESP32 flasher adopted
 
 1. Implement from the published specification where one exists, and from the permissive sources
    above otherwise. Do not open OpenOCD or libjaylink to check a constant.
-2. USB captures of any tool driving a probe are facts and may become test vectors.
+2. USB captures of any tool driving a probe may become test vectors, under the first assumption above.
 3. Do not decompile vendor software. SEGGER's software license forbids decompiling, disassembling or
    reverse engineering its software (§3(a) in a mirrored copy, which may be out of date). ST's
    licenses for STM32CubeProgrammer and the ST-Link firmware updater were not read for this document.
@@ -186,6 +204,7 @@ browser.
 | 5 | What do ST's licenses for STM32CubeProgrammer and the ST-Link firmware updater say about reverse engineering? | Read them. |
 | 6 | Once a .NET probe core exists, it also runs on the desktop through `Periphery.Usb`. Does the desktop use it, or keep probe-rs? | The ADR. |
 | 7 | Can probe-rs's synchronous probe interfaces run over promise-only WebUSB? | A spike. |
+| 8 | How is a standalone J-Link's WinUSB mode enabled, and which tools can change it? | SEGGER's documentation, then a standalone J-Link switched and re-read. |
 
 ---
 
