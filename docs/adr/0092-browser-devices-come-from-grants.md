@@ -459,12 +459,17 @@ reopens the decision it names.
 
 ### Results
 
-Recorded as the gates run. `examples/Periphery.Examples.Browser` has a button for most of them.
+Recorded as the gates run. `examples/Periphery.Examples.Browser` has a button for most of them. The
+2026-10-11 runs on hardware used Chrome 155.0.8059.39 on Windows 11 Pro, build 26200.
 
 | Gate | Result |
 |---|---|
 | Package restore | Passed 2026-10-11 for both packages (#340, #341). Each packed package restores and builds in a stock `dotnet new blazorwasm` app on SDK 10.0.401, and the app's static-asset manifest maps its module under `_content/<PackageId>/`. Both `net10.0` test projects run in the desktop test job. (Measured.) |
-| Request from a click | Not run in a full Chrome. In the Claude desktop app's embedded Chromium, a request outside a gesture rejects with `SecurityError` ("Must be handling a user gesture to show a permission request"), which surfaces as `InvalidOperationException`. From a click it returns `null`, because that Chromium has no chooser, as the exploration's finding 11 recorded for Web Serial. Both packages behave the same. (Measured.) |
+| Request from a click | Passed 2026-10-11 for WebUSB in Chrome on Windows: from a click the chooser opened and granted a Treehopper and an STM32 in DFU mode. (Reported by the user at the bench.) In the Claude desktop app's embedded Chromium, a request outside a gesture rejects with `SecurityError` ("Must be handling a user gesture to show a permission request"), which surfaces as `InvalidOperationException`; from a click it returns `null`, because that Chromium has no chooser, as the exploration's finding 11 recorded for Web Serial. Both packages behave the same there. (Measured.) Web Serial's chooser in a full Chrome is not yet run. |
+| Treehopper on Windows | Partly. `TreehopperBoard.OpenAsync` opened a granted board and set its LED. (Reported by the user.) Receiving a pin report is not yet confirmed. |
+| Descriptor fidelity | Passed 2026-10-11 on an STM32 DFU bootloader, `0483:DF11`. The page's `GET_DESCRIPTOR` reads are byte-identical to the same reads through the desktop WinUSB backend: device `1201000200000040830411DF000201020301`, configuration `09022D00010102C0320904000000FE0102060904000100FE0102070904000200FE01020809210BFF0000041A01`. Not yet compared on a Treehopper. (Measured.) |
+| Durable id | Partly. The STM32's grant, `webusb:0483:DF11:2053367B524E`, was listed by a newly opened tab with no chooser. After a replug and after a browser restart are not yet run. (Measured.) |
+| STM32 DFU | Passed on Windows 2026-10-11. `Stm32DfuProgrammer` opened the granted bootloader in the page and identified it: bootloader `0.2`, from `bcdDevice` `0x0200`, the value the desktop read gives too. A driver step was needed: the device was bound to WinUSB through an STMicroelectronics INF (`oem38.inf`) installed before the run. Not yet run on Linux. (Measured.) |
 | Abandon and take over | Not run on a board. It passes against a fake device and a fake clock in `WebUsbBackendTests`, through `UsbDevice`'s own deadline. |
 | Web Serial pipe | Not run on a part. `Stm32SerialProgrammer` syncs and identifies through `BrowserSerialPort.Pipe` against the STM32 suite's `FakeStm32Bootloader` in `Stm32OverBrowserSerialPortTests`. |
 | All others | Not run. |
