@@ -178,13 +178,14 @@ public sealed class BrowserSerialPort : IAsyncDisposable
         if (_pipe is null)
             return;
 
-        // The writer must be released before close() will succeed, so sending stops first.
+        // An idle send loop stops here. One inside a write cannot be stopped from .NET: under
+        // hardware flow control the write may never finish, so close comes before any wait.
         _output!.Reader.CancelPendingRead();
-        await _outPump!.ConfigureAwait(false);
 
+        // Closing aborts a write in flight and cancels the pending read, which ends both loops.
         await CloseQuietlyAsync().ConfigureAwait(false);
 
-        // Closing cancels the pending read, which ends the receive loop.
+        await _outPump!.ConfigureAwait(false);
         await _inPump!.ConfigureAwait(false);
         await _output.Writer.CompleteAsync().ConfigureAwait(false);
     }

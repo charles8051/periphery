@@ -19,6 +19,9 @@ let nextHandle = 1;
 // handle -> { reader, chunk, offset }: the open reader, and bytes from its last chunk not yet read.
 const readers = new Map();
 
+// handle -> the writer of a write in progress, so close() can abort it.
+const writers = new Map();
+
 const outcomes = new Map();    // operation id -> { data?: Uint8Array, error?: { name, message }, staged?: Uint8Array }
 
 // Line errors end the current reader but not the stream: port.readable is replaced and reading
@@ -123,9 +126,11 @@ export async function write(op, handle) {
   outcomes.delete(op);
   try {
     const writer = portOf(handle).writable.getWriter();
+    writers.set(handle, writer);
     try {
       await writer.write(data);
     } finally {
+      writers.delete(handle);
       writer.releaseLock();
     }
     return OK;
@@ -138,9 +143,17 @@ export async function setSignals(op, handle, signalsJson) {
   try { await portOf(handle).setSignals(JSON.parse(signalsJson)); return OK; } catch (e) { return fail(op, e); }
 }
 
-// Cancels a pending read, which then resolves as ended, and closes the port.
+// Aborts a write in progress, which then rejects, cancels a pending read, which then resolves as
+// ended, and closes the port. Under hardware flow control a write may never finish on its own, so
+// close() does not wait for one.
 export async function close(op, handle) {
   try {
+    const writer = writers.get(handle);
+    if (writer) {
+      writers.delete(handle);
+      try { await writer.abort(); } catch { /* the stream may already have errored */ }
+      try { writer.releaseLock(); } catch { /* released by the write it aborted */ }
+    }
     const state = readers.get(handle);
     if (state) {
       readers.delete(handle);

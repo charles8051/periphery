@@ -31,7 +31,10 @@ internal interface IWebSerialPort
     /// <summary><c>setSignals(signals)</c>, with the signals as <c>SerialOutputSignals</c> JSON.</summary>
     Task SetSignalsAsync(string signalsJson);
 
-    /// <summary>Cancels a pending read, releases the streams, and calls <c>close()</c>.</summary>
+    /// <summary>
+    /// Aborts a pending write, which then fails, cancels a pending read, which then returns 0,
+    /// releases the streams, and calls <c>close()</c>. Neither pending call has to finish first.
+    /// </summary>
     Task CloseAsync();
 }
 

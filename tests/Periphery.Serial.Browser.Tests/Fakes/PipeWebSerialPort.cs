@@ -48,11 +48,31 @@ internal sealed class PipeWebSerialPort(IDuplexPipe device) : IWebSerialPort
         return count;
     }
 
+    /// <summary>
+    /// When set, every write stays pending until the port is closed, which aborts it, as a write
+    /// held back by hardware flow control does.
+    /// </summary>
+    public bool BlockWrites { get; set; }
+
+    private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _writeBlocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completes once a write is pending under <see cref="BlockWrites"/>.</summary>
+    public Task WriteBlocked => _writeBlocked.Task;
+
     public async Task WriteAsync(ReadOnlyMemory<byte> data)
     {
         if (RejectWrites is { } r)
             throw new WebSerialRejectionException(r);
         Log.Enqueue($"write {data.Length}");
+
+        if (BlockWrites)
+        {
+            _writeBlocked.TrySetResult();
+            await _closed.Task.ConfigureAwait(false);
+            throw new WebSerialRejectionException(new WebSerialRejection("AbortError", "The write was aborted."));
+        }
+
         await device.Output.WriteAsync(data).ConfigureAwait(false);
     }
 
@@ -65,6 +85,7 @@ internal sealed class PipeWebSerialPort(IDuplexPipe device) : IWebSerialPort
     public Task CloseAsync()
     {
         Log.Enqueue("close");
+        _closed.TrySetResult();
         device.Input.CancelPendingRead();
         return Task.CompletedTask;
     }

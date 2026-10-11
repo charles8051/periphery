@@ -189,6 +189,21 @@ public class BrowserSerialPortTests
     }
 
     [Fact]
+    public async Task Disposal_does_not_wait_for_a_write_that_cannot_finish()
+    {
+        var (_, fake, port) = Create();
+        fake.BlockWrites = true;
+        await port.OpenAsync(Line);
+        await port.Pipe.Output.WriteAsync(new byte[] { 1, 2, 3 });
+        await fake.WriteBlocked.WaitAsync(Bound);
+
+        await port.DisposeAsync().AsTask().WaitAsync(Bound);
+
+        Assert.Equal("close", fake.Log.Last());
+        Assert.False(port.IsOpen);
+    }
+
+    [Fact]
     public async Task A_port_never_opened_is_disposed_without_closing()
     {
         var (_, fake, port) = Create();
