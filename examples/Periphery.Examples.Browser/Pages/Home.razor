@@ -98,7 +98,7 @@
 
     private async Task ListAsync()
     {
-        if (Startup.Problems.Count > 0)
+        if (!Startup.UsbReady)
             return;
         try
         {

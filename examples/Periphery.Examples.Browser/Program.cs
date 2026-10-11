@@ -14,6 +14,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 try
 {
     await BrowserUsb.InitializeAsync();
+    Startup.UsbReady = true;
 }
 catch (PlatformNotSupportedException e)
 {
@@ -23,6 +24,7 @@ catch (PlatformNotSupportedException e)
 try
 {
     await BrowserSerial.InitializeAsync();
+    Startup.SerialReady = true;
 }
 catch (PlatformNotSupportedException e)
 {
