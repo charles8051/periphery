@@ -49,13 +49,33 @@ public class InEndpointTests
         Assert.Equal(new EndpointOutput.Issue(T1, A, issued), issue);
     }
 
-    [Fact]
-    public void Rounding_near_the_largest_length_stays_on_a_packet_boundary()
+    [Theory]
+    [InlineData(33_554_431, 512, 33_554_432)]
+    [InlineData(33_554_432, 512, 33_554_432)]
+    [InlineData(33_554_433, 512, 33_554_432)]
+    [InlineData(int.MaxValue, 512, 33_554_432)]
+    [InlineData(int.MaxValue, 10, 33_554_430)]
+    [InlineData(33_554_431, 10, 33_554_430)]
+    public void A_read_longer_than_WebUSB_allows_asks_for_the_last_packet_boundary_within_the_limit(
+        int requested, int maxPacketSize, int issued)
     {
-        int rounded = InEndpoint.RoundUpToPacket(int.MaxValue - 3, 512);
+        Assert.Equal(issued, InEndpoint.RoundUpToPacket(requested, maxPacketSize));
+    }
 
-        Assert.Equal(0, rounded % 512);
-        Assert.True(rounded <= int.MaxValue);
+    [Theory]
+    [InlineData(10)]
+    [InlineData(64)]
+    [InlineData(512)]
+    [InlineData(1023)]
+    public void Under_the_limit_a_transfer_never_asks_for_less_than_the_read(int maxPacketSize)
+    {
+        for (int length = 0; length <= 4 * maxPacketSize; length++)
+        {
+            int rounded = InEndpoint.RoundUpToPacket(length, maxPacketSize);
+            Assert.True(rounded >= length);
+            Assert.Equal(0, rounded % maxPacketSize);
+            Assert.True(rounded - length < maxPacketSize || length == 0);
+        }
     }
 
     [Fact]

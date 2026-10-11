@@ -83,14 +83,28 @@ internal static class InEndpoint
     }
 
     /// <summary>
-    /// <paramref name="length"/> rounded up to a whole number of <paramref name="maxPacketSize"/>
-    /// packets, and at least one packet.
+    /// The largest transfer Chromium accepts, 32 MiB. A longer <c>transferIn</c> rejects with
+    /// <c>DataError</c> (<c>kUsbTransferLengthLimit</c> in <c>usb_device.cc</c>).
     /// </summary>
+    internal const int MaxTransferLength = 32 * 1024 * 1024;
+
+    /// <summary>
+    /// <paramref name="length"/> rounded up to a whole number of <paramref name="maxPacketSize"/>
+    /// packets, and at least one packet, capped at the last packet boundary within
+    /// <see cref="MaxTransferLength"/>.
+    /// </summary>
+    /// <remarks>
+    /// Under the cap the result is never less than <paramref name="length"/>. A read longer than
+    /// the cap is issued at the cap and returns at most that much, as a short read. Asking for more
+    /// would only be refused.
+    /// </remarks>
     internal static int RoundUpToPacket(int length, int maxPacketSize)
     {
         long packets = Math.Max(1L, ((long)length + maxPacketSize - 1) / maxPacketSize);
         long rounded = packets * maxPacketSize;
-        return rounded > int.MaxValue ? int.MaxValue - (int.MaxValue % maxPacketSize) : (int)rounded;
+        return rounded <= MaxTransferLength
+            ? (int)rounded
+            : MaxTransferLength - (MaxTransferLength % maxPacketSize);
     }
 
     private static (InEndpointState, ImmutableArray<EndpointOutput>) OnRequested(
