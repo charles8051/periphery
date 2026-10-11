@@ -78,8 +78,13 @@ internal sealed class WebUsbBackend : IUsbBackend
     /// <summary>
     /// Opens <paramref name="device"/>, selects its first configuration when it has none active,
     /// claims interface 0, and reads its device and configuration descriptors with
-    /// <c>GET_DESCRIPTOR</c>. On any failure after <c>open()</c> the device is closed again.
+    /// <c>GET_DESCRIPTOR</c>. On any failure after <c>open()</c>, cancellation included, the
+    /// device is closed again.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="ct"/> is checked between steps. A WebUSB call already pending runs to the
+    /// end, because WebUSB cannot cancel one, and the cancellation takes effect when it settles.
+    /// </remarks>
     public static async Task<WebUsbBackend> OpenAsync(IWebUsbDevice device, string deviceId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -98,26 +103,44 @@ internal sealed class WebUsbBackend : IUsbBackend
             // there, so a device with none active fails to open on Windows (ADR-0092 D6).
             byte active = device.ActiveConfigurationValue ?? values[0];
             if (device.ActiveConfigurationValue is null)
+            {
                 await Call(() => device.SelectConfigurationAsync(active), WebUsbPhase.Open, deviceId).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+            }
+
+            // GET_DESCRIPTOR(CONFIGURATION) takes an index into the device's configurations, not a
+            // bConfigurationValue. An active value the list does not hold leaves no index to read.
+            int configIndex = IndexOf(values, active);
+            if (configIndex < 0)
+                throw new UsbException(
+                    $"USB device '{deviceId}' reports active configuration {active}, which is not among its " +
+                    $"configurations ({string.Join(", ", values)}).", deviceId);
 
             await Call(() => device.ClaimInterfaceAsync(0), WebUsbPhase.Claim, deviceId).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
 
             var deviceBytes = await GetDescriptorAsync(
                 device, deviceId, DescriptorDevice, 0, UsbDescriptors.DeviceDescriptorLength).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
 
-            int configIndex = Math.Max(0, IndexOf(values, active));
             var header = await GetDescriptorAsync(
                 device, deviceId, DescriptorConfiguration, configIndex, UsbDescriptors.ConfigurationHeaderLength).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+
             int totalLength = header[2] | (header[3] << 8);
             var configBytes = totalLength > header.Length
                 ? await GetDescriptorAsync(device, deviceId, DescriptorConfiguration, configIndex, totalLength).ConfigureAwait(false)
                 : header;
+            ct.ThrowIfCancellationRequested();
+
+            var configuration = UsbDescriptors.ParseConfiguration(configBytes);
+            if (configuration.ConfigurationValue != active)
+                throw new UsbException(
+                    $"USB device '{deviceId}' returned the descriptor of configuration {configuration.ConfigurationValue} " +
+                    $"at index {configIndex}, where configuration {active} is active.", deviceId);
 
             return new WebUsbBackend(
-                device, deviceId,
-                UsbDescriptors.ParseDeviceDescriptor(deviceBytes),
-                UsbDescriptors.ParseConfiguration(configBytes));
+                device, deviceId, UsbDescriptors.ParseDeviceDescriptor(deviceBytes), configuration);
         }
         catch
         {

@@ -34,6 +34,9 @@ internal sealed class FakeWebUsbDevice : IWebUsbDevice
     public byte[] DeviceDescriptor { get; set; } = TreehopperDevice;
     public byte[] ConfigurationDescriptor { get; set; } = TreehopperConfiguration;
 
+    /// <summary>Called with <c>wValue</c> and <c>wLength</c> as each <c>GET_DESCRIPTOR</c> is answered.</summary>
+    public Action<ushort, int>? OnGetDescriptor { get; set; }
+
     public WebUsbRejection? RejectOpen { get; set; }
     public WebUsbRejection? RejectClaim { get; set; }
 
@@ -83,6 +86,7 @@ internal sealed class FakeWebUsbDevice : IWebUsbDevice
         if (setup.Request == 0x06 && setup.RequestType == 0x80)
         {
             Log.Enqueue($"getDescriptor(0x{setup.Value:X4}, {length})");
+            OnGetDescriptor?.Invoke(setup.Value, length);
             var source = (setup.Value >> 8) == 0x01 ? DeviceDescriptor : ConfigurationDescriptor;
             return Task.FromResult(new WebUsbInResult("ok", source.AsMemory(0, Math.Min(length, source.Length)).ToArray()));
         }

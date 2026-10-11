@@ -48,22 +48,80 @@ public class WebUsbBackendTests
     [Fact]
     public async Task Open_selects_the_first_configuration_when_none_is_active()
     {
-        var device = new FakeWebUsbDevice { ActiveConfigurationValue = null, ConfigurationValues = [3, 4] };
+        var device = new FakeWebUsbDevice
+        {
+            ActiveConfigurationValue = null,
+            ConfigurationValues = [3, 4],
+            ConfigurationDescriptor = ConfigurationWithValue(3),
+        };
 
         await OpenAsync(device);
 
         Assert.Equal(["open", "selectConfiguration(3)", "claimInterface(0)"], device.Log.Take(3));
     }
 
+    private static byte[] ConfigurationWithValue(byte value)
+    {
+        var bytes = FakeWebUsbDevice.TreehopperConfiguration.ToArray();
+        bytes[5] = value;
+        return bytes;
+    }
+
     [Fact]
     public async Task Open_reads_the_active_configurations_descriptor()
     {
-        var device = new FakeWebUsbDevice { ActiveConfigurationValue = 2, ConfigurationValues = [1, 2] };
+        var device = new FakeWebUsbDevice
+        {
+            ActiveConfigurationValue = 2,
+            ConfigurationValues = [1, 2],
+            ConfigurationDescriptor = ConfigurationWithValue(2),
+        };
 
-        await OpenAsync(device);
+        var (_, backend) = await OpenAsync(device);
 
         Assert.DoesNotContain(device.Log, l => l.StartsWith("selectConfiguration", StringComparison.Ordinal));
         Assert.Contains("getDescriptor(0x0201, 9)", device.Log);
+        Assert.Equal((byte)2, backend.Configuration.ConfigurationValue);
+    }
+
+    [Fact]
+    public async Task An_active_configuration_missing_from_the_list_fails_the_open_before_the_claim()
+    {
+        var device = new FakeWebUsbDevice { ActiveConfigurationValue = 5, ConfigurationValues = [1, 2] };
+
+        var ex = await Assert.ThrowsAsync<UsbException>(() => OpenAsync(device));
+
+        Assert.Contains("configuration 5", ex.Message);
+        Assert.DoesNotContain("claimInterface(0)", device.Log);
+        Assert.Equal("close", device.Log.Last());
+    }
+
+    [Fact]
+    public async Task A_descriptor_for_another_configuration_fails_the_open()
+    {
+        var device = new FakeWebUsbDevice { ConfigurationDescriptor = ConfigurationWithValue(3) };
+
+        await Assert.ThrowsAsync<UsbException>(() => OpenAsync(device));
+
+        Assert.Equal("close", device.Log.Last());
+    }
+
+    [Fact]
+    public async Task An_open_cancelled_during_the_last_descriptor_read_closes_the_device()
+    {
+        using var cts = new CancellationTokenSource();
+        var device = new FakeWebUsbDevice
+        {
+            OnGetDescriptor = (value, length) =>
+            {
+                if (value == 0x0200 && length == FakeWebUsbDevice.TreehopperConfiguration.Length)
+                    cts.Cancel();
+            },
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WebUsbBackend.OpenAsync(device, Id, cts.Token));
+
+        Assert.Equal("close", device.Log.Last());
     }
 
     [Fact]
