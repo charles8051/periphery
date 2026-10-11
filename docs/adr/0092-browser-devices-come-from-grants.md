@@ -506,9 +506,13 @@ uses.
   unplugged.
 - Session numbers only grow within a document, so a stale session id never names another device.
 - A serial of `null` or the empty string counts as none.
-- The registry is reconciled with `getDevices()` before every request, listing and open, one call at
-  a time. Departed grants are released first, then attached ones admitted in handle order. Two
-  overlapping reconciliations would apply in completion order, not snapshot order.
+- The registry is reconciled with `getDevices()` before every request, listing and open. Departed
+  grants are released first, then attached ones admitted in handle order.
+- Reconciliations are serialised: an async gate is held across the `getDevices()` call and the
+  reconcile, so the next call starts only after the previous snapshot is applied, and every snapshot
+  applied is newer than the one before it. Without the gate, overlapping calls would apply in
+  completion order, and an older snapshot could release a newer grant or demote a replugged device's
+  durable id.
 - A grant's handle rests on Chromium returning one `USBDevice` object per attached device from both
   `requestDevice()` and `getDevices()`. Both go through `GetOrCreateDevice`, a cache keyed by device
   GUID and erased only on removal (`usb.cc`). The module holds every attached device strongly, so the
