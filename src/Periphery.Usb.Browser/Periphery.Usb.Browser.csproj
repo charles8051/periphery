@@ -1,0 +1,62 @@
+<!--
+  Microsoft.NET.Sdk.Razor, not Microsoft.NET.Sdk: the Razor SDK packs wwwroot/ as a static web
+  asset served at _content/Periphery.Usb.Browser/, which is where the JS module will load from.
+  The plain SDK packs only lib/ (ADR-0092 D3).
+-->
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <!--
+      net10.0 with the browser platform declared, not net10.0-browser. A stock blazorwasm project
+      targets net10.0 (RID browser-wasm) and fails to restore a net10.0-browser-only package with
+      NU1202, and a net10.0 test project cannot reference one either (ADR-0092 D3). No net8.0 leg:
+      only .NET 10 has been run in a browser here.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <PackageId>Periphery.Usb.Browser</PackageId>
+    <Description>WebUSB backend for Periphery.Usb. In a browser, opens the USB device the user picked through the browser's chooser and runs UsbDevice transfers over WebUSB. It does not enumerate: a page sees only the devices the user has granted.</Description>
+    <PackageTags>hardware;usb;webusb;browser;wasm;blazor;periphery</PackageTags>
+
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery.Usb\Periphery.Usb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.Usb.Browser.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!--
+    Nothing in this package blocks on a task (ADR-0092 D8). A browser has one thread, so a
+    blocking wait on a JS promise waits for an event loop it is itself holding, and the page hangs.
+    The analyzer reads only files named BannedSymbols.txt or BannedSymbols.*.txt.
+  -->
+  <PropertyGroup>
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" PrivateAssets="All" />
+    <AdditionalFiles Include="..\BannedSymbols.Browser.txt" />
+  </ItemGroup>
+
+</Project>
