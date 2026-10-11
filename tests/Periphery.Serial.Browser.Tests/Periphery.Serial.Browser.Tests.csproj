@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Periphery.Serial.Browser" />
+    <Using Include="Periphery.Serial.Browser.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Periphery.Serial.Browser\Periphery.Serial.Browser.csproj" />
+    <!-- For the STM32 bootloader simulation over a BrowserSerialPort: the ADR's "Web Serial pipe"
+         gate, run against a fake part instead of a live one. -->
+    <ProjectReference Include="..\..\src\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\..\src\Periphery.Bootloader.Stm32.Serial\Periphery.Bootloader.Stm32.Serial.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Periphery.Bootloader.Stm32.Serial.Tests\FakeStm32Bootloader.cs" Link="Stm32\FakeStm32Bootloader.cs" />
+    <Compile Include="..\Periphery.Bootloader.Stm32.Serial.Tests\Simulation.cs" Link="Stm32\Simulation.cs" />
+  </ItemGroup>
+
+</Project>
