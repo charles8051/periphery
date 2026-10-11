@@ -1,0 +1,36 @@
+#nullable enable
+Periphery.Serial.Browser.BrowserSerial
+Periphery.Serial.Browser.BrowserSerialPort
+Periphery.Serial.Browser.BrowserSerialPort.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Periphery.Serial.Browser.BrowserSerialPort.IsOpen.get -> bool
+Periphery.Serial.Browser.BrowserSerialPort.OpenAsync(Periphery.Serial.Browser.SerialPortOpenOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Serial.Browser.BrowserSerialPort.Pipe.get -> System.IO.Pipelines.IDuplexPipe!
+Periphery.Serial.Browser.BrowserSerialPort.SetSignalsAsync(bool? dataTerminalReady = null, bool? requestToSend = null, bool? breakSignal = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Periphery.Serial.Browser.BrowserSerialPort.UsbProductId.get -> ushort?
+Periphery.Serial.Browser.BrowserSerialPort.UsbVendorId.get -> ushort?
+Periphery.Serial.Browser.SerialPortOpenOptions
+Periphery.Serial.Browser.SerialPortOpenOptions.BaudRate.get -> int
+Periphery.Serial.Browser.SerialPortOpenOptions.BaudRate.init -> void
+Periphery.Serial.Browser.SerialPortOpenOptions.BufferSize.get -> int
+Periphery.Serial.Browser.SerialPortOpenOptions.BufferSize.init -> void
+Periphery.Serial.Browser.SerialPortOpenOptions.DataBits.get -> int
+Periphery.Serial.Browser.SerialPortOpenOptions.DataBits.init -> void
+Periphery.Serial.Browser.SerialPortOpenOptions.HardwareFlowControl.get -> bool
+Periphery.Serial.Browser.SerialPortOpenOptions.HardwareFlowControl.init -> void
+Periphery.Serial.Browser.SerialPortOpenOptions.Parity.get -> Periphery.Serial.Browser.SerialPortParity
+Periphery.Serial.Browser.SerialPortOpenOptions.Parity.init -> void
+Periphery.Serial.Browser.SerialPortOpenOptions.StopBits.get -> int
+Periphery.Serial.Browser.SerialPortOpenOptions.StopBits.init -> void
+Periphery.Serial.Browser.SerialPortParity
+Periphery.Serial.Browser.SerialPortParity.Even = 1 -> Periphery.Serial.Browser.SerialPortParity
+Periphery.Serial.Browser.SerialPortParity.None = 0 -> Periphery.Serial.Browser.SerialPortParity
+Periphery.Serial.Browser.SerialPortParity.Odd = 2 -> Periphery.Serial.Browser.SerialPortParity
+Periphery.Serial.Browser.SerialPortRequestFilter
+Periphery.Serial.Browser.SerialPortRequestFilter.BluetoothServiceClassId.get -> System.Guid?
+Periphery.Serial.Browser.SerialPortRequestFilter.BluetoothServiceClassId.init -> void
+Periphery.Serial.Browser.SerialPortRequestFilter.UsbProductId.get -> ushort?
+Periphery.Serial.Browser.SerialPortRequestFilter.UsbProductId.init -> void
+Periphery.Serial.Browser.SerialPortRequestFilter.UsbVendorId.get -> ushort?
+Periphery.Serial.Browser.SerialPortRequestFilter.UsbVendorId.init -> void
+static Periphery.Serial.Browser.BrowserSerial.InitializeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Periphery.Serial.Browser.BrowserSerial.RequestPortAsync(System.Collections.Generic.IReadOnlyList<Periphery.Serial.Browser.SerialPortRequestFilter!>! filters, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Periphery.Serial.Browser.BrowserSerialPort?>!

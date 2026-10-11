@@ -33,6 +33,7 @@
     <Project Path="src/Periphery.Treehopper.Flasher.Gui/Periphery.Treehopper.Flasher.Gui.csproj" />
     <Project Path="src/Periphery.Usb/Periphery.Usb.csproj" />
     <Project Path="src/Periphery.Usb.Browser/Periphery.Usb.Browser.csproj" />
+    <Project Path="src/Periphery.Serial.Browser/Periphery.Serial.Browser.csproj" />
   </Folder>
   <Folder Name="/examples/">
     <Project Path="examples/Periphery.Examples.Camera/Periphery.Examples.Camera.csproj" />
@@ -79,6 +80,7 @@
     <Project Path="tests/Periphery.Treehopper.Flasher.Tests/Periphery.Treehopper.Flasher.Tests.csproj" />
     <Project Path="tests/Periphery.Usb.Tests/Periphery.Usb.Tests.csproj" />
     <Project Path="tests/Periphery.Usb.Browser.Tests/Periphery.Usb.Browser.Tests.csproj" />
+    <Project Path="tests/Periphery.Serial.Browser.Tests/Periphery.Serial.Browser.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Periphery.Camera.Benchmarks/Periphery.Camera.Benchmarks.csproj" />
