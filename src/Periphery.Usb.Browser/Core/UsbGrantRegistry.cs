@@ -131,6 +131,31 @@ internal static class UsbGrantIds
     }
 
     /// <summary>
+    /// Brings the registry in line with <c>getDevices()</c>: releases every grant whose handle is
+    /// not in <paramref name="attached"/>, then admits each one that is, in handle order.
+    /// </summary>
+    /// <remarks>
+    /// Releasing first means a twin that has left no longer forces a session id on a device
+    /// admitted alongside it. Admitting in handle order makes the session numbers independent of
+    /// the order <c>getDevices()</c> lists the devices in.
+    /// </remarks>
+    public static UsbGrantRegistry Reconcile(
+        UsbGrantRegistry state, IReadOnlyList<(GrantHandle Handle, UsbGrantFacts Facts)> attached)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(attached);
+
+        var present = attached.Select(a => a.Handle).ToHashSet();
+        foreach (var gone in state.Grants.Keys.Where(h => !present.Contains(h)).OrderBy(h => h.Value).ToList())
+            state = Release(state, gone);
+
+        foreach (var (handle, facts) in attached.OrderBy(a => a.Handle.Value))
+            (state, _) = Admit(state, facts, handle);
+
+        return state;
+    }
+
+    /// <summary>
     /// The attached grant <paramref name="id"/> names, or <see langword="null"/> when no attached
     /// grant has that id. The comparison is <see cref="DeviceId"/>'s, which ignores case.
     /// </summary>

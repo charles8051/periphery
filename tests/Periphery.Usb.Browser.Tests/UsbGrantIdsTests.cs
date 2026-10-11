@@ -208,6 +208,54 @@ public class UsbGrantIdsTests
         Assert.Null(UsbGrantIds.Resolve(s2, id));
     }
 
+    // ── Reconcile ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void Reconcile_releases_grants_that_are_no_longer_attached()
+    {
+        var (s1, _) = Admit(UsbGrantRegistry.Empty, Treehopper("A"), 1);
+        var (s2, _) = Admit(s1, Treehopper("B"), 2);
+
+        var s3 = UsbGrantIds.Reconcile(s2, [(new GrantHandle(2), Treehopper("B"))]);
+
+        Assert.Equal([new GrantHandle(2)], s3.Grants.Keys);
+    }
+
+    [Fact]
+    public void Reconcile_releases_a_departed_twin_before_admitting_a_new_device()
+    {
+        var (s1, _) = Admit(UsbGrantRegistry.Empty, Treehopper("AB12CD"), 1);
+
+        // The board was replugged: getDevices() now lists only its new object.
+        var s2 = UsbGrantIds.Reconcile(s1, [(new GrantHandle(2), Treehopper("AB12CD"))]);
+
+        Assert.Equal("webusb:10C4:8A7E:AB12CD", Assert.Single(s2.Grants.Values).Id.Value);
+    }
+
+    [Fact]
+    public void Reconcile_numbers_sessions_by_handle_whatever_order_getDevices_lists_them_in()
+    {
+        var forward = UsbGrantIds.Reconcile(UsbGrantRegistry.Empty,
+            [(new GrantHandle(1), Treehopper(null)), (new GrantHandle(2), Treehopper(null))]);
+        var backward = UsbGrantIds.Reconcile(UsbGrantRegistry.Empty,
+            [(new GrantHandle(2), Treehopper(null)), (new GrantHandle(1), Treehopper(null))]);
+
+        Assert.Equal(forward.Grants[new GrantHandle(1)].Id, backward.Grants[new GrantHandle(1)].Id);
+        Assert.Equal(forward.Grants[new GrantHandle(2)].Id, backward.Grants[new GrantHandle(2)].Id);
+    }
+
+    [Fact]
+    public void Reconcile_keeps_the_ids_of_devices_still_attached()
+    {
+        var s1 = UsbGrantIds.Reconcile(UsbGrantRegistry.Empty, [(new GrantHandle(1), Treehopper(null))]);
+        var id = s1.Grants[new GrantHandle(1)].Id;
+
+        var s2 = UsbGrantIds.Reconcile(s1,
+            [(new GrantHandle(1), Treehopper(null)), (new GrantHandle(2), Treehopper("X"))]);
+
+        Assert.Equal(id, s2.Grants[new GrantHandle(1)].Id);
+    }
+
     [Fact]
     public void Releasing_an_unknown_handle_returns_the_same_registry()
     {
