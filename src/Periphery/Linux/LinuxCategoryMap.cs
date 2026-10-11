@@ -62,7 +62,9 @@ internal static class LinuxCategoryMap
     /// Issue #332: <paramref name="uartType"/> is the tty's <c>type</c> attribute, which only a
     /// <c>serial_core</c> port has. The 8250 driver registers
     /// <c>CONFIG_SERIAL_8250_RUNTIME_UARTS</c> ports whether or not a UART sits behind them, and a
-    /// placeholder reports <c>0</c>, <c>PORT_UNKNOWN</c>. It gets no port name. A tty outside
+    /// placeholder reports <c>0</c>, <c>PORT_UNKNOWN</c>. It gets no port name. No
+    /// <c>serial_core</c> driver can carry I/O on such a port: <c>uart_port_startup</c> returns
+    /// early for <c>PORT_UNKNOWN</c>, and <c>uart_startup</c> sets <c>TTY_IO_ERROR</c>. A tty outside
     /// <c>serial_core</c>, such as <c>ttyUSB</c>, <c>ttyACM</c> or <c>rfcomm</c>, has no
     /// <c>type</c> and passes <see langword="null"/>.
     /// </para>
@@ -129,7 +131,9 @@ internal static class LinuxCategoryMap
     /// <c>video4linux/video*</c>). A <c>video</c> node can still be a memory-to-memory codec, a
     /// video output, or a UVC camera's metadata node. udev's <c>v4l_id</c> builtin runs
     /// <c>VIDIOC_QUERYCAP</c> and records <c>ID_V4L_CAPABILITIES</c>, such as <c>:capture:</c> or
-    /// <c>:capture:video_output:</c>; a codec records <c>:</c>. A node without the property is kept,
+    /// <c>:capture:video_output:</c>; a codec records <c>:</c>. <c>v4l_id</c> writes <c>capture</c>
+    /// for <c>V4L2_CAP_VIDEO_CAPTURE</c> and <c>V4L2_CAP_VIDEO_CAPTURE_MPLANE</c> alike, so a
+    /// multi-planar camera passes. A node without the property is kept,
     /// as before: there is no udev database in a container, and <c>v4l_id</c> can fail.
     /// </remarks>
     internal static DeviceCategory ResolveVideoCategory(string? devname, string? v4lCapabilities)
