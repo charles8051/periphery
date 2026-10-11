@@ -20,6 +20,7 @@
     <Using Include="Xunit" />
     <Using Include="Periphery" />
     <Using Include="Periphery.Usb" />
+    <Using Include="Periphery.Usb.Browser" />
     <Using Include="Periphery.Usb.Browser.Core" />
   </ItemGroup>
 

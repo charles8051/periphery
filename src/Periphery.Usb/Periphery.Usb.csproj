@@ -28,6 +28,10 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Periphery.Usb.Tests" />
     <InternalsVisibleTo Include="Periphery.Treehopper.Tests" />
+    <!-- The WebUSB backend implements IUsbBackend and installs UsbBackendHost.Browser
+         (ADR-0092 D2, D6). It packs an exact-version dependency on this package. -->
+    <InternalsVisibleTo Include="Periphery.Usb.Browser" />
+    <InternalsVisibleTo Include="Periphery.Usb.Browser.Tests" />
   </ItemGroup>
 
   <ItemGroup>
