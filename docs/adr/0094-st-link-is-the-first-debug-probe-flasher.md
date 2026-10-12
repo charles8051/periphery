@@ -302,9 +302,10 @@ the pages it touches. A caller flashing a partial image does not expect that.
 
 | Gate | Passes when | Decisions |
 |---|---|---|
-| Pure core | Codec, version decode, core control and flash plan tests pass with no hardware. A partial-page image leaves the page's other bytes unchanged. Every refusal test and the merge test are proved by mutation. | D5, D6 |
+| Pure core | Core control and flash plan tests pass with no hardware. A partial-page image leaves the page's other bytes unchanged. Every refusal test and the merge test are proved by mutation. | D5, D6 |
 | Shell against the model | The flash shell erases, programs and verifies an image through a fake memory seam backed by the flash-controller model, with a manual clock. | D6 |
 | Legal review | The review of the exploration's two assumptions is recorded here. Every gate below waits for it. | D8 |
+| ST-Link codec | Command encoding, status and version decoding tests pass with no hardware. | D6, D7 |
 | Probe opens on Windows, desktop | Through `Periphery.Usb`, an ST-Link answers `GET_VERSION`, reports target voltage, and reads the STM32G431's device ID. | D3, D4, D7 |
 | Probe opens on Windows, page | In Chrome on Windows, the same from a granted ST-Link. This also measures exploration finding 3. | D3 |
 | Flash from a page | In Chrome on Windows, an STM32G431 image is written, read back identical, and runs after the reset. | D5 |
