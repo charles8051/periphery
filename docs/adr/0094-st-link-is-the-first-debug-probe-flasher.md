@@ -182,7 +182,9 @@ Flash is programmed by running the part's CMSIS-Pack flash algorithm in target R
 STM32G431 that is `STM32G43x-4x_128.FLM` from `Open-CMSIS-Pack/STM32G4xx_DFP` v2.2.0. The pack
 assigns it to every STM32G431 variant, covering 128 KB at `0x08000000` with a 32 KB RAM window at
 `0x20000000`. Its FlashDevice record gives a 2 KB sector, a 1 KB programming page, and 400 ms
-timeouts for both program and erase. (Source.)
+timeouts for both program and erase. (Source.) The sector is RM0440's 2 KB flash page, the erase
+unit. The programming page is the chunk one `ProgramPage` call accepts, and the runner takes both
+sizes from the record.
 
 A call runs the way probe-rs runs one (Source, `flasher.rs`). The runner loads the algorithm at the
 start of the RAM window behind a header of Thumb breakpoint instructions. For each call it writes
