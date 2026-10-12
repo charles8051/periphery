@@ -182,6 +182,8 @@ With no consumer named, ST-Link with one STM32 family is the smallest end-to-end
 - It needs no backend change, because the debug interface is 0 (finding 3).
 - It needs no ADIv5 layer, because the probe firmware accesses memory (finding 4).
 - It needs one flash driver, written as host register writes from one reference manual.
+  *Superseded 2026-10-11:* [ADR-0094](../adr/0094-st-link-is-the-first-debug-probe-flasher.md) D5
+  runs the vendor's CMSIS-Pack flash algorithm instead.
 
 CMSIS-DAP v2 is the general second step. Its protocol is published, it needs no driver, and it covers
 probes from many vendors. It needs `Periphery.Usb.Browser` to claim an arbitrary interface and read

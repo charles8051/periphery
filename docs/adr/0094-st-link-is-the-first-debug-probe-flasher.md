@@ -197,6 +197,20 @@ A flash runs in two algorithm sessions and a read-back: `Init` for erase, `Erase
 sector, `UnInit`; then `Init` for program, `ProgramPage` per page, `UnInit`; then verification by
 reading memory.
 
+The RAM window holds four regions, laid out in this order from its start, with no overlap:
+
+| Region | Size |
+|---|---|
+| Breakpoint header, then the algorithm's code and data | From the record |
+| Stack | A fixed size the record carries |
+| Page buffer | The record's programming page size, 1 KB for the STM32G431 |
+| Unused | The rest of the window |
+
+The layout is computed in the pure core from the record. A record whose regions do not fit the
+window is refused before the core is halted. Before each `ProgramPage` call, the runner writes the
+merged page into the page buffer and passes the page's flash address, its size and the buffer's
+address as the call's three arguments. The buffer always holds exactly one programming page.
+
 The runner rewrites whole sectors, and only the sectors the image touches. It reads each such
 sector first, merges the image's bytes into that copy, erases the sector, and programs the merged
 copy page by page. Bytes the image does not cover keep their values.
@@ -225,7 +239,7 @@ application. The algorithm overwrites the RAM window, and the final reset discar
 | `StLinkStatus` and `StLinkVersion`: decoders for status bytes and `GET_VERSION` | `StLinkProgrammer`: owns the `UsbDevice` and the open sequence |
 | `CortexMControl`: halt, reset-and-halt, run, and core-register access, as sequences of memory operations and the reads that confirm them | The memory seam's ST-Link implementation |
 | `AlgorithmCall`: a function and its arguments, encoded as the register values of one call | Loading the algorithm and running each call |
-| `FlashPlan`: from an image and a target record, the sectors to read; from their contents, the merged sectors and the `AlgorithmCall`s that erase and program them. It carries every refusal in D5. | Reading sectors, the halt poll on an injected `TimeProvider`, and the read-back |
+| `FlashPlan`: from a target record, the RAM layout; from an image and the record, the sectors to read; from their contents, the merged sectors and the `AlgorithmCall`s that erase and program them. It carries every refusal in D5. | Reading sectors, the halt poll on an injected `TimeProvider`, and the read-back |
 
 Poll cadence is a pure state advanced by a shell-owned clock, and tests drive it with a manual
 clock ([ADR-0089](0089-tests-do-not-depend-on-elapsed-time.md)).
@@ -375,7 +389,7 @@ in the sectors it touches. A caller flashing a partial image does not expect tha
 
 | Gate | Passes when | Decisions |
 |---|---|---|
-| Pure core | Core control, algorithm-call encoding and flash plan tests pass with no hardware. A partial-sector image leaves the sector's other bytes unchanged. Every refusal test and the merge test are proved by mutation. | D5, D6 |
+| Pure core | Core control, algorithm-call encoding, RAM layout and flash plan tests pass with no hardware. A partial-sector image leaves the sector's other bytes unchanged. A record too large for its window is refused. Every refusal test and the merge test are proved by mutation. | D5, D6 |
 | Generator | The generator reproduces the checked-in STM32G431 record from the pack's FLM file, and the record's SHA-256 matches that file. | D9 |
 | Shell against the model | The runner erases, programs and verifies an image through a fake memory seam backed by the algorithm-running core model, with a manual clock. | D5, D6 |
 | Legal review | The review of the exploration's two assumptions is recorded here. Every gate below waits for it. | D8 |
