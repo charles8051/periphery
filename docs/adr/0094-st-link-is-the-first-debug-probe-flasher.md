@@ -222,7 +222,8 @@ section in full. In short:
 The exploration lists two legal assumptions: that implementing an observed protocol is lawful, and
 that no license term binds the people doing the work. The ST-Link protocol is known only by
 observation, including where the permissive sources learned it, so every line of the ST-Link codec
-rests on the first assumption. Until the review is recorded in this ADR:
+rests on the first assumption. The restrictions below end when the review's outcome is recorded in
+this ADR's Status section. A review that finds a problem supersedes this ADR instead.
 
 - **Work that does not encode the ST-Link protocol proceeds.** The memory seam, Cortex-M control,
   the STM32G4 flash plan, the flash-controller model, and the provider wiring against a fake memory
@@ -231,7 +232,9 @@ rests on the first assumption. Until the review is recorded in this ADR:
   until the review is recorded.
 - **No one captures vendor software.** ST's licenses have not been read, and SEGGER's restricts its
   software.
-- **Nothing is published.** The package is `IsPackable=false`.
+- **No package is built for release.** `Periphery.DebugProbe.StLink` is `IsPackable=false`, so no
+  NuGet package carries it. This covers the package only. The probe-independent layers above may be
+  merged with their tests like any other code.
 
 ---
 
