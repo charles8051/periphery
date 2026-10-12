@@ -202,7 +202,7 @@ browser.
 | 1 | Does a real ST-Link match finding 3, with `MI_00` bound to WinUSB and the endpoints listed? | Attach one and read its PnP properties and descriptors. |
 | 2 | Does Chromium open the DK's on-board J-Link and claim interface 2? | A page calling `claimInterface(2)` in a full Chrome. |
 | 3 | Which CMSIS-DAP v2 probes are on the bench, and at which interface number? | An inventory. |
-| 4 | What license covers the flash algorithms embedded in probe-rs's target files, and the CMSIS-Packs they came from? | probe-rs's target-generation provenance and the packs' license files. |
+| 4 | What license covers the flash algorithms embedded in probe-rs's target files, and the CMSIS-Packs they came from? | Answered for the STM32G4 pack in [ADR-0094](../adr/0094-st-link-is-the-first-debug-probe-flasher.md#what-the-packs-are-licensed-under). Other families are checked one by one under its D9. |
 | 5 | What do ST's licenses for STM32CubeProgrammer and the ST-Link firmware updater say about reverse engineering? | Read them. |
 | 6 | Once a .NET probe core exists, it also runs on the desktop through `Periphery.Usb`. Does the desktop use it, or keep probe-rs? | The ADR. |
 | 7 | Can probe-rs's synchronous probe interfaces run over promise-only WebUSB? | A spike. |
