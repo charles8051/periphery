@@ -18,21 +18,25 @@ those values against the tag.
 
 ## Regenerate the records
 
-From the repository root:
+From the repository root, with the pack's `.pdsc` downloaded from its tag:
 
 ```bash
-dotnet run --project src/Periphery.DebugProbe.AlgorithmGen -- generate --manifest src/Periphery.DebugProbe.AlgorithmGen/Packs/STM32G4xx_DFP-2.2.0/manifest.json --out-dir src/Periphery.DebugProbe.StLink/Targets
+dotnet run --project src/Periphery.DebugProbe.AlgorithmGen -- generate --manifest src/Periphery.DebugProbe.AlgorithmGen/Packs/STM32G4xx_DFP-2.2.0/manifest.json --out-dir src/Periphery.DebugProbe.StLink/Targets --pdsc <downloaded .pdsc>
 ```
 
-The generator refuses an FLM whose SHA-256 differs from the manifest's, and a RAM window that is
-empty, not word-aligned, outside the SRAM region `0x20000000..0x3FFFFFFF`, or overlapping the flash
-it programs. `AlgorithmGeneratorTests` fails if a checked-in record differs from what this command
-writes.
+`generate` checks the manifest before it writes anything:
 
-With `--pdsc <downloaded .pdsc>` it also refuses a `.pdsc` whose SHA-256 is not the one the
-manifest pins, and any algorithm whose range or RAM window differs from the pack's entry. CI has no
-`.pdsc`, so this check runs when an algorithm is added or a manifest is changed. At flash time the
-programmer reads the loaded algorithm back and refuses to call it if the RAM did not hold it.
+- It refuses a `.pdsc` whose SHA-256 is not the one the manifest pins, and any algorithm whose
+  range or RAM window differs from the pack's entry. It does not run without `--pdsc` unless
+  `--skip-pdsc-check` replaces it, which prints a warning. Use that only to regenerate from a
+  manifest you are not changing.
+- It refuses an FLM whose SHA-256 differs from the manifest's.
+- It refuses a RAM window that is empty, not word-aligned, outside the SRAM region
+  `0x20000000..0x3FFFFFFF`, or overlapping the flash it programs.
+
+`AlgorithmGeneratorTests` fails if a checked-in record differs from what `generate` writes. At flash
+time the programmer writes the whole RAM span the algorithm uses, reads it back, and refuses to call
+the algorithm if any of it is not RAM on the attached part.
 
 ## Add an algorithm
 
@@ -49,6 +53,5 @@ programmer reads the loaded algorithm back and refuses to call it if the RAM did
    carrying the algorithm source's license notice. A new pack also gets its own directory with
    `LICENSES` and the `.pdsc`'s SHA-256.
 5. Check in the FLM, the notice and the manifest. Do not check in the `.pdsc`.
-6. Run `generate` with `--pdsc` pointing at the downloaded `.pdsc`, so the manifest is checked
-   against the pack. Add the part's device ID to `Stm32Catalog` only after its hardware gate
-   passes.
+6. Run `generate` with `--pdsc` pointing at the downloaded `.pdsc`. Add the part's device ID to
+   `Stm32Catalog` only after its hardware gate passes.

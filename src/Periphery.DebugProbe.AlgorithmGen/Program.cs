@@ -4,9 +4,10 @@
 // flash-algorithm-gen: writes the flash algorithm records for Periphery.DebugProbe.StLink from the
 // pinned CMSIS-Pack inputs in Packs/ (ADR-0094 D9).
 //
-//   flash-algorithm-gen generate --manifest <Packs/<pack>/manifest.json> --out-dir <dir> [--pdsc <file>]
-//       Writes FlashAlgorithms.<field>.g.cs for every algorithm the manifest lists. With --pdsc, a
-//       downloaded copy of the pack's .pdsc, it first checks the manifest against it.
+//   flash-algorithm-gen generate --manifest <Packs/<pack>/manifest.json> --out-dir <dir> --pdsc <file>
+//       Checks the manifest against a downloaded copy of the pack's .pdsc, then writes
+//       FlashAlgorithms.<field>.g.cs for every algorithm it lists. --skip-pdsc-check replaces
+//       --pdsc, to regenerate from a manifest that is not being changed.
 //
 //   flash-algorithm-gen extract --pdsc <file> --flm <file> --flm-path <path in pack>
 //       Prints the manifest values for one algorithm, read from a downloaded .pdsc and FLM.
@@ -16,14 +17,24 @@
 using System.Security.Cryptography;
 using Periphery.DebugProbe.AlgorithmGen;
 
+const string SkipPdscCheck = "--skip-pdsc-check";
 var options = new Dictionary<string, string>(StringComparer.Ordinal);
-for (int i = 1; i + 1 < args.Length; i += 2)
-    options[args[i]] = args[i + 1];
+bool skipPdscCheck = false;
+for (int i = 1; i < args.Length; i++)
+{
+    if (args[i] == SkipPdscCheck)
+        skipPdscCheck = true;
+    else if (i + 1 < args.Length)
+        options[args[i]] = args[++i];
+}
 
 switch (args.FirstOrDefault())
 {
-    case "generate" when Require(options, "--manifest", "--out-dir"):
-        foreach (var input in Generator.LoadAll(options["--manifest"], options.GetValueOrDefault("--pdsc")))
+    case "generate" when Require(options, "--manifest", "--out-dir")
+                         && (skipPdscCheck || Require(options, "--pdsc")):
+        if (skipPdscCheck)
+            Console.Error.WriteLine("warning: --skip-pdsc-check: the manifest's ranges and RAM windows are not checked against the pack.");
+        foreach (var input in Generator.LoadAll(options["--manifest"], skipPdscCheck ? null : options["--pdsc"]))
         {
             string path = Path.Combine(options["--out-dir"], $"FlashAlgorithms.{input.FieldName}.g.cs");
             File.WriteAllText(path, RecordWriter.Write(input));
@@ -45,7 +56,7 @@ switch (args.FirstOrDefault())
         return 0;
 
     default:
-        Console.Error.WriteLine("usage: flash-algorithm-gen generate --manifest <file> --out-dir <dir> [--pdsc <file>]");
+        Console.Error.WriteLine("usage: flash-algorithm-gen generate --manifest <file> --out-dir <dir> (--pdsc <file> | --skip-pdsc-check)");
         Console.Error.WriteLine("       flash-algorithm-gen extract --pdsc <file> --flm <file> --flm-path <path in pack>");
         return 2;
 }

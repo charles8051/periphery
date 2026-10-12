@@ -291,7 +291,11 @@ internal sealed class SimulatedStm32G431 : ITargetMemory
         }
         else
         {
-            throw new InvalidOperationException($"No memory at 0x{address:X8}+{length}.");
+            throw new UnmappedMemoryException(address, length);
         }
     }
 }
+
+/// <summary>An access to an address with no memory behind it; a real probe reports an AP fault.</summary>
+internal sealed class UnmappedMemoryException(uint address, int length)
+    : Exception($"No memory at 0x{address:X8}+{length}.");

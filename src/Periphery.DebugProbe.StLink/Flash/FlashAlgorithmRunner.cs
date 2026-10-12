@@ -23,13 +23,17 @@ internal sealed class FlashAlgorithmRunner
     }
 
     /// <summary>
-    /// Writes the breakpoint header and the algorithm's code and data at the layout's start, then
-    /// reads them back. A window that is not RAM on this part fails here, before anything runs.
+    /// Writes the breakpoint header and the algorithm's code and data at the layout's start, fills
+    /// the stack and page buffer, and reads the whole span back. RAM the layout uses that is not
+    /// RAM on this part fails here, before anything runs.
     /// </summary>
     public async Task LoadAsync(FlashAlgorithm algorithm, RamLayout layout, CancellationToken ct)
     {
-        int length = RamLayout.BreakpointHeader.Length + algorithm.Code.Length;
-        var image = new byte[(length + 3) / 4 * 4];
+        // The whole span the algorithm uses: header, code and data, stack, and page buffer. The
+        // stack and buffer get a fill pattern, so a span that runs past this part's RAM fails here
+        // too, not only one whose start is wrong.
+        var image = new byte[layout.End - layout.HeaderAddress];
+        image.AsSpan().Fill(SpanFill);
         RamLayout.BreakpointHeader.CopyTo(image);
         algorithm.Code.Span.CopyTo(image.AsSpan(RamLayout.BreakpointHeader.Length));
         await _memory.WriteAsync(layout.HeaderAddress, image, ct).ConfigureAwait(false);
@@ -40,8 +44,12 @@ internal sealed class FlashAlgorithmRunner
         if (mismatch < image.Length)
             throw new FlashAlgorithmException(
                 $"{algorithm.Name} did not load: RAM at 0x{layout.HeaderAddress + (uint)mismatch:X8} read back " +
-                $"0x{readBack[mismatch]:X2}, expected 0x{image[mismatch]:X2}. Is 0x{algorithm.RamStart:X8} RAM on this part?");
+                $"0x{readBack[mismatch]:X2}, expected 0x{image[mismatch]:X2}. Is 0x{layout.HeaderAddress:X8}.." +
+                $"0x{layout.End - 1:X8} RAM on this part?");
     }
+
+    /// <summary>What the stack and page buffer hold until the algorithm uses them.</summary>
+    private const byte SpanFill = 0xA5;
 
     /// <summary>
     /// Runs one call: sets its registers, resumes the core, and waits for the function to return
