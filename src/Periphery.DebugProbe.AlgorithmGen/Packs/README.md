@@ -24,8 +24,15 @@ From the repository root:
 dotnet run --project src/Periphery.DebugProbe.AlgorithmGen -- generate --manifest src/Periphery.DebugProbe.AlgorithmGen/Packs/STM32G4xx_DFP-2.2.0/manifest.json --out-dir src/Periphery.DebugProbe.StLink/Targets
 ```
 
-The generator refuses an FLM whose SHA-256 differs from the manifest's. `AlgorithmGeneratorTests`
-fails if a checked-in record differs from what this command writes.
+The generator refuses an FLM whose SHA-256 differs from the manifest's, and a RAM window that is
+empty, not word-aligned, outside the SRAM region `0x20000000..0x3FFFFFFF`, or overlapping the flash
+it programs. `AlgorithmGeneratorTests` fails if a checked-in record differs from what this command
+writes.
+
+With `--pdsc <downloaded .pdsc>` it also refuses a `.pdsc` whose SHA-256 is not the one the
+manifest pins, and any algorithm whose range or RAM window differs from the pack's entry. CI has no
+`.pdsc`, so this check runs when an algorithm is added or a manifest is changed. At flash time the
+programmer reads the loaded algorithm back and refuses to call it if the RAM did not hold it.
 
 ## Add an algorithm
 
@@ -42,5 +49,6 @@ fails if a checked-in record differs from what this command writes.
    carrying the algorithm source's license notice. A new pack also gets its own directory with
    `LICENSES` and the `.pdsc`'s SHA-256.
 5. Check in the FLM, the notice and the manifest. Do not check in the `.pdsc`.
-6. Run `generate`, and add the part's device ID to `Stm32Catalog` only after its hardware gate
+6. Run `generate` with `--pdsc` pointing at the downloaded `.pdsc`, so the manifest is checked
+   against the pack. Add the part's device ID to `Stm32Catalog` only after its hardware gate
    passes.

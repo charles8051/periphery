@@ -56,6 +56,9 @@ internal sealed class SimulatedStm32G431 : ITargetMemory
 
     public bool Halted { get; private set; }
 
+    /// <summary>When true, writes to RAM are dropped, as at an address with no RAM behind it.</summary>
+    public bool RamDropsWrites { get; init; }
+
     /// <summary>When false, the core ignores reset vector catch and runs after a reset.</summary>
     public bool HonoursResetCatch { get; init; } = true;
 
@@ -269,6 +272,8 @@ internal sealed class SimulatedStm32G431 : ITargetMemory
             throw new InvalidOperationException("Flash is written through the seam; only the algorithm may write it.");
         }
         Region(address, data.Length, out var region, out int offset);
+        if (RamDropsWrites && region == Ram)
+            return;
         data.CopyTo(region.AsSpan(offset));
     }
 

@@ -93,6 +93,96 @@ public class AlgorithmGeneratorTests
         Assert.Equal(new PackAlgorithm(0x08000000, 0x20000, 0x20000000, 0x8000), Load().Window);
     }
 
+    [Theory]
+    [InlineData(0x2000_0000u, 0u)]           // empty
+    [InlineData(0x2000_0002u, 0x8000u)]      // not word-aligned
+    [InlineData(0x1000_0000u, 0x8000u)]      // below the SRAM region
+    [InlineData(0x3FFF_C000u, 0x8000u)]      // runs past it
+    [InlineData(0x0800_0000u, 0x8000u)]      // the flash it programs
+    public void A_RAM_window_that_cannot_be_target_RAM_is_refused(uint ramStart, uint ramSize)
+    {
+        var input = Load();
+        var bad = input with { Window = input.Window with { RamStart = ramStart, RamSize = ramSize } };
+
+        var ex = Assert.Throws<InvalidDataException>(() => RecordWriter.Write(bad));
+        Assert.Contains("RAM window", ex.Message);
+    }
+
+    [Fact]
+    public void A_pdsc_that_matches_the_manifest_passes_the_check()
+    {
+        string dir = CopyPack();
+        try
+        {
+            string manifest = Path.Combine(dir, "manifest.json");
+            string pdsc = Path.Combine(dir, "pack.pdsc");
+            File.WriteAllText(pdsc, PdscListing("0x8000"));
+            File.WriteAllText(manifest, File.ReadAllText(manifest).Replace(PinnedPdscSha256, Sha256Of(pdsc)));
+
+            Assert.Single(Generator.LoadAll(manifest, pdsc));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_pdsc_that_lists_another_window_is_refused()
+    {
+        string dir = CopyPack();
+        try
+        {
+            string manifest = Path.Combine(dir, "manifest.json");
+            string pdsc = Path.Combine(dir, "pack.pdsc");
+            File.WriteAllText(pdsc, PdscListing("0x4000"));
+            File.WriteAllText(manifest, File.ReadAllText(manifest).Replace(PinnedPdscSha256, Sha256Of(pdsc)));
+
+            var ex = Assert.Throws<InvalidDataException>(() => Generator.LoadAll(manifest, pdsc));
+            Assert.Contains("the pack lists", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_pdsc_that_is_not_the_pinned_one_is_refused()
+    {
+        string dir = CopyPack();
+        try
+        {
+            string pdsc = Path.Combine(dir, "pack.pdsc");
+            File.WriteAllText(pdsc, PdscListing("0x8000"));
+
+            var ex = Assert.Throws<InvalidDataException>(() => Generator.LoadAll(Path.Combine(dir, "manifest.json"), pdsc));
+            Assert.Contains("the manifest pins", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private const string PinnedPdscSha256 = "5BEB24AB0827BEA12FA62CB114BC48E86EE5E2E78A695A5C5F2BCBB47A279B36";
+
+    private static string PdscListing(string ramSize) =>
+        "<package><devices><family><device Dname=\"STM32G431KBTx\">" +
+        "<algorithm name=\"CMSIS/Flash/STM32G43x-4x_128.FLM\" start=\"0x08000000\" size=\"0x00020000\" " +
+        $"RAMstart=\"0x20000000\" RAMsize=\"{ramSize}\" default=\"1\"/>" +
+        "</device></family></devices></package>";
+
+    private static string Sha256Of(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+
+    private static string CopyPack()
+    {
+        string dir = Directory.CreateTempSubdirectory("flash-algorithm-gen-").FullName;
+        foreach (var file in Directory.GetFiles(PackDir))
+            File.Copy(file, Path.Combine(dir, Path.GetFileName(file)));
+        return dir;
+    }
+
     [Fact]
     public void An_option_byte_range_is_not_a_main_flash_record()
     {

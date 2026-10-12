@@ -4,8 +4,9 @@
 // flash-algorithm-gen: writes the flash algorithm records for Periphery.DebugProbe.StLink from the
 // pinned CMSIS-Pack inputs in Packs/ (ADR-0094 D9).
 //
-//   flash-algorithm-gen generate --manifest <Packs/<pack>/manifest.json> --out-dir <dir>
-//       Writes FlashAlgorithms.<field>.g.cs for every algorithm the manifest lists.
+//   flash-algorithm-gen generate --manifest <Packs/<pack>/manifest.json> --out-dir <dir> [--pdsc <file>]
+//       Writes FlashAlgorithms.<field>.g.cs for every algorithm the manifest lists. With --pdsc, a
+//       downloaded copy of the pack's .pdsc, it first checks the manifest against it.
 //
 //   flash-algorithm-gen extract --pdsc <file> --flm <file> --flm-path <path in pack>
 //       Prints the manifest values for one algorithm, read from a downloaded .pdsc and FLM.
@@ -22,7 +23,7 @@ for (int i = 1; i + 1 < args.Length; i += 2)
 switch (args.FirstOrDefault())
 {
     case "generate" when Require(options, "--manifest", "--out-dir"):
-        foreach (var input in Generator.LoadAll(options["--manifest"]))
+        foreach (var input in Generator.LoadAll(options["--manifest"], options.GetValueOrDefault("--pdsc")))
         {
             string path = Path.Combine(options["--out-dir"], $"FlashAlgorithms.{input.FieldName}.g.cs");
             File.WriteAllText(path, RecordWriter.Write(input));
@@ -44,7 +45,7 @@ switch (args.FirstOrDefault())
         return 0;
 
     default:
-        Console.Error.WriteLine("usage: flash-algorithm-gen generate --manifest <file> --out-dir <dir>");
+        Console.Error.WriteLine("usage: flash-algorithm-gen generate --manifest <file> --out-dir <dir> [--pdsc <file>]");
         Console.Error.WriteLine("       flash-algorithm-gen extract --pdsc <file> --flm <file> --flm-path <path in pack>");
         return 2;
 }
@@ -64,12 +65,15 @@ namespace Periphery.DebugProbe.AlgorithmGen
     {
         /// <summary>
         /// One input per algorithm the manifest lists. Refuses an FLM whose SHA-256 is not the one
-        /// the manifest pins.
+        /// the manifest pins. Given <paramref name="pdscPath"/>, also refuses a .pdsc that is not
+        /// the pinned one, and any algorithm whose range or RAM window differs from the pack's entry.
         /// </summary>
-        public static IReadOnlyList<RecordInput> LoadAll(string manifestPath)
+        public static IReadOnlyList<RecordInput> LoadAll(string manifestPath, string? pdscPath = null)
         {
             string packDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
             var manifest = PackManifest.Parse(File.ReadAllText(manifestPath));
+            if (pdscPath is not null)
+                CheckAgainstPdsc(manifest, File.ReadAllBytes(pdscPath));
 
             return manifest.Algorithms.Select(algorithm =>
             {
@@ -89,6 +93,21 @@ namespace Periphery.DebugProbe.AlgorithmGen
                     Sha256: sha256,
                     Notice: File.ReadAllText(Path.Combine(packDir, algorithm.Notice)));
             }).ToList();
+        }
+
+        private static void CheckAgainstPdsc(PackManifest manifest, byte[] pdsc)
+        {
+            string sha256 = Convert.ToHexString(SHA256.HashData(pdsc));
+            if (!string.Equals(sha256, manifest.PdscSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"The .pdsc has SHA-256 {sha256}; the manifest pins {manifest.PdscSha256}.");
+
+            string xml = System.Text.Encoding.UTF8.GetString(pdsc);
+            foreach (var algorithm in manifest.Algorithms)
+            {
+                var listed = PdscReader.Find(xml, algorithm.Flm);
+                if (listed != algorithm.Window)
+                    throw new InvalidDataException($"The manifest gives {algorithm.Flm} {algorithm.Window}; the pack lists {listed}.");
+            }
         }
     }
 }

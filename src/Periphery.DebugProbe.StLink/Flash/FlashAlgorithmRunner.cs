@@ -22,14 +22,25 @@ internal sealed class FlashAlgorithmRunner
         _core = core;
     }
 
-    /// <summary>Writes the breakpoint header and the algorithm's code and data at the layout's start.</summary>
-    public Task LoadAsync(FlashAlgorithm algorithm, RamLayout layout, CancellationToken ct)
+    /// <summary>
+    /// Writes the breakpoint header and the algorithm's code and data at the layout's start, then
+    /// reads them back. A window that is not RAM on this part fails here, before anything runs.
+    /// </summary>
+    public async Task LoadAsync(FlashAlgorithm algorithm, RamLayout layout, CancellationToken ct)
     {
         int length = RamLayout.BreakpointHeader.Length + algorithm.Code.Length;
         var image = new byte[(length + 3) / 4 * 4];
         RamLayout.BreakpointHeader.CopyTo(image);
         algorithm.Code.Span.CopyTo(image.AsSpan(RamLayout.BreakpointHeader.Length));
-        return _memory.WriteAsync(layout.HeaderAddress, image, ct);
+        await _memory.WriteAsync(layout.HeaderAddress, image, ct).ConfigureAwait(false);
+
+        var readBack = new byte[image.Length];
+        await _memory.ReadAsync(layout.HeaderAddress, readBack, ct).ConfigureAwait(false);
+        int mismatch = readBack.AsSpan().CommonPrefixLength(image);
+        if (mismatch < image.Length)
+            throw new FlashAlgorithmException(
+                $"{algorithm.Name} did not load: RAM at 0x{layout.HeaderAddress + (uint)mismatch:X8} read back " +
+                $"0x{readBack[mismatch]:X2}, expected 0x{image[mismatch]:X2}. Is 0x{algorithm.RamStart:X8} RAM on this part?");
     }
 
     /// <summary>

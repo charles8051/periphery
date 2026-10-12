@@ -161,6 +161,18 @@ public class StLinkProgrammerTests
     }
 
     [Fact]
+    public async Task An_algorithm_that_does_not_read_back_is_never_called()
+    {
+        var (programmer, target) = await BenchAsync(t => new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, t) { RamDropsWrites = true });
+
+        var result = await programmer.FlashAsync(Hex((0x08000000, [1, 2, 3, 4])), new FlashOptions());
+
+        Assert.False(result.Success);
+        Assert.Contains("did not load", result.Error);
+        Assert.Empty(target.Calls);
+    }
+
+    [Fact]
     public async Task A_call_that_never_returns_times_out_on_the_injected_clock()
     {
         var (programmer, _) = await BenchAsync(t => new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, t) { BusyPolls = 100_000 });
