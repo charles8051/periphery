@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- ADR-0094 D8: no package is built for release. -->
+    <IsPackable>false</IsPackable>
+    <Description>Programs STM32 flash over SWD through an ST-Link, by running the vendor's CMSIS-Pack flash algorithm in target RAM. ADR-0094.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Periphery\Periphery.csproj" />
+    <ProjectReference Include="..\Periphery.Usb\Periphery.Usb.csproj" />
+    <ProjectReference Include="..\Periphery.Firmware\Periphery.Firmware.csproj" />
+    <ProjectReference Include="..\Periphery.Bootloader\Periphery.Bootloader.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.DebugProbe.StLink.Tests" />
+    <!-- scratch/StLinkProbe: bench evidence for ADR-0094, reads internals directly. -->
+    <InternalsVisibleTo Include="StLinkProbe" />
+  </ItemGroup>
+
+</Project>
