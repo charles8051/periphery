@@ -1,20 +1,46 @@
 # Pinned CMSIS-Pack inputs
 
 The flash algorithm records in `Periphery.DebugProbe.StLink/Targets/` are generated from the files
-here (ADR-0094 D9). Each directory holds one pack release, copied from its GitHub tag: the FLM
-files used, the pack description, the pack's `LICENSES`, and a notice per algorithm source.
+here (ADR-0094 D9). Each directory holds one pack release:
 
-| Directory | Pack | Tag | Algorithm | SHA-256 of the FLM |
-|---|---|---|---|---|
-| `STM32G4xx_DFP-2.2.0` | `Open-CMSIS-Pack/STM32G4xx_DFP` | `v2.2.0` | `CMSIS/Flash/STM32G43x-4x_128.FLM` | `27CB62458B4F45E23D91C64B901464AB1688ABD8DD4F5971054AED83F3B0970A` |
+- `manifest.json`: the pack, its tag, the SHA-256 of its `.pdsc`, and per algorithm the FLM, its
+  SHA-256, its flash range, its RAM window and its notice file.
+- The FLM files the manifest lists, copied from the tag.
+- The pack's `LICENSES` file, and a notice per algorithm source.
 
-Regenerate the STM32G43x record from the repository root:
+The pack's `.pdsc` is not checked in. The generator needs only each algorithm's range and RAM
+window from it, which `extract` copies into the manifest, and the pinned SHA-256 lets anyone check
+those values against the tag.
+
+| Directory | Pack | Tag | Algorithms |
+|---|---|---|---|
+| `STM32G4xx_DFP-2.2.0` | `Open-CMSIS-Pack/STM32G4xx_DFP` | `v2.2.0` | `STM32G43x-4x_128.FLM` |
+
+## Regenerate the records
+
+From the repository root:
 
 ```bash
-dotnet run --project src/Periphery.DebugProbe.AlgorithmGen -- --pack-dir src/Periphery.DebugProbe.AlgorithmGen/Packs/STM32G4xx_DFP-2.2.0 --pack Open-CMSIS-Pack/STM32G4xx_DFP --version 2.2.0 --flm CMSIS/Flash/STM32G43x-4x_128.FLM --pdsc Keil.STM32G4xx_DFP.pdsc --notice STM32G4xx_Flash.NOTICE.txt --field Stm32G43x4x128 --out src/Periphery.DebugProbe.StLink/Targets/FlashAlgorithms.Stm32G43x4x128.g.cs
+dotnet run --project src/Periphery.DebugProbe.AlgorithmGen -- generate --manifest src/Periphery.DebugProbe.AlgorithmGen/Packs/STM32G4xx_DFP-2.2.0/manifest.json --out-dir src/Periphery.DebugProbe.StLink/Targets
 ```
 
-`AlgorithmGeneratorTests` fails if the checked-in record differs from what this command writes.
+The generator refuses an FLM whose SHA-256 differs from the manifest's. `AlgorithmGeneratorTests`
+fails if a checked-in record differs from what this command writes.
 
-Before adding an algorithm, confirm its source file carries a permissive grant of its own, or that
-the pack's license covers it (ADR-0094 D9). Never add an option-byte algorithm.
+## Add an algorithm
+
+1. Confirm the algorithm's source file carries a permissive grant of its own, or that the pack's
+   license covers it (ADR-0094 D9). Never add an option-byte algorithm.
+2. Download the pack's `.pdsc` and the FLM from the pack's release tag.
+3. Read the manifest values from them:
+
+   ```bash
+   dotnet run --project src/Periphery.DebugProbe.AlgorithmGen -- extract --pdsc <downloaded .pdsc> --flm <downloaded FLM> --flm-path CMSIS/Flash/<name>.FLM
+   ```
+
+4. Add an entry to the pack's `manifest.json` with those values, a C# field name, and a notice file
+   carrying the algorithm source's license notice. A new pack also gets its own directory with
+   `LICENSES` and the `.pdsc`'s SHA-256.
+5. Check in the FLM, the notice and the manifest. Do not check in the `.pdsc`.
+6. Run `generate`, and add the part's device ID to `Stm32Catalog` only after its hardware gate
+   passes.

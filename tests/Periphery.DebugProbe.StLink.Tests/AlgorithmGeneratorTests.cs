@@ -9,18 +9,17 @@ namespace Periphery.DebugProbe.StLink.Tests;
 
 /// <summary>
 /// ADR-0094's generator gate: the checked-in record is exactly what the generator makes from the
-/// checked-in FLM, and the FLM is the file the record names.
+/// checked-in FLM and manifest, and the FLM is the file both name.
 /// </summary>
 public class AlgorithmGeneratorTests
 {
     private const string PinnedSha256 = "27CB62458B4F45E23D91C64B901464AB1688ABD8DD4F5971054AED83F3B0970A";
 
     private static readonly string PackDir = Path.Combine(RepoRoot(), "src", "Periphery.DebugProbe.AlgorithmGen", "Packs", "STM32G4xx_DFP-2.2.0");
+    private static readonly string Manifest = Path.Combine(PackDir, "manifest.json");
     private static readonly string RecordFile = Path.Combine(RepoRoot(), "src", "Periphery.DebugProbe.StLink", "Targets", "FlashAlgorithms.Stm32G43x4x128.g.cs");
 
-    private static RecordInput Load() => Generator.Load(
-        PackDir, "Open-CMSIS-Pack/STM32G4xx_DFP", "2.2.0", "CMSIS/Flash/STM32G43x-4x_128.FLM",
-        "Keil.STM32G4xx_DFP.pdsc", "STM32G4xx_Flash.NOTICE.txt", "Stm32G43x4x128");
+    private static RecordInput Load() => Assert.Single(Generator.LoadAll(Manifest));
 
     [Fact]
     public void The_checked_in_record_is_what_the_generator_writes()
@@ -32,12 +31,33 @@ public class AlgorithmGeneratorTests
     }
 
     [Fact]
-    public void The_FLM_is_the_file_the_record_names()
+    public void The_FLM_is_the_file_the_manifest_and_the_record_name()
     {
         var flm = File.ReadAllBytes(Path.Combine(PackDir, "STM32G43x-4x_128.FLM"));
 
         Assert.Equal(PinnedSha256, Convert.ToHexString(SHA256.HashData(flm)));
+        Assert.Equal(PinnedSha256, PackManifest.Parse(File.ReadAllText(Manifest)).Algorithms.Single().FlmSha256);
         Assert.Equal(PinnedSha256, FlashAlgorithms.Stm32G43x4x128.Provenance.Sha256);
+    }
+
+    [Fact]
+    public void A_manifest_pinning_another_FLM_is_refused()
+    {
+        string dir = Directory.CreateTempSubdirectory("flash-algorithm-gen-").FullName;
+        try
+        {
+            foreach (var file in Directory.GetFiles(PackDir))
+                File.Copy(file, Path.Combine(dir, Path.GetFileName(file)));
+            string manifest = Path.Combine(dir, "manifest.json");
+            File.WriteAllText(manifest, File.ReadAllText(manifest).Replace(PinnedSha256, new string('0', 64)));
+
+            var ex = Assert.Throws<InvalidDataException>(() => Generator.LoadAll(manifest));
+            Assert.Contains("the manifest pins", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]
@@ -67,18 +87,19 @@ public class AlgorithmGeneratorTests
     }
 
     [Fact]
-    public void The_pack_gives_the_algorithm_a_32_KB_window_at_the_start_of_SRAM()
+    public void The_manifest_gives_the_algorithm_a_32_KB_window_at_the_start_of_SRAM()
     {
-        Assert.Equal(new PdscAlgorithm(0x08000000, 0x20000, 0x20000000, 0x8000), Load().Pdsc);
+        // The values flash-algorithm-gen extract read from the v2.2.0 .pdsc, SHA-256 5BEB24AB…
+        Assert.Equal(new PackAlgorithm(0x08000000, 0x20000, 0x20000000, 0x8000), Load().Window);
     }
 
     [Fact]
-    public void An_option_byte_algorithm_is_not_a_main_flash_record()
+    public void An_option_byte_range_is_not_a_main_flash_record()
     {
         // STM32G4xx_SB_OPT.FLM covers 0x1FFF7800. D9: such algorithms are never generated, and the
-        // generator's pack check would refuse to pair one with a main-flash range.
+        // writer refuses to pair the main-flash FLM with any other range.
         var input = Load();
-        var optionBytes = input with { Pdsc = input.Pdsc with { Start = 0x1FFF7800, Size = 0x18 } };
+        var optionBytes = input with { Window = input.Window with { Start = 0x1FFF7800, Size = 0x18 } };
 
         Assert.Throws<InvalidDataException>(() => RecordWriter.Write(optionBytes));
     }
