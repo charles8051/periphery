@@ -79,6 +79,23 @@ public class StLinkProgrammerTests
     }
 
     [Fact]
+    public async Task Erase_and_write_progress_are_both_in_bytes()
+    {
+        var (programmer, _) = await BenchAsync(t => new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, t, Original()));
+        var reports = new List<FlashProgress>();
+
+        var result = await programmer.FlashAsync(
+            Hex((0x08000000, [1, 2, 3, 4]), (0x0801F000, new byte[0x1000])), new FlashOptions(), new ListProgress(reports));
+
+        Assert.True(result.Success, result.Error);
+        var erase = reports.Where(r => r.Phase == FlashPhase.Erasing).ToList();
+        Assert.Equal([0x800L, 0x1000L, 0x1800L], erase.Select(r => r.BytesDone));
+        Assert.All(erase, r => Assert.Equal(0x1800L, r.BytesTotal));
+        var write = reports.Last(r => r.Phase == FlashPhase.Writing);
+        Assert.Equal(write.BytesTotal, write.BytesDone);
+    }
+
+    [Fact]
     public async Task Flashing_what_is_already_there_runs_no_algorithm_call()
     {
         var (programmer, target) = await BenchAsync(t => new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, t, Original()));
@@ -152,6 +169,11 @@ public class StLinkProgrammerTests
 
         Assert.False(result.Success);
         Assert.Contains("did not finish Init", result.Error);
+    }
+
+    private sealed class ListProgress(List<FlashProgress> reports) : IProgress<FlashProgress>
+    {
+        public void Report(FlashProgress value) => reports.Add(value);
     }
 
     [Fact]

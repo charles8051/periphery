@@ -34,18 +34,41 @@ internal sealed class CortexMDebug
 
     /// <summary>
     /// Resets the system and halts the core before its first instruction, through DEMCR's
-    /// reset vector catch.
+    /// reset vector catch. DEMCR goes back to its prior value however this ends, so a failed
+    /// attempt does not leave a later reset halting the target.
     /// </summary>
     public async Task ResetAndHaltAsync(CancellationToken ct)
     {
         await HaltAsync(ct).ConfigureAwait(false);
         uint demcr = await _memory.ReadWordAsync(CortexMRegisters.Demcr, ct).ConfigureAwait(false);
-        await _memory.WriteWordAsync(CortexMRegisters.Demcr, CortexMRegisters.WithResetCatch(demcr, true), ct).ConfigureAwait(false);
-        _ = await _memory.ReadWordAsync(CortexMRegisters.Dhcsr, ct).ConfigureAwait(false); // clears S_RESET_ST
-        await _memory.WriteWordAsync(CortexMRegisters.Aircr, CortexMRegisters.AircrSystemReset, ct).ConfigureAwait(false);
+        bool halted = false;
+        try
+        {
+            await _memory.WriteWordAsync(CortexMRegisters.Demcr, CortexMRegisters.WithResetCatch(demcr, true), ct).ConfigureAwait(false);
+            _ = await _memory.ReadWordAsync(CortexMRegisters.Dhcsr, ct).ConfigureAwait(false); // clears S_RESET_ST
+            await _memory.WriteWordAsync(CortexMRegisters.Aircr, CortexMRegisters.AircrSystemReset, ct).ConfigureAwait(false);
+            await WaitForResetHaltAsync(ct).ConfigureAwait(false);
+            halted = true;
+        }
+        finally
+        {
+            // Restored without the caller's token: a cancelled reset still owes the target its
+            // DEMCR back. On failure the restore is best effort, and the original fault is the
+            // one reported.
+            try
+            {
+                await _memory.WriteWordAsync(CortexMRegisters.Demcr, demcr, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception) when (!halted)
+            {
+            }
+        }
+    }
 
-        // The debug port can fault a read while the system is in reset. Such a read is retried
-        // until the deadline, and the last fault is reported if the core never comes back halted.
+    // The debug port can fault a read while the system is in reset. Such a read is retried until
+    // the deadline, and the last fault is reported if the core never comes back halted.
+    private async Task WaitForResetHaltAsync(CancellationToken ct)
+    {
         long start = _time.GetTimestamp();
         bool resetSeen = false;
         Exception? lastFault = null;
@@ -56,7 +79,7 @@ internal sealed class CortexMDebug
                 uint dhcsr = await _memory.ReadWordAsync(CortexMRegisters.Dhcsr, ct).ConfigureAwait(false);
                 resetSeen |= CortexMRegisters.ResetSinceLastRead(dhcsr);
                 if (resetSeen && CortexMRegisters.IsHalted(dhcsr))
-                    break;
+                    return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -68,8 +91,6 @@ internal sealed class CortexMDebug
                     ? new CortexMException($"The core did not halt after reset within {DefaultTimeout.TotalMilliseconds:F0} ms.")
                     : new CortexMException($"The core did not halt after reset: {lastFault.Message}", lastFault);
         }
-
-        await _memory.WriteWordAsync(CortexMRegisters.Demcr, CortexMRegisters.WithResetCatch(demcr, false), ct).ConfigureAwait(false);
     }
 
     /// <summary>Lets the core run from its current PC, with halting debug still enabled.</summary>

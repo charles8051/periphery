@@ -140,7 +140,7 @@ public sealed class StLinkProgrammer : IFirmwareProgrammer
             {
                 var runner = new FlashAlgorithmRunner(_memory, _core);
                 await runner.LoadAsync(algorithm, layout, ct).ConfigureAwait(false);
-                await runner.ExecuteAsync(steps, layout, progress, ct).ConfigureAwait(false);
+                await runner.ExecuteAsync(steps, algorithm, layout, progress, ct).ConfigureAwait(false);
             }
 
             if (options.Verify)

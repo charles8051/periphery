@@ -75,6 +75,17 @@ public class TargetAndProviderTests
     }
 
     [Fact]
+    public async Task A_reset_that_never_halts_still_restores_DEMCR()
+    {
+        var target = new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, new FakeTimeProvider()) { HonoursResetCatch = false };
+        var core = new CortexMDebug(target, target.Time);
+
+        await Assert.ThrowsAsync<CortexMException>(() => core.ResetAndHaltAsync(CancellationToken.None));
+
+        Assert.Equal(0u, await target.ReadWordAsync(CortexMRegisters.Demcr, CancellationToken.None) & 1);
+    }
+
+    [Fact]
     public async Task Core_registers_round_trip_through_DCRSR_and_DCRDR()
     {
         var target = new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, new FakeTimeProvider());

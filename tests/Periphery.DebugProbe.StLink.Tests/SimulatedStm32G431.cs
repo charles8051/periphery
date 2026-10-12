@@ -56,6 +56,9 @@ internal sealed class SimulatedStm32G431 : ITargetMemory
 
     public bool Halted { get; private set; }
 
+    /// <summary>When false, the core ignores reset vector catch and runs after a reset.</summary>
+    public bool HonoursResetCatch { get; init; } = true;
+
     /// <summary>How many DHCSR polls an algorithm call stays busy for.</summary>
     public int BusyPolls { get; init; } = 2;
 
@@ -185,7 +188,7 @@ internal sealed class SimulatedStm32G431 : ITargetMemory
         _pending = null;
         Array.Clear(_registers);
         _registers[(int)CoreRegister.Xpsr] = CortexMRegisters.XpsrThumb;
-        bool catchReset = _debugEnabled && (_demcr & 1) != 0;
+        bool catchReset = HonoursResetCatch && _debugEnabled && (_demcr & 1) != 0;
         Halted = catchReset;
         RunningApplication = !catchReset;
     }

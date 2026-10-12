@@ -55,11 +55,14 @@ internal sealed class FlashAlgorithmRunner
             throw new FlashAlgorithmException($"{call.Name}(0x{call.R0:X8}) returned {result}.");
     }
 
-    /// <summary>Runs a plan's steps in order, reporting erase and write progress by bytes.</summary>
+    /// <summary>Runs a plan's steps in order, reporting erase and write progress in bytes.</summary>
     public async Task ExecuteAsync(
-        IReadOnlyList<FlashStep> steps, RamLayout layout, IProgress<FlashProgress>? progress, CancellationToken ct)
+        IReadOnlyList<FlashStep> steps, FlashAlgorithm algorithm, RamLayout layout,
+        IProgress<FlashProgress>? progress, CancellationToken ct)
     {
-        long eraseTotal = steps.OfType<FlashStep.Call>().Count(s => s.Algorithm.Name == "EraseSector");
+        long eraseTotal = steps.OfType<FlashStep.Call>()
+            .Where(s => s.Algorithm.Name == "EraseSector")
+            .Sum(s => (long)algorithm.SectorContaining(s.Algorithm.R0).Size);
         long writeTotal = steps.OfType<FlashStep.WriteBuffer>().Sum(s => (long)s.Data.Length);
         long erased = 0, written = 0;
 
@@ -75,7 +78,10 @@ internal sealed class FlashAlgorithmRunner
                 case FlashStep.Call { Algorithm: var call }:
                     await RunAsync(call, layout, ct).ConfigureAwait(false);
                     if (call.Name == "EraseSector")
-                        progress?.Report(new FlashProgress(FlashPhase.Erasing, ++erased, eraseTotal, $"0x{call.R0:X8}"));
+                    {
+                        erased += algorithm.SectorContaining(call.R0).Size;
+                        progress?.Report(new FlashProgress(FlashPhase.Erasing, erased, eraseTotal, $"0x{call.R0:X8}"));
+                    }
                     else if (call.Name == "ProgramPage")
                     {
                         written += call.R1 ?? 0;
