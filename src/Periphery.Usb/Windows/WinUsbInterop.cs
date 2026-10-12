@@ -92,6 +92,45 @@ internal static partial class WinUsbInterop
         uint ulFlags);
 
     // -----------------------------------------------------------------------
+    // cfgmgr32 + advapi32 — read the interface GUIDs a WinUSB INF registered
+    // -----------------------------------------------------------------------
+
+    internal const uint CM_LOCATE_DEVNODE_NORMAL = 0;
+    internal const uint CM_REGISTRY_HARDWARE = 0;
+    internal const uint RegDisposition_OpenExisting = 1;
+    internal const uint KEY_QUERY_VALUE = 0x0001;
+    internal const int ERROR_SUCCESS = 0;
+    internal const uint REG_SZ = 1;
+    internal const uint REG_MULTI_SZ = 7;
+
+    [LibraryImport("cfgmgr32.dll", EntryPoint = "CM_Locate_DevNodeW",
+        StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial int CM_Locate_DevNode(out uint pdnDevInst, string pDeviceID, uint ulFlags);
+
+    /// <summary>Opens the device's hardware key ("Device Parameters") for reading.</summary>
+    [LibraryImport("cfgmgr32.dll")]
+    internal static partial int CM_Open_DevNode_Key(
+        uint dnDevNode,
+        uint samDesired,
+        uint ulHardwareProfile,
+        uint disposition,
+        out nint phkDevice,
+        uint ulFlags);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "RegQueryValueExW",
+        StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial int RegQueryValueEx(
+        nint hKey,
+        string lpValueName,
+        nint lpReserved,
+        out uint lpType,
+        [Out] byte[]? lpData,
+        ref uint lpcbData);
+
+    [LibraryImport("advapi32.dll")]
+    internal static partial int RegCloseKey(nint hKey);
+
+    // -----------------------------------------------------------------------
     // winusb.dll — claim + descriptors (synchronous, used at open)
     // -----------------------------------------------------------------------
 

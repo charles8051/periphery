@@ -608,31 +608,96 @@ internal sealed class WinUsbBackend : IUsbBackend
 
     /// <summary>
     /// Resolves a SetupAPI device-instance ID to the device-interface path that
-    /// <c>CreateFile</c> needs. Pass-through if already an interface path. Mirrors
-    /// <c>Periphery.Hid</c>'s resolver, keyed by
-    /// <see cref="WinUsbInterop.GUID_DEVINTERFACE_USB_DEVICE"/>.
+    /// <c>CreateFile</c> needs. Pass-through if already an interface path. Tries
+    /// <see cref="WinUsbInterop.GUID_DEVINTERFACE_USB_DEVICE"/> first, as
+    /// <c>Periphery.Hid</c>'s resolver does, then the interface GUIDs the device's
+    /// WinUSB INF registered.
     /// </summary>
+    /// <remarks>
+    /// The second step is for a function of a composite device (<c>USB\VID_…&amp;MI_nn</c>).
+    /// Only the parent device node exposes <c>GUID_DEVINTERFACE_USB_DEVICE</c>; a WinUSB-bound
+    /// function exposes the GUIDs its INF wrote to <c>DeviceInterfaceGUIDs</c>. Measured on an
+    /// STLINK-V3E, whose debug function registers ST's own GUID and nothing else that WinUSB
+    /// can open.
+    /// </remarks>
     private static string ResolveInterfacePath(string input)
     {
         if (input.StartsWith(@"\\?\", StringComparison.Ordinal)
             || input.StartsWith(@"\\.\", StringComparison.Ordinal))
             return input;
 
-        var guid = WinUsbInterop.GUID_DEVINTERFACE_USB_DEVICE;
+        if (FirstInterfacePath(WinUsbInterop.GUID_DEVINTERFACE_USB_DEVICE, input) is { } usbDevicePath)
+            return usbDevicePath;
 
+        foreach (var guid in RegisteredInterfaceGuids(input))
+        {
+            if (FirstInterfacePath(guid, input) is { } path)
+                return path;
+        }
+
+        return input; // nothing to resolve — let CreateFile produce the diagnostic
+    }
+
+    private static string? FirstInterfacePath(Guid guid, string instanceId)
+    {
         int sizeResult = WinUsbInterop.CM_Get_Device_Interface_List_Size(
-            out uint lenChars, in guid, input, WinUsbInterop.CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
+            out uint lenChars, in guid, instanceId, WinUsbInterop.CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
         if (sizeResult != WinUsbInterop.CR_SUCCESS || lenChars <= 1)
-            return input; // nothing to resolve — let CreateFile produce the diagnostic
+            return null;
 
         var buffer = new char[lenChars];
         int listResult = WinUsbInterop.CM_Get_Device_Interface_List(
-            in guid, input, buffer, lenChars, WinUsbInterop.CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
+            in guid, instanceId, buffer, lenChars, WinUsbInterop.CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
         if (listResult != WinUsbInterop.CR_SUCCESS)
-            return input;
+            return null;
 
         int firstNull = Array.IndexOf(buffer, '\0');
-        return firstNull <= 0 ? input : new string(buffer, 0, firstNull);
+        return firstNull <= 0 ? null : new string(buffer, 0, firstNull);
+    }
+
+    /// <summary>
+    /// The interface GUIDs a WinUSB INF wrote under the device's hardware key, from
+    /// <c>DeviceInterfaceGUIDs</c> (REG_MULTI_SZ) or, failing that, <c>DeviceInterfaceGUID</c>
+    /// (REG_SZ). Empty when the device has neither or the key cannot be read.
+    /// </summary>
+    private static IReadOnlyList<Guid> RegisteredInterfaceGuids(string instanceId)
+    {
+        if (WinUsbInterop.CM_Locate_DevNode(out uint devInst, instanceId, WinUsbInterop.CM_LOCATE_DEVNODE_NORMAL)
+            != WinUsbInterop.CR_SUCCESS)
+            return [];
+
+        if (WinUsbInterop.CM_Open_DevNode_Key(
+                devInst, WinUsbInterop.KEY_QUERY_VALUE, 0, WinUsbInterop.RegDisposition_OpenExisting,
+                out nint key, WinUsbInterop.CM_REGISTRY_HARDWARE) != WinUsbInterop.CR_SUCCESS)
+            return [];
+
+        try
+        {
+            return ReadStringValue(key, "DeviceInterfaceGUIDs") is { } multi
+                ? InterfaceGuidList.Parse(multi)
+                : ReadStringValue(key, "DeviceInterfaceGUID") is { } single
+                    ? InterfaceGuidList.Parse(single)
+                    : [];
+        }
+        finally
+        {
+            WinUsbInterop.RegCloseKey(key);
+        }
+    }
+
+    private static string? ReadStringValue(nint key, string name)
+    {
+        uint size = 0;
+        if (WinUsbInterop.RegQueryValueEx(key, name, 0, out uint type, null, ref size) != WinUsbInterop.ERROR_SUCCESS
+            || (type != WinUsbInterop.REG_SZ && type != WinUsbInterop.REG_MULTI_SZ)
+            || size == 0)
+            return null;
+
+        var data = new byte[size];
+        if (WinUsbInterop.RegQueryValueEx(key, name, 0, out _, data, ref size) != WinUsbInterop.ERROR_SUCCESS)
+            return null;
+
+        return System.Text.Encoding.Unicode.GetString(data, 0, (int)Math.Min(size, (uint)data.Length));
     }
 
     private static UsbException MapOpenError(int error, string deviceId, string devicePath)

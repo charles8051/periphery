@@ -21,6 +21,7 @@
     <ProjectReference Include="..\Periphery.FlashAnything.Gui.Core\Periphery.FlashAnything.Gui.Core.csproj" />
     <ProjectReference Include="..\Periphery.Bootloader.Stm32.Usb\Periphery.Bootloader.Stm32.Usb.csproj" />
     <ProjectReference Include="..\Periphery.Bootloader.Efm8.Usb\Periphery.Bootloader.Efm8.Usb.csproj" />
+    <ProjectReference Include="..\Periphery.DebugProbe.StLink\Periphery.DebugProbe.StLink.csproj" />
   </ItemGroup>
 
 </Project>

@@ -32,3 +32,7 @@
 
 # Captured binary fixtures (ADR-0091 D-Bus messages)
 *.bin binary
+
+# CMSIS-Pack flash algorithms are ELF images (ADR-0094 D9).
+*.FLM binary
+*.flm binary

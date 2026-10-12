@@ -1,7 +1,7 @@
 ---
 title: "ADR-0094: The first debug-probe flasher drives an ST-Link over SWD and programs STM32 flash with the vendor's pack algorithm"
-status: "Proposed"
-status_note: "Drafted 2026-10-11 from the exploration browser-debug-probes-2026-10.md. Revised the same day: D5 runs the vendor's CMSIS-Pack flash algorithm instead of host register writes, and D9 sets where algorithms come from and under what license. Nothing is implemented. The ST-Link facts are Source (probe-rs, ST's driver INF); no ST-Link has been attached for this work. RM0440 was not re-read for this draft, so D4's registers are to be checked against it. The package stays unpublished until the legal review in D8 is recorded."
+status: "Accepted"
+status_note: "Drafted 2026-10-11 from the exploration browser-debug-probes-2026-10.md and revised the same day (D5 runs the vendor's CMSIS-Pack flash algorithm; D9 sets where algorithms come from). Accepted 2026-10-12 by the maintainer, who lifted D8's gate on the ST-Link codec; no legal review is recorded. Implemented the same day and passed on a NUCLEO-G431KB through its STLINK-V3E, from the desktop; the page gates have not run. Implementation notes record what the code settled. Register addresses are from ST's SVD in the pack."
 date: "2026-10-11"
 authors: "@charles8051"
 tags: ["architecture", "decision", "firmware-flashing", "debug-probe", "st-link", "swd", "stm32", "cmsis-pack", "browser", "webusb", "usb", "pure-core", "licensing"]
@@ -20,10 +20,13 @@ open question 6 for this slice.
 
 ## Status
 
-Proposed 2026-10-11. Revised the same day: D5 now runs the vendor's CMSIS-Pack flash algorithm
-instead of writing flash-controller registers from the host, and D9 records where algorithms come
-from. Nothing is implemented. Stays Proposed until the gates under [Verification](#verification)
-pass.
+Accepted 2026-10-12. Proposed 2026-10-11 and revised the same day: D5 runs the vendor's CMSIS-Pack
+flash algorithm instead of writing flash-controller registers from the host, and D9 records where
+algorithms come from.
+
+The maintainer accepted it and lifted D8's gate on the ST-Link codec in the same step (see the D8
+amendment). It was implemented on 2026-10-12. The desktop gates passed on hardware; the page gates
+have not run. See [Results](#results) and [Implementation notes](#implementation-notes).
 
 ---
 
@@ -139,7 +142,11 @@ the generic DFU layer.
 
 `StLinkProgrammer.OpenAsync(DeviceInfo)` opens the probe with `UsbDevice.OpenAsync`, as
 `Stm32DfuProgrammer` does. In a page, ADR-0092 D6 routes that call to `Periphery.Usb.Browser`. On a
-desktop, it reaches `WinUsbBackend` or libusb. No change to either USB backend is needed.
+desktop, it reaches `WinUsbBackend` or libusb. A page needs no backend change.
+
+> **Amendment (2026-10-12).** The Windows desktop backend did need one. A composite ST-Link's debug
+> function does not expose the interface GUID `WinUsbBackend` resolved through. See
+> [Implementation notes](#implementation-notes), note 1.
 
 The package accepts the PIDs in ST's driver INF and takes endpoints from the PID, as probe-rs does:
 
@@ -292,6 +299,10 @@ this ADR's Status section. A review that finds a problem supersedes this ADR ins
   NuGet package carries it. This covers the package only. The probe-independent layers above may be
   merged with their tests like any other code.
 
+> **Amendment (2026-10-12).** The maintainer accepted this ADR and lifted the second restriction,
+> on the ST-Link codec and transport, without a recorded legal review. The other two stand: no one
+> captures vendor software, and no package is built for release until a review is recorded here.
+
 ### D9 — Flash algorithms come from Open-CMSIS-Pack as generated records, never from probe-rs's target files
 
 A generator tool in this repo reads an FLM file, which is an ELF image, together with its pack's
@@ -322,7 +333,8 @@ flash.
 
 - A page can program an STM32 with no install beyond ST's driver on Windows and a udev rule on Linux.
 - One code path serves a page and a desktop, because both open the probe through `UsbDevice`.
-- No change to `Periphery.Usb.Browser` or to any desktop backend.
+- No change to `Periphery.Usb.Browser`. The Windows desktop backend gained composite-function path
+  resolution, which also opens the nRF DK's on-board J-Link (implementation note 1).
 - Adding a part is a target record and a hardware gate. No Periphery code carries a flash
   controller's register map, because the vendor's algorithm does.
 - Each call halts once per page or sector, not once per flash write (Inferred).
@@ -402,8 +414,62 @@ in the sectors it touches. A caller flashing a partial image does not expect tha
 | Flash from a desktop | The same through FlashAnything's CLI. | D2, D4, D5 |
 | Refusals on hardware | A part with read protection at level 1 is refused before any write. | D5 |
 
-Hardware needed: an ST-Link/V2-1 or STLINK-V3 wired to an STM32G431, for example a NUCLEO-G431RB,
-whose on-board probe is an STLINK-V3E. None was attached for the exploration.
+Hardware needed: an ST-Link/V2-1 or STLINK-V3 wired to an STM32G431. The bench has a NUCLEO-G431KB,
+whose on-board probe is an STLINK-V3E.
+
+### Results
+
+Recorded as the gates ran, on Windows 11 with a NUCLEO-G431KB: an STLINK-V3E (`0483:374E`, firmware
+`V3J9`) and an STM32G431KB. Before any write, main flash was read twice, the reads agreed, and the
+copy was kept to restore at the end.
+
+| Gate | Result |
+|---|---|
+| Pure core | Passed 2026-10-12. 71 tests in `Periphery.DebugProbe.StLink.Tests`. Eight mutations each turned their test red: the allowlist refusal, the read-protection refusal, the merge, the reported flash size, blank-page skipping, the RAM window check, the V3 firmware floor, and unchanged-sector skipping. (Measured.) |
+| Generator | Passed. The record regenerates byte for byte from the checked-in FLM, whose SHA-256 is `27CB6245…3F3B0970A`. The entry points match probe-rs's entry for an algorithm built from the same `FlashPrg.c`, Thumb bit aside. (Measured.) |
+| Shell against the model | Passed. `StLinkProgrammer` runs through `StLinkSession` and a fake probe against a simulated STM32G431 whose flash only the algorithm can change. (Measured.) |
+| Legal review | Not done. The maintainer lifted the codec gate at acceptance (D8 amendment). |
+| ST-Link codec | Passed. Encodings are checked byte for byte, and the session's framing through the fake probe. (Measured.) |
+| Probe opens on Windows, desktop | Passed. Through `Periphery.Usb` the probe reported firmware `V3J9` and a 3.30 V target. The target read DEV_ID `0x468`, REV_ID `0x2003`, 128 KB from the flash-size register, RDP `0xAA` and CPUID `0x410FC241`. (Measured.) |
+| Probe opens on Windows, page | Not run. `Periphery.Usb.Browser` is on the `browser` branch, and the gate needs a full Chrome. |
+| Flash from a page | Not run, for the same reason. |
+| Flash from a desktop | Passed through `flashany flash`. A 4,124-byte test image wrote and verified: a counter loop at `0x08000000` and a 4 KB pattern in sectors 62 and 63. After the reset, a word in RAM read `0xC2DB8501` and then `0xC32A7407`, so the loop was running. Sector 0's bytes outside the image and all of sector 1 kept the original firmware's values. The saved copy was then flashed back, and main flash read back with the same SHA-256. (Measured.) |
+| Refusals on hardware | Not run. Setting read protection to level 1 writes option bytes, and returning to level 0 mass-erases the part. The pure-core gate covers the refusal. |
+
+Throughput, as wall-clock time for one `flashany flash` run including process start: a full 128 KB
+image took 6.1 s, the same image again with nothing to write took 2.4 s, and the restore took 4.0 s.
+Erasing and programming 128 KB therefore takes about 3.7 s. (Measured.)
+
+---
+
+## Implementation notes
+
+1. **Windows composite functions.** `WinUsbBackend` resolved a device-instance ID through
+   `GUID_DEVINTERFACE_USB_DEVICE` only. A composite device's parent node exposes that GUID; a
+   WinUSB-bound function (`USB\VID_...&MI_nn`) exposes the GUIDs its INF wrote to
+   `DeviceInterfaceGUIDs`. The STLINK-V3E's `MI_00` registers ST's
+   `{DBCE1CD9-A320-4B51-A365-A0C3F3C5FB29}` and nothing `GUID_DEVINTERFACE_USB_DEVICE` reaches. The
+   resolver now tries that GUID first and then the registered ones. On the bench, every WinUSB
+   device with a VID opened afterwards: the ST-Link's `MI_00`, the nRF DK's on-board J-Link `MI_02`,
+   an STM32 DFU bootloader, and a Treehopper. (Measured.)
+2. **The provider matches the debug function only.** It takes `MI_00` of a composite probe, or a
+   single-function probe, and skips the composite parent, which Windows binds to `usbccgp`.
+3. **D6 as built.** Cortex-M control is pure encoders and decoders (`CortexMRegisters`) plus a
+   shell that polls (`CortexMDebug`), rather than a list of memory operations as values. The flash
+   plan, RAM layout and call encoding are pure; `FlashAlgorithmRunner` is the shell. Polls run back
+   to back, and deadlines are read from the injected `TimeProvider`.
+4. **Reset and halt tolerate a faulted read.** The debug port can fault a DHCSR read while the
+   system is in reset. Such reads are retried until the deadline.
+5. **Unchanged sectors are skipped.** A sector the image leaves as it was is neither erased nor
+   programmed, and a page left at the erased value is not programmed. Restoring the original
+   firmware over the test image erased three sectors and programmed two pages.
+6. **Leaving.** The programmer clears `C_DEBUGEN` and then requests a system reset, so the
+   application starts as it would from power-on.
+7. **ST-Link WAIT.** A WAIT status is retried at once, up to 16 times. The next USB round trip is
+   the back-off.
+8. **Generator.** `flash-algorithm-gen` (`src/Periphery.DebugProbe.AlgorithmGen`) writes
+   `Targets/FlashAlgorithms.Stm32G43x4x128.g.cs` from the pinned inputs in its `Packs/` folder,
+   whose README holds the command.
 
 ---
 
@@ -411,11 +477,11 @@ whose on-board probe is an STLINK-V3E. None was attached for the exploration.
 
 | # | Question | Resolves with |
 |---|---|---|
-| 1 | Is the bench's ST-Link board an STM32G431? If not, the first record is for the part it carries. | An inventory. |
-| 2 | How long does one `ProgramPage` call take on the STM32G431 through an ST-Link, and what throughput results? | A measurement on the hardware gate. |
+| 1 | Is the bench's ST-Link board an STM32G431? If not, the first record is for the part it carries. | Answered: a NUCLEO-G431KB, DEV_ID `0x468`. |
+| 2 | How long does one `ProgramPage` call take on the STM32G431 through an ST-Link, and what throughput results? | Answered for the whole flash: about 3.7 s to erase and program 128 KB ([Results](#results)). A single call is unmeasured. |
 | 3 | Should FlashAnything's GUI list a probe before its target is identified, or open it first? | The FlashAnything spec, at implementation. |
 | 4 | Does Linux need anything beyond the udev rule ADR-0092 already names? | The Linux run of the page gate. |
-| 5 | What clock argument should `Init` receive for the STM32G4 algorithm? | Its `FlashPrg.c`, and probe-rs's choice. |
+| 5 | What clock argument should `Init` receive for the STM32G4 algorithm? | Answered: 0, as probe-rs passes. The STM32G4 `Init` does not read it, and the hardware gate passed. |
 | 6 | Does each pack's Apache-2.0 grant for "CMSIS add-ons" cover algorithm sources with no grant of their own, such as H7's? | The pack maintainers, or the legal review. |
 | 7 | The pack lists `STM32G431CBTxZ` with 112 KB of main flash under the 128 KB algorithm. Does its flash-size register report 112 KB, or must the record narrow the range? | Read the register on that variant, or ST's datasheet. |
 

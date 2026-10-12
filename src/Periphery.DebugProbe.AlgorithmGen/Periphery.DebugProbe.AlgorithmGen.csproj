@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ADR-0094 D9: generates the checked-in flash algorithm records in Periphery.DebugProbe.StLink
+    from CMSIS-Pack FLM files. A build-time tool, never shipped.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>flash-algorithm-gen</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Periphery.DebugProbe.StLink.Tests" />
+  </ItemGroup>
+
+</Project>

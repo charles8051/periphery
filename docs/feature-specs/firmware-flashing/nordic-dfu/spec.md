@@ -36,7 +36,9 @@ the same contract, safety gates, and front-ends as the STM32 and EFM8 flashers.
 
 **1. Nordic parts have no ROM bootloader.** There is no equivalent of the STM32 system
 bootloader at a fixed address that ADR-0061 called unbrickable. A blank nRF is programmed over
-SWD with a debug probe, which this platform does not do and does not intend to. Every protocol
+SWD with a debug probe. Since [ADR-0094](../../../adr/0094-st-link-is-the-first-debug-probe-flasher.md)
+the platform reaches SWD only through its debug-probe tier, not through Nordic DFU, and that tier
+programs no nRF yet. Every protocol
 in this spec assumes a bootloader that someone already put in flash. A device that loses its
 bootloader leaves this platform's reach entirely, which is why [Safety rules](#safety-rules)
 treats a bootloader-update package differently from an application package.
