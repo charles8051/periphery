@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Periphery.Bootloader;
 using Periphery.Bootloader.Efm8.Usb;
 using Periphery.Bootloader.Stm32.Usb;
+using Periphery.DebugProbe.StLink;
 using Periphery.FlashAnything;
 
 namespace Periphery.FlashAnything.Gui;
@@ -23,6 +24,7 @@ internal static class Program
         var registry = new BootloaderRegistry();
         registry.Register(new Stm32UsbBootloaderProvider()); // STM32 USB DFU (0483:DF11)
         registry.Register(new Efm8UsbBootloaderProvider());  // EFM8 USB-HID bootloader (10C4:EAC9)
+        registry.Register(new StLinkProvider());             // STM32 over SWD through an ST-Link (ADR-0094)
         return new FlashAnythingService(registry, logger: logger, entryOptions: entryOptions);
     }
 }
