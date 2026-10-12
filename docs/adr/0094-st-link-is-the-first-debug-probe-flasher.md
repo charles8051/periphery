@@ -131,8 +131,8 @@ The package accepts the PIDs in ST's driver INF and takes endpoints from the PID
 | STLINK-V3 | `374E`, `374F`, `3753`, `3754`, `3757` | `0x01` | `0x81` | `0x82` (unused) |
 
 Recovery never resets the USB device. probe-rs resets the probe when its first command fails with a
-USB error. In a page, `reset()` is unimplemented on Windows (ADR-0092 D9). A failed open is reported, and the caller
-reopens.
+USB error. In a page, `reset()` is unimplemented on Windows (ADR-0092 D9). A failed open is
+reported, and the caller reopens.
 
 ### D4 — The probe is a `Probe`-identified target and is never auto-flashed
 
@@ -154,13 +154,17 @@ the flash-size register (RM0440). It maps onto `DeviceIdentity` as follows:
 `BootloaderVersion` carrying a probe's firmware version is a misfit. See
 [Consequences](#negative).
 
-### D5 — Slice 1 programs the STM32G431 by register writes, with page erase, and refuses everything else
+### D5 — Slice 1 programs the STM32G431 by register writes, rewrites whole pages, and refuses everything else
 
 The first part is the STM32G431, the part the browser/WASM exploration synced over its USART
 bootloader. The flash driver writes the flash controller's registers through the memory seam,
 following RM0440's standard programming sequence: unlock, clear errors, set the program bit, write a
-doubleword, wait for not-busy, check the result, and lock when done. It erases only the pages the
-image touches.
+doubleword, wait for not-busy, check the result, and lock when done.
+
+The driver rewrites whole pages, and only the pages the image touches. It reads each such page
+first, merges the image's bytes into that copy, erases the page, and programs the merged copy.
+Bytes the image does not cover keep their values. Every write is page-aligned, so every doubleword
+is aligned, and no segment needs padding.
 
 It does not use a CMSIS-Pack flash algorithm. The license of those algorithms is unknown
 (exploration open question 4), and register writes need no code loaded into the target.
@@ -171,12 +175,10 @@ The plan refuses, before any write:
 - A read-protection level other than 0. Lowering read protection mass-erases the part, and level 2
   is permanent.
 - Any segment outside main flash, including option bytes, OTP and system memory.
-- A segment whose start is not doubleword-aligned. A segment's tail is padded to a doubleword with
-  `0xFF`, the erased value.
 
 The programmer never writes option bytes. It halts the core through reset-and-halt before erasing,
-freezes the watchdogs through the debug MCU while halted, verifies by reading back, and leaves with a
-system reset that runs the application.
+freezes the watchdogs through the debug MCU while halted, verifies each rewritten page by reading it
+back against the merged copy, and leaves with a system reset that runs the application.
 
 ### D6 — Every layer is a pure core with a thin shell ([ADR-0052](0052-periphery-treehopper-pure-core.md))
 
@@ -185,7 +187,7 @@ system reset that runs the application.
 | `StLinkCommand`: a closed union, each case encoding its 16-byte command block and expected response length | `StLinkTransport`: bulk writes and reads on the PID's endpoints |
 | `StLinkStatus` and `StLinkVersion`: decoders for status bytes and `GET_VERSION` | `StLinkProgrammer`: owns the `UsbDevice`, the open sequence, and the poll loop |
 | `CortexMControl`: halt, reset-and-halt and run, as sequences of register writes and the reads that confirm them | The memory seam's ST-Link implementation |
-| `Stm32G4FlashPlan.Plan(FirmwareImage, Stm32G4Geometry) -> ImmutableArray<FlashStep>`, carrying every refusal in D5 | `FlashStep` execution, and the poll cadence on an injected `TimeProvider` |
+| `Stm32G4FlashPlan`: from an image and the geometry, the pages to read; from their current contents, the merged pages and the `FlashStep`s that erase, program and verify them. It carries every refusal in D5. | Reading the pages, `FlashStep` execution, and the poll cadence on an injected `TimeProvider` |
 
 Poll cadence is a pure state advanced by a shell-owned clock, and tests drive it with a manual
 clock ([ADR-0089](0089-tests-do-not-depend-on-elapsed-time.md)).
@@ -198,8 +200,8 @@ goes red.
 ### D7 — The package refuses probe firmware below probe-rs's floor, and never updates it
 
 The open sequence reads the probe's current mode, returns it to idle, then sends `GET_VERSION`, as
-probe-rs does. The package refuses an
-ST-Link/V2 or V2-1 with JTAG firmware below 26, and a V3 below 3. These are probe-rs's minimums.
+probe-rs does. The package refuses an ST-Link/V2 or V2-1 with JTAG firmware below 26, and a V3
+below 3. These are probe-rs's minimums.
 They are a starting floor, to be raised if a measured command fails on firmware above them.
 
 The error tells the user to update the probe with ST's own tool. Periphery never ships, downloads or
@@ -211,14 +213,24 @@ The package follows the exploration's [Licensing](../explorations/browser-debug-
 section in full. In short:
 
 - Code may be adapted from probe-rs, stlink-org, pyOCD and webstlink, under their licenses. The
-  change that introduces adapted code carries its attribution in the same commit.
+  commit that introduces adapted code also carries everything that source's license requires: its
+  copyright notice, its license text, and, for Apache-2.0, any NOTICE content and a statement of
+  the changes made.
 - OpenOCD and libjaylink are not opened, not even to check a constant.
-- No vendor software is decompiled. USB captures of tools driving a probe may become test vectors.
+- No vendor software is decompiled.
 
 The exploration lists two legal assumptions: that implementing an observed protocol is lawful, and
-that no license term binds the people doing the work. Both need review before anything ships. The
-package is `IsPackable=false` until that review is recorded in this ADR. Building, testing and
-running it from source in this repo are not blocked.
+that no license term binds the people doing the work. Both need review, and the review gates two
+things:
+
+- **Captures of vendor software.** Until the review is recorded, test vectors come only from
+  Periphery's own commands and the probe's replies, or from traffic of the permissively licensed
+  tools above. No one captures ST or SEGGER software driving a probe, because ST's licenses have not
+  been read and SEGGER's restricts its software.
+- **Publication.** The package is `IsPackable=false` until the review is recorded in this ADR.
+
+Implementing from the permissive sources, building, testing and running from source are not gated.
+Those rest on the sources' own licenses.
 
 ---
 
@@ -238,7 +250,11 @@ running it from source in this repo are not blocked.
 - Periphery now overlaps probe-rs on the desktop for STM32G431 flash programming. D1 bounds the
   overlap to flash programming.
 - One part only. Every further STM32 family needs its own geometry, refusal set and hardware gate.
-- Host register writes cost a USB round trip per poll. Throughput is unmeasured.
+- Host register writes cost a USB round trip per poll, and each touched page is read before it is
+  rewritten. Throughput is unmeasured.
+- A failure between a page's erase and its reprogram loses that page's bytes outside the image as
+  well. The merged copy exists only in the host. A retry in the same session can restore it. If the
+  browser tab or app closes first, those bytes are gone.
 - The flashing contract's names come from bootloaders. `IFirmwareProgrammer` is documented as a
   bootloader session, and `DeviceIdentity.BootloaderVersion` carries a probe's firmware version here.
   Both are left as they are until the contract graduates (ADR-0061 phase 2).
@@ -271,8 +287,11 @@ question 4). Revisit if throughput from D5 is unacceptable.
 fits on paper, but an ST-Link is not a bootloader and is not STM32-specific. ADR-0061 rejected
 "Dfu" as an umbrella for the same kind of misnaming.
 
-**Mass erase before writing.** Rejected. Page erase keeps data outside the image, and SWD has no
-need for the shortcut the DFU flasher's phase 1 took.
+**Mass erase before writing.** Rejected. It destroys all of flash, and SWD has no need for the
+shortcut the DFU flasher's phase 1 took.
+
+**Erase touched pages without merging.** Rejected. It destroys the bytes an image does not cover in
+the pages it touches. A caller flashing a partial image does not expect that.
 
 ---
 
@@ -280,7 +299,7 @@ need for the shortcut the DFU flasher's phase 1 took.
 
 | Gate | Passes when | Decisions |
 |---|---|---|
-| Pure core | Codec, version decode, core control and flash plan tests pass with no hardware, and every refusal test is proved by mutation. | D5, D6 |
+| Pure core | Codec, version decode, core control and flash plan tests pass with no hardware. A partial-page image leaves the page's other bytes unchanged. Every refusal test and the merge test are proved by mutation. | D5, D6 |
 | Shell against the model | `StLinkProgrammer` flashes and verifies an image against the flash-controller model and a fake transport, with a manual clock. | D6 |
 | Probe opens on Windows, desktop | Through `Periphery.Usb`, an ST-Link answers `GET_VERSION`, reports target voltage, and reads the STM32G431's device ID. | D3, D4, D7 |
 | Probe opens on Windows, page | In Chrome on Windows, the same from a granted ST-Link. This also measures exploration finding 3. | D3 |
