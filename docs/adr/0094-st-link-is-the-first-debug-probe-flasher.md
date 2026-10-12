@@ -220,17 +220,18 @@ section in full. In short:
 - No vendor software is decompiled.
 
 The exploration lists two legal assumptions: that implementing an observed protocol is lawful, and
-that no license term binds the people doing the work. Both need review, and the review gates two
-things:
+that no license term binds the people doing the work. The ST-Link protocol is known only by
+observation, including where the permissive sources learned it, so every line of the ST-Link codec
+rests on the first assumption. Until the review is recorded in this ADR:
 
-- **Captures of vendor software.** Until the review is recorded, test vectors come only from
-  Periphery's own commands and the probe's replies, or from traffic of the permissively licensed
-  tools above. No one captures ST or SEGGER software driving a probe, because ST's licenses have not
-  been read and SEGGER's restricts its software.
-- **Publication.** The package is `IsPackable=false` until the review is recorded in this ADR.
-
-Implementing from the permissive sources, building, testing and running from source are not gated.
-Those rest on the sources' own licenses.
+- **Work that does not encode the ST-Link protocol proceeds.** The memory seam, Cortex-M control,
+  the STM32G4 flash plan, the flash-controller model, and the provider wiring against a fake memory
+  seam rest on Arm's and ST's published manuals and Periphery's own code.
+- **The ST-Link codec and transport wait.** No ST-Link command is encoded, and no probe is driven,
+  until the review is recorded.
+- **No one captures vendor software.** ST's licenses have not been read, and SEGGER's restricts its
+  software.
+- **Nothing is published.** The package is `IsPackable=false`.
 
 ---
 
@@ -250,6 +251,8 @@ Those rest on the sources' own licenses.
 - Periphery now overlaps probe-rs on the desktop for STM32G431 flash programming. D1 bounds the
   overlap to flash programming.
 - One part only. Every further STM32 family needs its own geometry, refusal set and hardware gate.
+- The ST-Link half of the slice cannot start until a legal review is recorded. Only the
+  probe-independent layers can be built before it.
 - Host register writes cost a USB round trip per poll, and each touched page is read before it is
   rewritten. Throughput is unmeasured.
 - A failure between a page's erase and its reprogram loses that page's bytes outside the image as
@@ -300,13 +303,13 @@ the pages it touches. A caller flashing a partial image does not expect that.
 | Gate | Passes when | Decisions |
 |---|---|---|
 | Pure core | Codec, version decode, core control and flash plan tests pass with no hardware. A partial-page image leaves the page's other bytes unchanged. Every refusal test and the merge test are proved by mutation. | D5, D6 |
-| Shell against the model | `StLinkProgrammer` flashes and verifies an image against the flash-controller model and a fake transport, with a manual clock. | D6 |
+| Shell against the model | The flash shell erases, programs and verifies an image through a fake memory seam backed by the flash-controller model, with a manual clock. | D6 |
+| Legal review | The review of the exploration's two assumptions is recorded here. Every gate below waits for it. | D8 |
 | Probe opens on Windows, desktop | Through `Periphery.Usb`, an ST-Link answers `GET_VERSION`, reports target voltage, and reads the STM32G431's device ID. | D3, D4, D7 |
 | Probe opens on Windows, page | In Chrome on Windows, the same from a granted ST-Link. This also measures exploration finding 3. | D3 |
 | Flash from a page | In Chrome on Windows, an STM32G431 image is written, read back identical, and runs after the reset. | D5 |
 | Flash from a desktop | The same through FlashAnything's CLI. | D2, D4, D5 |
 | Refusals on hardware | A part with read protection at level 1 is refused before any write. | D5 |
-| Legal review | The review of the exploration's two assumptions is recorded here. | D8 |
 
 Hardware needed: an ST-Link/V2-1 or STLINK-V3 wired to an STM32G431, for example a NUCLEO-G431RB,
 whose on-board probe is an STLINK-V3E. None was attached for the exploration.
