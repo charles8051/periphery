@@ -15,6 +15,8 @@ or README. No browser was run for this document.
 **Scope:** ST-Link, J-Link and CMSIS-DAP probes, reached from a Chromium page over WebUSB or WebHID,
 to program flash over SWD. Out of scope: non-Chromium browsers, JTAG, interactive debugging, RTT,
 and the desktop. A desktop app can run probe-rs as a separate process.
+**Decided in:** [ADR-0094](../adr/0094-st-link-is-the-first-debug-probe-flasher.md) (Proposed), for
+the ST-Link first slice.
 
 ## Evidence labels
 
