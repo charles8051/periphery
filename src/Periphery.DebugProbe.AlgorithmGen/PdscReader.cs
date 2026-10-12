@@ -6,22 +6,23 @@ using System.Xml.Linq;
 
 namespace Periphery.DebugProbe.AlgorithmGen;
 
-/// <summary>An algorithm's entry in a pack description: its flash range and RAM window.</summary>
-internal sealed record PdscAlgorithm(uint Start, uint Size, uint RamStart, uint RamSize);
-
-/// <summary>Reads an <c>&lt;algorithm&gt;</c> element from a CMSIS pack description (.pdsc).</summary>
+/// <summary>
+/// Reads an <c>&lt;algorithm&gt;</c> element from a CMSIS pack description (.pdsc). Used by
+/// <c>flash-algorithm-gen extract</c> when an algorithm is added; the result goes into the
+/// pack's manifest, and the .pdsc itself is not checked in.
+/// </summary>
 internal static class PdscReader
 {
     /// <summary>
     /// The first <c>&lt;algorithm&gt;</c> whose <c>name</c> is <paramref name="flmPath"/>, compared
     /// without regard to case or slash direction. Every entry for one FLM must agree.
     /// </summary>
-    public static PdscAlgorithm Find(string pdscXml, string flmPath)
+    public static PackAlgorithm Find(string pdscXml, string flmPath)
     {
         string want = Normalize(flmPath);
         var entries = XDocument.Parse(pdscXml).Descendants()
             .Where(e => e.Name.LocalName == "algorithm" && Normalize((string?)e.Attribute("name") ?? "") == want)
-            .Select(e => new PdscAlgorithm(
+            .Select(e => new PackAlgorithm(
                 Hex(e, "start"), Hex(e, "size"), Hex(e, "RAMstart"), Hex(e, "RAMsize")))
             .Distinct()
             .ToList();

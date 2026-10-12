@@ -1,53 +1,124 @@
 // Copyright 2026 Charles Lee
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 //
-// flash-algorithm-gen: writes one flash algorithm record for Periphery.DebugProbe.StLink from a
-// CMSIS-Pack FLM file and its pack description (ADR-0094 D9).
+// flash-algorithm-gen: writes the flash algorithm records for Periphery.DebugProbe.StLink from the
+// pinned CMSIS-Pack inputs in Packs/ (ADR-0094 D9).
 //
-//   flash-algorithm-gen --pack-dir <dir> --pack <name> --version <v> --flm <path-in-pack>
-//                       --pdsc <file-in-pack-dir> --notice <file> --field <CSharpName> --out <file>
+//   flash-algorithm-gen generate --manifest <Packs/<pack>/manifest.json> --out-dir <dir> --pdsc <file>
+//       Checks the manifest against a downloaded copy of the pack's .pdsc, then writes
+//       FlashAlgorithms.<field>.g.cs for every algorithm it lists. --skip-pdsc-check replaces
+//       --pdsc, to regenerate from a manifest that is not being changed.
 //
-// Packs/README.md lists the command that produced each checked-in record.
+//   flash-algorithm-gen extract --pdsc <file> --flm <file> --flm-path <path in pack>
+//       Prints the manifest values for one algorithm, read from a downloaded .pdsc and FLM.
+//
+// Packs/README.md has the exact commands for each checked-in record.
 
 using System.Security.Cryptography;
 using Periphery.DebugProbe.AlgorithmGen;
 
+const string SkipPdscCheck = "--skip-pdsc-check";
 var options = new Dictionary<string, string>(StringComparer.Ordinal);
-for (int i = 0; i + 1 < args.Length; i += 2)
-    options[args[i]] = args[i + 1];
-
-string[] required = ["--pack-dir", "--pack", "--version", "--flm", "--pdsc", "--notice", "--field", "--out"];
-if (required.FirstOrDefault(r => !options.ContainsKey(r)) is { } missing)
+bool skipPdscCheck = false;
+for (int i = 1; i < args.Length; i++)
 {
-    Console.Error.WriteLine($"missing {missing}");
-    return 2;
+    if (args[i] == SkipPdscCheck)
+        skipPdscCheck = true;
+    else if (i + 1 < args.Length)
+        options[args[i]] = args[++i];
 }
 
-var input = Generator.Load(
-    options["--pack-dir"], options["--pack"], options["--version"], options["--flm"],
-    options["--pdsc"], options["--notice"], options["--field"]);
-File.WriteAllText(options["--out"], RecordWriter.Write(input));
-Console.WriteLine($"{input.FieldName}: {input.Flm.Name}, {input.Flm.Code.Length} bytes of code, SHA-256 {input.Sha256}");
-return 0;
+switch (args.FirstOrDefault())
+{
+    case "generate" when Require(options, "--manifest", "--out-dir")
+                         && (skipPdscCheck || Require(options, "--pdsc")):
+        if (skipPdscCheck)
+            Console.Error.WriteLine("warning: --skip-pdsc-check: the manifest's ranges and RAM windows are not checked against the pack.");
+        foreach (var input in Generator.LoadAll(options["--manifest"], skipPdscCheck ? null : options["--pdsc"]))
+        {
+            string path = Path.Combine(options["--out-dir"], $"FlashAlgorithms.{input.FieldName}.g.cs");
+            File.WriteAllText(path, RecordWriter.Write(input));
+            Console.WriteLine($"{input.FieldName}: {input.Flm.Name}, {input.Flm.Code.Length} bytes of code -> {path}");
+        }
+        return 0;
+
+    case "extract" when Require(options, "--pdsc", "--flm", "--flm-path"):
+        byte[] pdsc = File.ReadAllBytes(options["--pdsc"]);
+        byte[] flm = File.ReadAllBytes(options["--flm"]);
+        var window = PdscReader.Find(System.Text.Encoding.UTF8.GetString(pdsc), options["--flm-path"]);
+        Console.WriteLine($"pdscSha256 {Convert.ToHexString(SHA256.HashData(pdsc))}");
+        Console.WriteLine($"flm        {options["--flm-path"]}");
+        Console.WriteLine($"flmSha256  {Convert.ToHexString(SHA256.HashData(flm))}");
+        Console.WriteLine($"start      {PackManifest.FormatHex(window.Start)}");
+        Console.WriteLine($"size       {PackManifest.FormatHex(window.Size)}");
+        Console.WriteLine($"ramStart   {PackManifest.FormatHex(window.RamStart)}");
+        Console.WriteLine($"ramSize    {PackManifest.FormatHex(window.RamSize)}");
+        return 0;
+
+    default:
+        Console.Error.WriteLine("usage: flash-algorithm-gen generate --manifest <file> --out-dir <dir> (--pdsc <file> | --skip-pdsc-check)");
+        Console.Error.WriteLine("       flash-algorithm-gen extract --pdsc <file> --flm <file> --flm-path <path in pack>");
+        return 2;
+}
+
+static bool Require(Dictionary<string, string> options, params string[] names)
+{
+    var missing = names.Where(n => !options.ContainsKey(n)).ToList();
+    if (missing.Count > 0)
+        Console.Error.WriteLine($"missing {string.Join(", ", missing)}");
+    return missing.Count == 0;
+}
 
 namespace Periphery.DebugProbe.AlgorithmGen
 {
-    /// <summary>Gathers a record's inputs from a pack directory.</summary>
+    /// <summary>Gathers each record's inputs from a pack manifest and the files beside it.</summary>
     internal static class Generator
     {
-        public static RecordInput Load(
-            string packDir, string pack, string version, string flmPath, string pdscFile, string noticeFile, string field)
+        /// <summary>
+        /// One input per algorithm the manifest lists. Refuses an FLM whose SHA-256 is not the one
+        /// the manifest pins. Given <paramref name="pdscPath"/>, also refuses a .pdsc that is not
+        /// the pinned one, and any algorithm whose range or RAM window differs from the pack's entry.
+        /// </summary>
+        public static IReadOnlyList<RecordInput> LoadAll(string manifestPath, string? pdscPath = null)
         {
-            byte[] flm = File.ReadAllBytes(Path.Combine(packDir, Path.GetFileName(flmPath)));
-            return new RecordInput(
-                FieldName: field,
-                Flm: FlmReader.Read(flm),
-                Pdsc: PdscReader.Find(File.ReadAllText(Path.Combine(packDir, pdscFile)), flmPath),
-                Pack: pack,
-                Version: version,
-                FlmPath: flmPath,
-                Sha256: Convert.ToHexString(SHA256.HashData(flm)),
-                Notice: File.ReadAllText(Path.Combine(packDir, noticeFile)));
+            string packDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
+            var manifest = PackManifest.Parse(File.ReadAllText(manifestPath));
+            if (pdscPath is not null)
+                CheckAgainstPdsc(manifest, File.ReadAllBytes(pdscPath));
+
+            return manifest.Algorithms.Select(algorithm =>
+            {
+                byte[] flm = File.ReadAllBytes(Path.Combine(packDir, Path.GetFileName(algorithm.Flm)));
+                string sha256 = Convert.ToHexString(SHA256.HashData(flm));
+                if (!string.Equals(sha256, algorithm.FlmSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        $"{algorithm.Flm} has SHA-256 {sha256}; the manifest pins {algorithm.FlmSha256}.");
+
+                return new RecordInput(
+                    FieldName: algorithm.Field,
+                    Flm: FlmReader.Read(flm),
+                    Window: algorithm.Window,
+                    Pack: manifest.Pack,
+                    Version: manifest.Version,
+                    FlmPath: algorithm.Flm,
+                    Sha256: sha256,
+                    Notice: File.ReadAllText(Path.Combine(packDir, algorithm.Notice)));
+            }).ToList();
+        }
+
+        private static void CheckAgainstPdsc(PackManifest manifest, byte[] pdsc)
+        {
+            string sha256 = Convert.ToHexString(SHA256.HashData(pdsc));
+            if (!string.Equals(sha256, manifest.PdscSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"The .pdsc has SHA-256 {sha256}; the manifest pins {manifest.PdscSha256}.");
+
+            string xml = System.Text.Encoding.UTF8.GetString(pdsc);
+            foreach (var algorithm in manifest.Algorithms)
+            {
+                var listed = PdscReader.Find(xml, algorithm.Flm);
+                if (listed != algorithm.Window)
+                    throw new InvalidDataException($"The manifest gives {algorithm.Flm} {algorithm.Window}; the pack lists {listed}.");
+            }
         }
     }
 }

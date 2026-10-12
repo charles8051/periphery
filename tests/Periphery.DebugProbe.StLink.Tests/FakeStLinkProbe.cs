@@ -89,7 +89,7 @@ internal sealed class FakeStLinkProbe : IStLinkTransport
                 var data = new byte[length];
                 _lastRwStatus = MemoryStatuses.TryDequeue(out var s) ? s : (byte)0x80;
                 if (_lastRwStatus == 0x80)
-                    await _target.ReadAsync(address, data, ct);
+                    _lastRwStatus = await FaultIfUnmappedAsync(() => _target.ReadAsync(address, data, ct));
                 return data;
             }
             case 0x08: // WRITEMEM_32BIT
@@ -98,7 +98,7 @@ internal sealed class FakeStLinkProbe : IStLinkTransport
                 Assert.Equal(length, dataOut.Length);
                 _lastRwStatus = MemoryStatuses.TryDequeue(out var s) ? s : (byte)0x80;
                 if (_lastRwStatus == 0x80)
-                    await _target.WriteAsync(address, dataOut, ct);
+                    _lastRwStatus = await FaultIfUnmappedAsync(() => _target.WriteAsync(address, dataOut, ct));
                 return [];
             }
             case 0x3E: // GETLASTRWSTATUS2
@@ -109,6 +109,20 @@ internal sealed class FakeStLinkProbe : IStLinkTransport
             }
             default:
                 throw new InvalidOperationException($"Unexpected JTAG command 0x{command[1]:X2}.");
+        }
+    }
+
+    /// <summary>A real probe answers an access to unmapped memory with an AP fault, not an error on the wire.</summary>
+    private static async Task<byte> FaultIfUnmappedAsync(Func<Task> access)
+    {
+        try
+        {
+            await access();
+            return 0x80;
+        }
+        catch (UnmappedMemoryException)
+        {
+            return (byte)StLinkStatus.SwdApFault;
         }
     }
 

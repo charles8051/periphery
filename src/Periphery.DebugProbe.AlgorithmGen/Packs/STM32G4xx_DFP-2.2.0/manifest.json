@@ -1,0 +1,19 @@
+{
+  "pack": "Open-CMSIS-Pack/STM32G4xx_DFP",
+  "version": "2.2.0",
+  "tag": "v2.2.0",
+  "pdsc": "Keil.STM32G4xx_DFP.pdsc",
+  "pdscSha256": "5BEB24AB0827BEA12FA62CB114BC48E86EE5E2E78A695A5C5F2BCBB47A279B36",
+  "algorithms": [
+    {
+      "field": "Stm32G43x4x128",
+      "flm": "CMSIS/Flash/STM32G43x-4x_128.FLM",
+      "flmSha256": "27CB62458B4F45E23D91C64B901464AB1688ABD8DD4F5971054AED83F3B0970A",
+      "start": "0x08000000",
+      "size": "0x00020000",
+      "ramStart": "0x20000000",
+      "ramSize": "0x00008000",
+      "notice": "STM32G4xx_Flash.NOTICE.txt"
+    }
+  ]
+}

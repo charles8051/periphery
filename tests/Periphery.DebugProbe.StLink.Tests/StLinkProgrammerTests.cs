@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
 
 using Microsoft.Extensions.Time.Testing;
+using Periphery.DebugProbe.CortexM;
+using Periphery.DebugProbe.Flash;
 using Periphery.DebugProbe.Targets;
 
 namespace Periphery.DebugProbe.StLink.Tests;
@@ -158,6 +160,38 @@ public class StLinkProgrammerTests
         Assert.Contains("ProgramPage(0x08000000) returned 1", result.Error);
         Assert.True(target.Halted);
         Assert.False(target.RunningApplication);
+    }
+
+    [Fact]
+    public async Task An_algorithm_that_does_not_read_back_is_never_called()
+    {
+        var (programmer, target) = await BenchAsync(t => new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, t) { RamDropsWrites = true });
+
+        var result = await programmer.FlashAsync(Hex((0x08000000, [1, 2, 3, 4])), new FlashOptions());
+
+        Assert.False(result.Success);
+        Assert.Contains("did not load", result.Error);
+        Assert.Empty(target.Calls);
+    }
+
+    [Fact]
+    public async Task A_window_that_starts_in_RAM_but_runs_past_it_fails_at_load()
+    {
+        // The simulated part's RAM ends at 0x20008000. This window starts 1 KB before that and
+        // overstates its size, so the code fits but the stack and page buffer do not.
+        var time = new FakeTimeProvider();
+        var target = new SimulatedStm32G431(FlashAlgorithms.Stm32G43x4x128, time);
+        var session = await StLinkSession.OpenAsync(new FakeStLinkProbe(target), CancellationToken.None);
+        var overstated = FlashAlgorithms.Stm32G43x4x128 with { RamStart = 0x20007C00, RamSize = 0x8000 };
+        var layout = RamLayout.For(overstated);
+        Assert.True(layout.CodeAddress + (uint)overstated.Code.Length < 0x20008000);
+        Assert.True(layout.End > 0x20008000);
+
+        var runner = new FlashAlgorithmRunner(session, new CortexMDebug(session, time));
+        var ex = await Assert.ThrowsAsync<StLinkException>(() => runner.LoadAsync(overstated, layout, CancellationToken.None));
+
+        Assert.Equal(StLinkStatus.SwdApFault, ex.Status);
+        Assert.Empty(target.Calls);
     }
 
     [Fact]
