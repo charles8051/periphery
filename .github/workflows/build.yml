@@ -8,7 +8,8 @@ name: Build and Test
 # The two legs that carry a platform-specific backend are covered automatically
 # elsewhere, so this workflow is for a deliberate full sweep rather than the
 # everyday gate:
-#   linux-ci.yml  — every push/PR on the free self-hosted tier, plus the device rig.
+#   linux-ci.yml  — every push/PR on the free self-hosted tier. The device rig runs
+#                   only for a release, in publish.yml.
 #   macos-ci.yml  — every push/PR on macos-latest, build + unit tests only, so the
 #                   IOKit P/Invokes can't rot between manual runs.
 # Windows has no automatic leg — day-to-day development happens on Windows, so

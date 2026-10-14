@@ -4,6 +4,10 @@ Pushing a `v*.*.*` tag publishes every packable project to
 [nuget.org](https://www.nuget.org/profiles/clee781). Nothing else publishes:
 there is no manual path, and no API key stored anywhere.
 
+Only the admin role can create, move or delete a `v*` tag. The repository's
+`release-tags` ruleset enforces it, because a release tag also runs its code on
+the device rig.
+
 ## Quick Publish Workflow
 
 ```sh
@@ -32,8 +36,11 @@ GitHub Actions (`publish.yml`) will automatically:
    `## Unreleased` heading, if `CHANGELOG.md`'s newest heading is not this version, or
    if any `PublicAPI.Unshipped.txt` has lines. Every other job waits on this check. Commit the fix, delete the tag
    (`git tag -d v3.2.0 && git push origin :refs/tags/v3.2.0`) and tag again.
-2. Gate the release on Linux and Windows test jobs — Release build, **unit suites only**
-   (`--filter "Category!=Integration"`). Device-backed tests never run here.
+2. Gate the release on Linux and Windows unit-test jobs — Release build,
+   `--filter "Category!=Integration"` — and on `device-tests`, which runs the
+   `Category=Integration` suite on the Linux device rig. **Power the rig on before
+   pushing the tag.** Every release job waits for it, and GitHub cancels a job that
+   waits more than 24 hours.
 3. Rebuild non-incrementally so every assembly comes from the tagged commit, then pack
    those exact outputs. A completeness gate asserts every `IsPackable` project in
    `Periphery.slnx` produced a `.nupkg` — a partial family fails the release.
