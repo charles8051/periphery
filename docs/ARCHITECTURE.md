@@ -507,8 +507,8 @@ everywhere except the device rigs. `Fixture` traits further split rig tests by w
 physical hardware they need.
 
 **Remaining gaps:**
-- Windows and macOS have no device rig running automatically — the Linux rig is the
-  only one with a wired-up CI job, and the macOS rig is not yet provisioned.
+- No device rig runs on push or PR. The Linux rig runs only for a release, and the
+  macOS rig is not yet provisioned. Windows has no rig.
 - `net8.0` assets are compiled but never executed; the test projects are `net10.0`-only
   ([ADR-0069](adr/0069-restore-net8-tfm-untested.md)).
 - No coverage collection in CI (see §10.4).
@@ -624,11 +624,11 @@ SetupAPI enumeration. Run the latter with `dotnet test --filter "Category=Integr
 
 | Workflow | Trigger | Runners | Purpose |
 |----------|---------|---------|---------|
-| **linux-ci.yml** | Push to `main`, PRs, manual dispatch | Self-hosted Linux (SDK container); the Linux device rig | Everyday build + unit tests; device-backed integration tests on manual dispatch |
+| **linux-ci.yml** | Push to `main`, PRs, manual dispatch | Self-hosted Linux (SDK container) | Everyday build + unit tests |
 | **macos-ci.yml** | Push to `main`, PRs, manual dispatch | Hosted `macos-latest`; the macOS device rig (not yet provisioned) | Automatic macOS coverage for the IOKit P/Invoke surface |
 | **adr-lint.yml** | Push / PR touching `docs/adr/**` or the validator | Self-hosted Linux (SDK container) | `scripts/validate-adrs.sh` — frontmatter shape, status vocabulary, cross-reference resolution |
 | **build.yml** | Manual dispatch only (boolean inputs pick the OSes) | Hosted `windows-latest` / `ubuntu-latest` / `macos-latest` | Cross-platform build verification + unit tests |
-| **publish.yml** | Tags (`v*.*.*`) | Hosted `ubuntu-latest` for the publish job; self-hosted Linux + Windows for the test gate and release binaries | Test gate, NuGet publish to nuget.org (Trusted Publishing), self-contained release binaries |
+| **publish.yml** | Tags (`v*.*.*`) | Hosted `ubuntu-latest` for the publish job; self-hosted Linux + Windows for the test gate and release binaries; the Linux device rig for device tests | Test gate (unit + device), NuGet publish to nuget.org (Trusted Publishing), self-contained release binaries |
 | **peanut-gallery.yml** | PR opened/reopened/synchronize/ready, PR comments | Self-hosted Linux | Persona-driven automated PR review |
 | **metrics-report.yml** | Daily cron (13:00 UTC), manual dispatch | Self-hosted Linux | Trailing-7-day Peanut Gallery metrics posted to the tracking issue |
 
@@ -644,9 +644,8 @@ exercises `src/Periphery/MacOS/` automatically — `build.yml` is dispatch-only,
 IOKit bindings could rot between manual runs. The `MacOS*ContractTests` inherit the
 shared provider-contract invariants (§10.1) and run them against real IOKit here.
 
-Its `device-tests` tier mirrors `linux-ci.yml`'s: dispatch-only, and additionally
-pinned to `main`, because the job hands the dispatched ref's code the rig's local
-privileges. The macOS rig does not exist yet — the wiring landed ahead of the
+Its `device-tests` tier is dispatch-only, and pinned to `main`, because the job hands
+the dispatched ref's code the rig's local privileges. The macOS rig does not exist yet — the wiring landed ahead of the
 hardware so provisioning is a runner registration and nothing else.
 
 **Build Workflow (`build.yml`):**
@@ -671,11 +670,9 @@ are free, so it runs on every push to `main` and every PR.
 
 - `build-test-linux` — an ephemeral container runner (`mcr.microsoft.com/dotnet/sdk:10.0`);
   restore, build, unit tests (`Category!=Integration`), `.trx` artifact (14-day retention)
-- `device-tests` — the dedicated Linux device rig (v4l2loopback test
-  pattern, uhid virtual Megatec UPS, QEMU-emulated USB HID). Runs the
-  `Category=Integration` suite natively so it can reach `/dev`, behind a rig preflight
-  check. **Manual dispatch only** (`if: github.event_name == 'workflow_dispatch'`) — the
-  rig is powered on demand, so on push/PR the job no-ops rather than queueing forever.
+- `build-test-linux-fork` — the same on hosted `ubuntu-latest`, for fork PRs
+
+It has no device tier. Device tests run only in `publish.yml`.
 
 **Test Execution:**
 
@@ -684,7 +681,7 @@ are free, so it runs on every push to `main` and every PR.
 dotnet test --filter "Category!=Integration"
 
 # Integration tests — only ever run on the Linux device rig
-# (linux-ci.yml device-tests, manual dispatch), or locally against real hardware
+# (publish.yml device-tests, on a release tag), or locally against real hardware
 dotnet test --filter "Category=Integration"
 ```
 
@@ -702,6 +699,12 @@ dotnet test --collect:"XPlat Code Coverage"
 - Triggers on semver tags (`v0.1.0`, `v1.0.0`, `v1.7.0-alpha.2`, …)
 - `test-linux` + `test-windows` gate the release — Release build, unit suites only
   (`Category!=Integration`), `--blame-hang-timeout 5m --blame-crash`
+- `device-tests` also gates the release. It runs the `Category=Integration` suite on the
+  Linux device rig (v4l2loopback test pattern, uhid virtual Megatec UPS, QEMU-emulated
+  USB HID, btvirt Bluetooth controllers) natively so it can reach `/dev`, behind a rig
+  preflight check, and excludes `Fixture=PhysicalWebcam`. The rig is powered on demand:
+  power it on before pushing the tag, because every release job waits for it. On
+  `workflow_dispatch` it skips its steps and succeeds
 - `publish` rebuilds non-incrementally (`dotnet build --no-incremental`, i.e. the Rebuild
   target) so every assembly in the release is compiled from the tagged commit, then packs
   those exact outputs with `--no-build`. The self-hosted runners reuse their `_work` dir,
@@ -763,8 +766,8 @@ have blocked every merge rather than raising the bar.
 
 **CI/CD Conventions:**
 - ✅ `fail-fast: false` on the build matrix — all ticked platforms run even if one fails
-- ✅ Integration tests are excluded from every automatic run; they only execute on the
-  device rig via manual dispatch
+- ✅ Integration tests are excluded from push and PR runs; they only execute on the
+  device rig, as part of a release
 - ✅ Test-result uploads are diagnostic and marked `continue-on-error` — an artifact
   upload failure never blocks a release or fails a green run
 - ✅ Cheap self-hosted Linux verification is automatic; the one hosted leg that runs
@@ -775,7 +778,7 @@ have blocked every merge rather than raising the bar.
 
 **Performance:**
 - Unit test suite: seconds per platform on hosted runners
-- Device integration suite: minutes, and only on the Linux device rig
+- Device integration suite: minutes, and only on the Linux device rig for a release
 - `linux-ci.yml` on a PR: build + unit tests on one self-hosted container runner
 
 **Usage:**
@@ -786,9 +789,6 @@ git push origin my-branch && gh pr create
 
 # Cross-platform build verification (manual only — this is how Windows gets checked)
 gh workflow run build.yml -f windows=true -f linux=true -f macos=true
-
-# Device integration tests (rig must be powered on)
-gh workflow run linux-ci.yml
 
 # Validate the ADR corpus locally, same script adr-lint.yml runs
 bash scripts/validate-adrs.sh

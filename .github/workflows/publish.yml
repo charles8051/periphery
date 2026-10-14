@@ -176,9 +176,9 @@ jobs:
           echo "$body"
 
   # Validate before publishing — a release must not ship if tests fail. Unit
-  # suites only (Category!=Integration); the device-backed Integration tier runs
-  # on the Linux device rig via linux-ci.yml, not here. Split by OS because the
-  # self-hosted Linux leg needs an SDK container and the Windows leg does not.
+  # suites only (Category!=Integration); the device-backed Integration tier is the
+  # device-tests job below. Split by OS because the self-hosted Linux leg needs an
+  # SDK container and the Windows leg does not.
   # --blame-hang-timeout 5m dumps + fails any test that wedges >5 min.
   test-linux:
     needs: [release-notes]
@@ -249,8 +249,80 @@ jobs:
           path: "**/test-*.trx"
           retention-days: 30
 
+  # The device-backed Integration tier, on the dedicated Linux device rig
+  # (v4l2loopback test pattern, uhid virtual Megatec UPS, QEMU-emulated USB HID,
+  # btvirt Bluetooth controllers). It runs natively so it can reach /dev. This is
+  # the only workflow that runs it: push and PR CI never touch the rig.
+  #
+  # Tag pushes only. The rig is powered on demand, so power it on before pushing a
+  # release tag. Until its runner picks the job up, every release job waits in
+  # the queue, and GitHub cancels a job that waits more than 24 hours.
+  #
+  # On workflow_dispatch it runs on a hosted runner, skips every step and
+  # succeeds, the same way release-notes does: a skipped job would skip the
+  # dispatch path in release-binaries, and a dispatch must not need the rig.
+  device-tests:
+    needs: [release-notes]
+    runs-on: ${{ fromJSON(github.event_name == 'push' && '["self-hosted","linux","x64","periphery-devices"]' || '["ubuntu-latest"]') }}
+    env:
+      PERIPHERY_LINUX_DEVICE_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v6
+        if: github.event_name == 'push'
+        with:
+          fetch-depth: 0  # MinVer needs full history.
+          # The rig is persistent, so no token is left in its .git/config.
+          persist-credentials: false
+
+      - name: Rig preflight
+        # Fail fast with a readable message if the rig's virtual devices are
+        # missing — a silent skip here would rot the rig unnoticed.
+        #
+        # Every fixture checked here is SYNTHESIZED (v4l2loopback, vivid, uhid,
+        # QEMU-emulated USB HID, btvirt Bluetooth controllers), so it can be rebuilt on demand and a red run
+        # always means something this repo can fix. The rig also has a physical
+        # UVC webcam, and it is deliberately NOT checked: CI must not depend on
+        # hardware a person has to plug in, and the tests that need it are
+        # excluded from this job by Fixture!=PhysicalWebcam below (#277).
+        if: github.event_name == 'push'
+        run: |
+          ls -l /dev/video10
+          ls -l /dev/video20
+          systemctl is-active periphery-testpattern.service periphery-uhid-ups.service
+          systemctl is-active periphery-btvirt.service bluetooth.service
+          lsusb | grep -q "0627:0001" && echo "QEMU USB HID present"
+
+      - name: Restore
+        if: github.event_name == 'push'
+        run: dotnet restore Periphery.slnx
+
+      - name: Build
+        if: github.event_name == 'push'
+        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
+
+      - name: Test (device integration)
+        # Fixture!=PhysicalWebcam keeps the UVC-camera tests out of CI. They are the
+        # only tests needing hardware someone has to plug in, and an unplugged webcam
+        # must not block a release. Everything else here is a synthesized fixture (#277).
+        # Run them deliberately instead:
+        #   dotnet test Periphery.slnx --filter "Fixture=PhysicalWebcam"
+        if: github.event_name == 'push'
+        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category=Integration&Fixture!=PhysicalWebcam" --blame-hang-timeout 5m --blame-crash --logger "trx;LogFileName=test-devices.trx"
+
+      - name: Upload test results
+        if: always() && github.event_name == 'push'
+        # Diagnostic only — an upload failure (e.g. the account-wide artifact
+        # storage quota) must not fail the job. This job gates `publish`, so a
+        # failure here turns a fully green test run into a blocked release.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-devices
+          path: "**/test-*.trx"
+          retention-days: 30
+
   publish:
-    needs: [test-linux, test-windows, release-notes]
+    needs: [test-linux, test-windows, device-tests, release-notes]
     # NOT gated at the job level, deliberately. The gate is on the push STEP
     # instead, which makes a workflow_dispatch of this job a genuine dry run:
     # restore, build, pack, the completeness gate and the nuget.org OIDC exchange
@@ -488,7 +560,7 @@ jobs:
   # Linux binary would ship non-executable. release-binaries-linux builds it on
   # the Linux runner instead, where the bit is set natively and needs no flag.
   release-binaries:
-    needs: [test-linux, test-windows, release-notes]
+    needs: [test-linux, test-windows, device-tests, release-notes]
     runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER || '["self-hosted","windows","x64"]') }}
     permissions:
       contents: write   # needed to create/upload to the GitHub Release
@@ -594,7 +666,7 @@ jobs:
   # Building here sidesteps the whole problem: on Linux the SDK sets +x on the
   # apphost itself, and tar records it with no flag at all.
   release-binaries-linux:
-    needs: [test-linux, test-windows, release-notes]
+    needs: [test-linux, test-windows, device-tests, release-notes]
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]') }}
     container: ${{ contains(fromJSON(vars.LINUX_RUNNER || '["self-hosted","linux","x64","docker"]'), 'self-hosted') && 'mcr.microsoft.com/dotnet/sdk:10.0' || '' }}
     permissions:
@@ -663,7 +735,7 @@ jobs:
   # single file. The self-hosted Windows runner has the SDK baked; the hosted
   # fallback installs it.
   release-flasher:
-    needs: [test-linux, test-windows, release-notes]
+    needs: [test-linux, test-windows, device-tests, release-notes]
     # Tag-only: this job's sole output is an asset on the GitHub Release for the
     # pushed tag, which does not exist on a dispatch run. The CLI is the smoke-check
     # tool, so only release-binaries gained the on-demand path.

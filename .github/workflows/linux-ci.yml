@@ -3,16 +3,12 @@ name: Linux CI
 # Self-hosted Linux pipeline — free runner-minutes, so unlike build.yml
 # (manual full-OS matrix on hosted runners) this runs on every push and PR.
 #
-# Two tiers:
-#   build-test    — ephemeral container runners on the self-hosted Linux pool;
-#                   toolchain comes from the dotnet/sdk image; unit tests only.
-#   device-tests  — the dedicated Linux device rig (v4l2loopback test pattern,
-#                   uhid virtual Megatec UPS, QEMU-emulated USB HID devices);
-#                   runs the Category=Integration suite natively so it can reach
-#                   /dev. MANUAL DISPATCH ONLY: the rig is powered on demand, so
-#                   this job no-ops on push/PR and runs only via
-#                   workflow_dispatch — that way everyday CI never queues
-#                   forever on an offline rig.
+# Unit tests only. build-test-linux runs on ephemeral container runners on the
+# self-hosted Linux pool, with the toolchain from the dotnet/sdk image; its
+# hosted twin takes fork PRs.
+#
+# The device tier (the Category=Integration suite on the Linux device rig) is
+# not here. It runs only for a release, as the device-tests job in publish.yml.
 on:
   push:
     branches: [main]
@@ -92,58 +88,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-linux-fork
-          path: "**/test-*.trx"
-          retention-days: 14
-
-  device-tests:
-    # Manual-dispatch only: the device rig is powered on demand, so on push/PR
-    # this job would queue forever waiting for a runner that isn't there. Run it
-    # explicitly (gh workflow run linux-ci.yml) once the rig is up.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: [self-hosted, linux, x64, periphery-devices]
-    env:
-      PERIPHERY_LINUX_DEVICE_TESTS: "1"
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Rig preflight
-        # Fail fast with a readable message if the rig's virtual devices are
-        # missing — a silent skip here would rot the rig unnoticed.
-        #
-        # Every fixture checked here is SYNTHESIZED (v4l2loopback, vivid, uhid,
-        # QEMU-emulated USB HID, btvirt Bluetooth controllers), so it can be rebuilt on demand and a red run
-        # always means something this repo can fix. The rig also has a physical
-        # UVC webcam, and it is deliberately NOT checked: CI must not depend on
-        # hardware a person has to plug in, and the tests that need it are
-        # excluded from this job by Fixture!=PhysicalWebcam below (#277).
-        run: |
-          ls -l /dev/video10
-          ls -l /dev/video20
-          systemctl is-active periphery-testpattern.service periphery-uhid-ups.service
-          systemctl is-active periphery-btvirt.service bluetooth.service
-          lsusb | grep -q "0627:0001" && echo "QEMU USB HID present"
-
-      - name: Restore
-        run: dotnet restore Periphery.slnx
-
-      - name: Build
-        run: dotnet build Periphery.slnx --configuration Release --no-restore -p:PeripheryLocalFeedDisable=true
-
-      - name: Test (device integration)
-        # Fixture!=PhysicalWebcam keeps the UVC-camera tests out of CI. They are the
-        # only tests needing hardware someone has to plug in, and an unplugged webcam
-        # must not redden a run. Everything else here is a synthesized fixture (#277).
-        # Run them deliberately instead:
-        #   dotnet test Periphery.slnx --filter "Fixture=PhysicalWebcam"
-        run: dotnet test Periphery.slnx --configuration Release --no-build --filter "Category=Integration&Fixture!=PhysicalWebcam" --logger "trx;LogFileName=test-devices.trx"
-
-      - name: Upload test results
-        if: always()
-        # Diagnostic only — an upload failure (e.g. the account-wide artifact
-        # storage quota) must not fail the job and red-X an otherwise green run.
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results-devices
           path: "**/test-*.trx"
           retention-days: 14

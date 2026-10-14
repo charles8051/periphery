@@ -16,14 +16,14 @@ name: macOS CI
 # build.yml's full windows/linux/macos matrix stays manual — this is the cheapest
 # leg of it, promoted to run on its own.
 #
-# Two tiers, mirroring linux-ci.yml:
+# Two tiers:
 #   build-test    — macos-latest, hosted; unit + contract tests.
 #   device-tests  — the (not yet provisioned) Mac mini device rig; runs the
 #                   Category=Integration suite natively against real hardware.
-#                   DISPATCH-FROM-MAIN ONLY (see the job). Dispatch-only for the
-#                   same reason as linux-ci.yml's rig job: the rig is powered on
+#                   DISPATCH-FROM-MAIN ONLY (see the job). The rig is powered on
 #                   demand, so an automatic run would queue forever on an offline
-#                   runner.
+#                   runner. The Linux rig's job is in publish.yml and runs only
+#                   for a release.
 #                   Scope note: Periphery's macOS support is enumeration-only
 #                   today — UsbDevice, HidDevice, CameraDevice and MonitorDevice
 #                   all throw PlatformNotSupportedException — so this tier is the
