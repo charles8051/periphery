@@ -258,6 +258,11 @@ jobs:
   # release tag. Until its runner picks the job up, every release job waits in
   # the queue, and GitHub cancels a job that waits more than 24 hours.
   #
+  # The job builds and runs the tagged commit's code on a persistent host. Only
+  # the admin role can create, move or delete a v* tag: the repository's
+  # `release-tags` ruleset enforces that. This file cannot, because the tagged
+  # commit supplies it. Write access reaching the rig by other routes is #352.
+  #
   # On workflow_dispatch it runs on a hosted runner, skips every step and
   # succeeds, the same way release-notes does: a skipped job would skip the
   # dispatch path in release-binaries, and a dispatch must not need the rig.

@@ -4,6 +4,10 @@ Pushing a `v*.*.*` tag publishes every packable project to
 [nuget.org](https://www.nuget.org/profiles/clee781). Nothing else publishes:
 there is no manual path, and no API key stored anywhere.
 
+Only the admin role can create, move or delete a `v*` tag. The repository's
+`release-tags` ruleset enforces it, because a release tag also runs its code on
+the device rig.
+
 ## Quick Publish Workflow
 
 ```sh
