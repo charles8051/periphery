@@ -40,7 +40,8 @@ Reads return the board's latest report. The firmware reports only when a monitor
 
 ```csharp
 await using var button = await board.Pins[3].ConfigureAsync(PinMode.DigitalInput);
-await foreach (var snapshot in button.WatchAsync(ct))
+using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+await foreach (var snapshot in button.WatchAsync(cts.Token))
     Console.WriteLine(snapshot.Digital ? "released" : "pressed");
 ```
 
